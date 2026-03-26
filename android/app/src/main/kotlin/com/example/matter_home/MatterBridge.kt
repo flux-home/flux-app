@@ -292,13 +292,15 @@ class MatterBridge(private val context: Context) {
         }
 
         wifiManager.scanResults
-            .asSequence()
             .filter { sr ->
-                sr.SSID.isNotEmpty()        // ignore unnamed (hidden) networks
-                && sr.SSID !in seen         // deduplicate
+                sr.SSID.isNotEmpty()         // ignore unnamed (hidden) networks
                 && sr.level >= WIFI_MIN_RSSI // only networks with usable signal
             }
+            .groupBy { it.SSID }             // one entry per SSID
+            .mapValues { (_, aps) -> aps.maxBy { it.level } } // keep strongest AP
+            .values
             .sortedByDescending { it.level }
+            .filter { it.SSID !in seen }     // drop already-listed connected network
             .forEach { sr ->
                 seen.add(sr.SSID)
                 networks.add(mapOf(
