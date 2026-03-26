@@ -3,6 +3,25 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'matter_vendors.dart';
+
+// ── Battery info ────────────────────────────────────────────────────────────
+
+/// Data returned by [MatterChannel.readBattery].
+class BatteryInfo {
+  /// 0–100 % derived from BatPercentRemaining, or null if not reported.
+  final int? percent;
+  /// BatChargeLevel: 0 = OK, 1 = Warning, 2 = Critical. Null if not reported.
+  final int? chargeLevel;
+  /// BatVoltage in mV, or null if not reported.
+  final int? voltageMilliV;
+
+  const BatteryInfo({this.percent, this.chargeLevel, this.voltageMilliV});
+
+  /// True when there is at least something to display.
+  bool get hasData => percent != null || chargeLevel != null || voltageMilliV != null;
+}
+
 // ── Parsed setup payload ───────────────────────────────────────────────────
 
 enum DiscoveryCapability { ble, onNetwork, softAp, wifiPaf, nfc, unknown }
@@ -13,6 +32,8 @@ class ParsedPayload {
   final int discriminator;
   final bool hasShortDiscriminator;
   final List<DiscoveryCapability> discoveryCapabilities;
+  /// Setup PIN code encoded in the QR payload (up to 27 bits).
+  final int setupPinCode;
 
   const ParsedPayload({
     required this.vendorId,
@@ -20,6 +41,7 @@ class ParsedPayload {
     required this.discriminator,
     required this.hasShortDiscriminator,
     required this.discoveryCapabilities,
+    required this.setupPinCode,
   });
 
   /// True when the device can be commissioned over BLE.
@@ -32,31 +54,11 @@ class ParsedPayload {
   /// Whether BLE is the preferred commissioning transport.
   bool get prefersBle => hasBle;
 
-  /// Suggested device name derived from VID/PID.
-  String get suggestedName {
-    const vendorNames = <int, String>{
-      0xFFF1: 'Test Device',
-      0xFFF4: 'Test Device',
-      0x134E: 'tado°',
-      0x1037: 'Silicon Labs Device',
-      0x1135: 'NXP Device',
-      0x10C4: 'Silicon Labs Device',
-      0x1321: 'Espressif Device',
-      0x131B: 'Nordic Semiconductor',
-      0x1049: 'Google Device',
-      0x1387: 'Eve Device',
-      0x117C: 'Legrand Device',
-      0x100B: 'Infineon Device',
-      0x100F: 'Signify (Philips Hue)',
-      0x1101: 'Samsung ARTIK',
-      0x1275: 'Third Reality',
-      0x1398: 'Amazon Device',
-    };
-    final vendor = vendorNames[vendorId];
-    if (vendor != null) return vendor;
-    return 'Device ${vendorId.toRadixString(16).padLeft(4,'0').toUpperCase()}'
-           ':${productId.toRadixString(16).padLeft(4,'0').toUpperCase()}';
-  }
+  /// Suggested device name derived from the vendor ID.
+  /// Returns the vendor name from the CSA registry, or 'Unknown' if the VID
+  /// is not in the list.
+  String get suggestedName =>
+      kMatterVendors[vendorId] ?? 'Unknown';
 }
 
 /// Result returned after a commissioning attempt.
@@ -190,15 +192,386 @@ class ThreadBorderRouter {
       );
 }
 
+// ── Network diagnostics models ─────────────────────────────────────────────
+
+class PhoneIpv6Check {
+  final bool hasRoutableIpv6;
+  final List<String> guaAddresses;
+  final List<String> ulaAddresses;
+  final List<String> linkLocalAddresses;
+
+  const PhoneIpv6Check({
+    required this.hasRoutableIpv6,
+    required this.guaAddresses,
+    required this.ulaAddresses,
+    required this.linkLocalAddresses,
+  });
+
+  factory PhoneIpv6Check.fromJson(Map<String, dynamic> j) => PhoneIpv6Check(
+        hasRoutableIpv6:    j['hasRoutableIpv6'] as bool? ?? false,
+        guaAddresses:       _strList(j['guaAddresses']),
+        ulaAddresses:       _strList(j['ulaAddresses']),
+        linkLocalAddresses: _strList(j['linkLocalAddresses']),
+      );
+}
+
+class StateBitmapInfo {
+  final int    raw;
+  /// bits [2:0] — 0=none 1=UDP 2=TCP
+  final int    connectionMode;
+  final String connectionModeLabel;
+  /// bits [4:3] — 0=not-initialised 1=initialised 2=active/attached
+  final int    threadInterfaceStatus;
+  final String threadInterfaceLabel;
+  /// bits [6:5] — 0=infrequent 1=high
+  final int    availability;
+  final bool   bbrActive;
+  final bool   bbrIsPrimary;
+
+  const StateBitmapInfo({
+    required this.raw,
+    required this.connectionMode,
+    required this.connectionModeLabel,
+    required this.threadInterfaceStatus,
+    required this.threadInterfaceLabel,
+    required this.availability,
+    required this.bbrActive,
+    required this.bbrIsPrimary,
+  });
+
+  /// Thread interface fully active and attached to a Thread mesh.
+  bool get threadInterfaceActive  => threadInterfaceStatus == 2;
+  bool get hasExternalConnectivity => connectionMode != 0;
+
+  factory StateBitmapInfo.fromJson(Map<String, dynamic> j) => StateBitmapInfo(
+        raw:                    (j['raw'] as num).toInt(),
+        connectionMode:         j['connectionMode']        as int?    ?? 0,
+        connectionModeLabel:    j['connectionModeLabel']   as String? ?? 'none',
+        threadInterfaceStatus:  j['threadInterfaceStatus'] as int?    ?? 0,
+        threadInterfaceLabel:   j['threadInterfaceLabel']  as String? ?? 'Not initialised',
+        availability:           j['availability']          as int?    ?? 0,
+        bbrActive:              j['bbrActive']             as bool?   ?? false,
+        bbrIsPrimary:           j['bbrIsPrimary']          as bool?   ?? false,
+      );
+}
+
+class WifiBandInfo {
+  final int    frequencyMhz;
+  final String band;           // "2.4 GHz" | "5 GHz" | "6 GHz" | "unknown"
+  final String ssid;
+  final bool   hasBandSuffix;  // SSID ends with _5G, _5GHz, _6G, etc.
+
+  const WifiBandInfo({
+    required this.frequencyMhz,
+    required this.band,
+    required this.ssid,
+    required this.hasBandSuffix,
+  });
+
+  bool get is24Ghz => band == '2.4 GHz';
+  bool get is5Ghz  => band == '5 GHz';
+  bool get is6Ghz  => band == '6 GHz';
+  bool get isHigherBand => is5Ghz || is6Ghz;
+
+  factory WifiBandInfo.fromJson(Map<String, dynamic> j) => WifiBandInfo(
+        frequencyMhz:  j['frequencyMhz']  as int?    ?? -1,
+        band:          j['band']          as String? ?? 'unknown',
+        ssid:          j['ssid']          as String? ?? '',
+        hasBandSuffix: j['hasBandSuffix'] as bool?   ?? false,
+      );
+}
+
+class VpnInfo {
+  final bool isActive;
+  const VpnInfo({required this.isActive});
+
+  factory VpnInfo.fromJson(Map<String, dynamic> j) =>
+      VpnInfo(isActive: j['isActive'] as bool? ?? false);
+}
+
+class BorderRouterDiagnostic {
+  final String  serviceName;
+  final String  networkName;
+  final String  extPanId;
+  final String  vendorName;
+  final String  modelName;
+  final int     port;
+  final List<String> hostsV4;
+  final List<String> hostsV6LinkLocal;
+  final List<String> hostsV6Ula;
+  final List<String> hostsV6Gua;
+  final StateBitmapInfo? stateBitmap;
+  /// null = no address available to probe
+  final bool?   tcpReachable;
+  /// null = IPv4 unavailable on phone or BR
+  final bool?   sameSubnetAsPhone;
+  /// null = no ULA address on phone or BR
+  final bool?   ipv6PrefixMatchesPhone;
+
+  const BorderRouterDiagnostic({
+    required this.serviceName,
+    required this.networkName,
+    required this.extPanId,
+    required this.vendorName,
+    required this.modelName,
+    required this.port,
+    required this.hostsV4,
+    required this.hostsV6LinkLocal,
+    required this.hostsV6Ula,
+    required this.hostsV6Gua,
+    required this.stateBitmap,
+    required this.tcpReachable,
+    required this.sameSubnetAsPhone,
+    required this.ipv6PrefixMatchesPhone,
+  });
+
+  bool get hasIpv4         => hostsV4.isNotEmpty;
+  bool get hasRoutableIpv6 => hostsV6Ula.isNotEmpty || hostsV6Gua.isNotEmpty;
+  bool get hasAnyIpv6      => hostsV6LinkLocal.isNotEmpty || hasRoutableIpv6;
+
+  factory BorderRouterDiagnostic.fromJson(Map<String, dynamic> j) =>
+      BorderRouterDiagnostic(
+        serviceName:           j['serviceName']  as String? ?? '',
+        networkName:           j['networkName']  as String? ?? '',
+        extPanId:              j['extPanId']     as String? ?? '',
+        vendorName:            j['vendorName']   as String? ?? '',
+        modelName:             j['modelName']    as String? ?? '',
+        port:                  j['port']         as int?    ?? 0,
+        hostsV4:               _strList(j['hostsV4']),
+        hostsV6LinkLocal:      _strList(j['hostsV6LinkLocal']),
+        hostsV6Ula:            _strList(j['hostsV6Ula']),
+        hostsV6Gua:            _strList(j['hostsV6Gua']),
+        tcpReachable:          j['tcpReachable']           as bool?,
+        sameSubnetAsPhone:     j['sameSubnetAsPhone']      as bool?,
+        ipv6PrefixMatchesPhone: j['ipv6PrefixMatchesPhone'] as bool?,
+        stateBitmap: j['stateBitmap'] != null
+            ? StateBitmapInfo.fromJson(
+                Map<String, dynamic>.from(j['stateBitmap'] as Map))
+            : null,
+      );
+}
+
+class NetworkDiagnosticsReport {
+  final PhoneIpv6Check              phoneIpv6;
+  final bool                        multicastLockAcquired;
+  final WifiBandInfo                wifi;
+  final VpnInfo                     vpn;
+  final List<BorderRouterDiagnostic> borderRouters;
+  final List<String>                matterTcpServices;
+
+  const NetworkDiagnosticsReport({
+    required this.phoneIpv6,
+    required this.multicastLockAcquired,
+    required this.wifi,
+    required this.vpn,
+    required this.borderRouters,
+    required this.matterTcpServices,
+  });
+
+  factory NetworkDiagnosticsReport.fromJson(Map<String, dynamic> j) =>
+      NetworkDiagnosticsReport(
+        phoneIpv6:            PhoneIpv6Check.fromJson(
+            Map<String, dynamic>.from(j['phoneIpv6'] as Map)),
+        multicastLockAcquired: j['multicastLockAcquired'] as bool? ?? false,
+        wifi:                 WifiBandInfo.fromJson(
+            Map<String, dynamic>.from(j['wifi'] as Map? ?? {})),
+        vpn:                  VpnInfo.fromJson(
+            Map<String, dynamic>.from(j['vpn'] as Map? ?? {})),
+        borderRouters:        (j['borderRouters'] as List<dynamic>?)
+                ?.map((e) => BorderRouterDiagnostic.fromJson(
+                    Map<String, dynamic>.from(e as Map)))
+                .toList() ??
+            [],
+        matterTcpServices:    _strList(j['matterTcpServices']),
+      );
+}
+
+List<String> _strList(dynamic v) =>
+    (v as List<dynamic>?)?.map((e) => e as String).toList() ?? [];
+
+// ── Thread Network Diagnostics models ─────────────────────────────────────
+
+/// One entry from the NeighborTable attribute (cluster 0x0035, attr 0x0007).
+class ThreadNeighborInfo {
+  final String  extAddress;      // 16-char hex, IEEE 802.15.4 extended MAC
+  final int     age;             // seconds since last communication
+  final int     rloc16;          // 16-bit routing locator
+  final int     lqi;             // link quality index 0–255
+  final int?    averageRssi;     // dBm (nullable int8)
+  final int?    lastRssi;        // dBm (nullable int8)
+  final int     frameErrorRate;  // %
+  final int     messageErrorRate;// %
+  final bool    rxOnWhenIdle;
+  final bool    fullThreadDevice;
+  final bool    isChild;
+
+  const ThreadNeighborInfo({
+    required this.extAddress,
+    required this.age,
+    required this.rloc16,
+    required this.lqi,
+    required this.averageRssi,
+    required this.lastRssi,
+    required this.frameErrorRate,
+    required this.messageErrorRate,
+    required this.rxOnWhenIdle,
+    required this.fullThreadDevice,
+    required this.isChild,
+  });
+
+  factory ThreadNeighborInfo.fromJson(Map<String, dynamic> j) =>
+      ThreadNeighborInfo(
+        extAddress:       j['extAddress']       as String? ?? '?',
+        age:              (j['age']             as num?)?.toInt() ?? 0,
+        rloc16:           (j['rloc16']          as num?)?.toInt() ?? 0,
+        lqi:              (j['lqi']             as num?)?.toInt() ?? 0,
+        averageRssi:      (j['averageRssi']     as num?)?.toInt(),
+        lastRssi:         (j['lastRssi']        as num?)?.toInt(),
+        frameErrorRate:   (j['frameErrorRate']  as num?)?.toInt() ?? 0,
+        messageErrorRate: (j['messageErrorRate'] as num?)?.toInt() ?? 0,
+        rxOnWhenIdle:     j['rxOnWhenIdle']     as bool? ?? false,
+        fullThreadDevice: j['fullThreadDevice'] as bool? ?? false,
+        isChild:          j['isChild']          as bool? ?? false,
+      );
+}
+
+/// One entry from the RouteTable attribute (cluster 0x0035, attr 0x0008).
+class ThreadRouteInfo {
+  final int   rloc16;         // 16-bit routing locator of this router
+  final int   routerId;       // 6-bit router ID
+  final int   nextHop;        // router ID of next hop (0xFF = no route)
+  final int   pathCost;       // path cost metric
+  final int   lqiIn;          // incoming link quality 0–3
+  final int   lqiOut;         // outgoing link quality 0–3
+  final int   age;            // seconds since last update (wraps at 255)
+  final bool  allocated;      // router ID is allocated
+  final bool  linkEstablished;// direct link is established
+
+  const ThreadRouteInfo({
+    required this.rloc16,
+    required this.routerId,
+    required this.nextHop,
+    required this.pathCost,
+    required this.lqiIn,
+    required this.lqiOut,
+    required this.age,
+    required this.allocated,
+    required this.linkEstablished,
+  });
+
+  factory ThreadRouteInfo.fromJson(Map<String, dynamic> j) => ThreadRouteInfo(
+        rloc16:          (j['rloc16']          as num?)?.toInt() ?? 0,
+        routerId:        (j['routerId']         as num?)?.toInt() ?? 0,
+        nextHop:         (j['nextHop']          as num?)?.toInt() ?? 0xFF,
+        pathCost:        (j['pathCost']         as num?)?.toInt() ?? 0,
+        lqiIn:           (j['lqiIn']            as num?)?.toInt() ?? 0,
+        lqiOut:          (j['lqiOut']           as num?)?.toInt() ?? 0,
+        age:             (j['age']              as num?)?.toInt() ?? 0,
+        allocated:       j['allocated']         as bool? ?? false,
+        linkEstablished: j['linkEstablished']   as bool? ?? false,
+      );
+}
+
+/// Full snapshot from the Thread Network Diagnostics cluster (0x0035).
+class ThreadNetworkDiagnostics {
+  final int?    channel;
+  /// RoutingRole enum: 0=Unspecified 1=Unassigned 2=SleepyEndDevice
+  ///   3=EndDevice 4=REED 5=Router 6=Leader
+  final int?    routingRole;
+  final String  routingRoleLabel;
+  final String? networkName;
+  final int?    panId;
+  final String? extendedPanId;  // 16-char hex
+  final String? meshLocalPrefix;// e.g. "fd12:3456:789a:0001::/64"
+  final int?    partitionId;
+  final int?    weighting;
+  final int?    leaderRouterId;
+  final List<ThreadNeighborInfo> neighbors;
+  final List<ThreadRouteInfo>    routes;
+
+  const ThreadNetworkDiagnostics({
+    required this.channel,
+    required this.routingRole,
+    required this.routingRoleLabel,
+    required this.networkName,
+    required this.panId,
+    required this.extendedPanId,
+    required this.meshLocalPrefix,
+    required this.partitionId,
+    required this.weighting,
+    required this.leaderRouterId,
+    required this.neighbors,
+    required this.routes,
+  });
+
+  factory ThreadNetworkDiagnostics.fromJson(Map<String, dynamic> j) =>
+      ThreadNetworkDiagnostics(
+        channel:          (j['channel']        as num?)?.toInt(),
+        routingRole:      (j['routingRole']     as num?)?.toInt(),
+        routingRoleLabel: j['routingRoleLabel'] as String? ?? 'Unknown',
+        networkName:      j['networkName']      as String?,
+        panId:            (j['panId']           as num?)?.toInt(),
+        extendedPanId:    j['extendedPanId']    as String?,
+        meshLocalPrefix:  j['meshLocalPrefix']  as String?,
+        partitionId:      (j['partitionId']     as num?)?.toInt(),
+        weighting:        (j['weighting']       as num?)?.toInt(),
+        leaderRouterId:   (j['leaderRouterId']  as num?)?.toInt(),
+        neighbors: (j['neighbors'] as List<dynamic>?)
+                ?.map((e) => ThreadNeighborInfo.fromJson(
+                    Map<String, dynamic>.from(e as Map)))
+                .toList() ??
+            [],
+        routes: (j['routes'] as List<dynamic>?)
+                ?.map((e) => ThreadRouteInfo.fromJson(
+                    Map<String, dynamic>.from(e as Map)))
+                .toList() ??
+            [],
+      );
+}
+
 /// Flutter ↔ Android bridge.
 class MatterChannel {
-  static const _method = MethodChannel('com.example.matter_home/matter');
-  static const _events = EventChannel('com.example.matter_home/commission_events');
+  static const _method       = MethodChannel('com.example.matter_home/matter');
+  static const _events       = EventChannel('com.example.matter_home/commission_events');
+  static const _deviceEvents = EventChannel('com.example.matter_home/device_state');
 
   // ── Commission progress stream ─────────────────────────────────────────────
   /// Emits plain-text progress lines from the Android commissioning flow.
   Stream<String> get commissionEvents =>
       _events.receiveBroadcastStream().map((e) => e as String);
+
+  // ── Live device state stream ───────────────────────────────────────────────
+  /// Emits subscription updates from the Android CHIP SDK for all subscribed
+  /// devices.  Each event is a map with at least:
+  ///   - `nodeId` (int)
+  ///   - `type`   (String): "established" | "update" | "resubscribing" | "error"
+  /// Update events also carry any subset of:
+  ///   onOff, level, localTempCenti, heatingSetptCenti, coolingSetptCenti,
+  ///   systemMode, controlSequence, humidityCenti, tempMeasureCenti,
+  ///   batPercentRaw (0–200), batChargeLevel, occupancy, contactState.
+  Stream<Map<String, dynamic>> get deviceStateUpdates =>
+      _deviceEvents.receiveBroadcastStream().map(
+        (e) => Map<String, dynamic>.from(e as Map<Object?, Object?>));
+
+  // ── Subscription control ───────────────────────────────────────────────────
+
+  Future<bool> startSubscription(int nodeId) async {
+    try {
+      return await _method.invokeMethod<bool>(
+              'startSubscription', {'nodeId': nodeId}) ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('startSubscription error: ${e.message}');
+      return false;
+    }
+  }
+
+  Future<void> stopSubscription(int nodeId) async {
+    try {
+      await _method.invokeMethod<void>('stopSubscription', {'nodeId': nodeId});
+    } on PlatformException catch (e) {
+      debugPrint('stopSubscription error: ${e.message}');
+    }
+  }
 
   // ── Parse setup payload ────────────────────────────────────────────────────
 
@@ -225,6 +598,7 @@ class MatterChannel {
         productId:             result['productId']             as int,
         discriminator:         result['discriminator']         as int,
         hasShortDiscriminator: result['hasShortDiscriminator'] as bool? ?? false,
+        setupPinCode:          result['setupPinCode']          as int? ?? 0,
         discoveryCapabilities: (result['discoveryCapabilities'] as List<dynamic>?)
                 ?.map((e) => cap(e as String))
                 .toList() ??
@@ -317,15 +691,35 @@ class MatterChannel {
   /// and SystemMode from the Thermostat cluster.
   /// All temperatures are in centidegrees (divide by 100 for °C).
   /// Returns null if the call fails.
-  Future<({String serialNumber, String softwareVersion})?> readBasicInfo(
-      int nodeId) async {
+  Future<({
+    String productName,
+    String vendorName,
+    String vendorId,
+    String productId,
+    String hwVersion,
+    String softwareVersion,
+    String manufacturingDate,
+    String partNumber,
+    String productUrl,
+    String serialNumber,
+    String uniqueId,
+  })?> readBasicInfo(int nodeId) async {
     try {
       final map = await _method
           .invokeMapMethod<String, String>('readBasicInfo', {'nodeId': nodeId});
       if (map == null) return null;
       return (
-        serialNumber:    map['serialNumber']    ?? '',
-        softwareVersion: map['softwareVersion'] ?? '',
+        productName:       map['productName']       ?? '',
+        vendorName:        map['vendorName']        ?? '',
+        vendorId:          map['vendorId']          ?? '',
+        productId:         map['productId']         ?? '',
+        hwVersion:         map['hwVersion']         ?? '',
+        softwareVersion:   map['softwareVersion']   ?? '',
+        manufacturingDate: map['manufacturingDate'] ?? '',
+        partNumber:        map['partNumber']        ?? '',
+        productUrl:        map['productUrl']        ?? '',
+        serialNumber:      map['serialNumber']      ?? '',
+        uniqueId:          map['uniqueId']          ?? '',
       );
     } on PlatformException catch (e) {
       debugPrint('readBasicInfo error: ${e.message}');
@@ -389,6 +783,25 @@ class MatterChannel {
     }
   }
 
+  /// Reads the Power Source cluster (0x002F) — all attributes, wildcard endpoint.
+  /// Returns a [BatteryInfo] with whatever the device exposes, or null if the
+  /// cluster is absent.
+  Future<BatteryInfo?> readBattery(int nodeId) async {
+    try {
+      final raw = await _method.invokeMapMethod<String, int>(
+          'readBattery', {'nodeId': nodeId});
+      if (raw == null || raw.isEmpty) return null;
+      return BatteryInfo(
+        percent:       raw['percent'],
+        chargeLevel:   raw['chargeLevel'],
+        voltageMilliV: raw['voltageMilliV'],
+      );
+    } on PlatformException catch (e) {
+      debugPrint('readBattery error: ${e.message}');
+      return null;
+    }
+  }
+
   /// Opens the Android Thread credential picker (system consent UI).
   /// Returns the selected hex dataset string, or empty string if cancelled.
   Future<String?> readAndroidThreadCredentials() async {
@@ -416,6 +829,21 @@ class MatterChannel {
     }
   }
 
+  /// Reads Thread Network Diagnostics cluster (0x0035) from the device.
+  /// Returns null if the cluster is absent (device is not on Thread).
+  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) async {
+    try {
+      final jsonStr = await _method.invokeMethod<String>(
+          'readThreadNetworkDiagnostics', {'nodeId': nodeId});
+      if (jsonStr == null) return null;
+      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+      return ThreadNetworkDiagnostics.fromJson(decoded);
+    } on PlatformException catch (e) {
+      debugPrint('readThreadNetworkDiagnostics: ${e.code} ${e.message}');
+      return null;
+    }
+  }
+
   Future<String?> readClusters(int nodeId) async {
     try {
       return await _method.invokeMethod<String>('readClusters', {'nodeId': nodeId});
@@ -431,6 +859,14 @@ class MatterChannel {
           'readDeviceType', {'nodeId': nodeId});
     } on PlatformException {
       return null;
+    }
+  }
+
+  Future<void> identify(int nodeId) async {
+    try {
+      await _method.invokeMethod<void>('identify', {'nodeId': nodeId});
+    } on PlatformException catch (e) {
+      debugPrint('identify error: ${e.message}');
     }
   }
 
@@ -469,6 +905,21 @@ class MatterChannel {
           false;
     } on PlatformException {
       return false;
+    }
+  }
+
+  /// Runs all passive network checks (takes ~6 s) and returns a structured
+  /// [NetworkDiagnosticsReport].  Returns null on error.
+  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() async {
+    try {
+      final jsonStr =
+          await _method.invokeMethod<String>('runNetworkDiagnostics');
+      if (jsonStr == null) return null;
+      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
+      return NetworkDiagnosticsReport.fromJson(decoded);
+    } on PlatformException catch (e) {
+      debugPrint('runNetworkDiagnostics error: ${e.message}');
+      return null;
     }
   }
 

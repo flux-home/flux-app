@@ -26,10 +26,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Manages BLE scanning and GATT connection for Matter device commissioning.
  *
- * Ported from CHIPTool's BluetoothManager.kt.
- * Key design: all GATT events are forwarded to the CHIP platform's internal
- * [BluetoothGattCallback] (obtained via [chip.platform.AndroidBleManager.callback]).
- * This keeps our code thin and lets the CHIP C++ layer own the BLE protocol.
+ * Key design notes:
+ *  - [addConnection] is called only after the GATT is fully ready (post-MTU),
+ *    not immediately after [BluetoothDevice.connectGatt]. Calling it too early
+ *    means a stale registration in the CHIP C++ connection table.
+ *  - [close] manually injects a STATE_DISCONNECTED event into the CHIP
+ *    platform's own BluetoothGattCallback *before* calling [BluetoothGatt.close].
+ *    This is necessary because [BluetoothGatt.close] deregisters all Android
+ *    callbacks, so the real STATE_DISCONNECTED will never fire — leaving the
+ *    CHIP C++ layer thinking the connection is still open ("already in use").
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class BleConnectionManager : BleCallback {
@@ -41,10 +46,11 @@ class BleConnectionManager : BleCallback {
     }
 
     private val adapter: BluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-    private var bleGatt: BluetoothGatt? = null
+    @Volatile private var bleGatt: BluetoothGatt? = null
 
-    /** Connection ID assigned by [chip.platform.AndroidBleManager.addConnection]. */
-    var connectionId: Int = 0
+    /** Connection ID assigned by [chip.platform.AndroidBleManager.addConnection].
+     *  0 means no connection is registered with the CHIP platform yet. */
+    @Volatile var connectionId: Int = 0
         private set
 
     // ── BleCallback (called by CHIP platform on BLE lifecycle events) ─────────
@@ -56,16 +62,57 @@ class BleConnectionManager : BleCallback {
 
     override fun onNotifyChipConnectionClosed(connId: Int) {
         Log.d(TAG, "onNotifyChipConnectionClosed connId=$connId")
-        bleGatt?.close()
+        try { bleGatt?.close() } catch (e: Exception) { Log.w(TAG, "close in onNotifyChipConnectionClosed: ${e.message}") }
+        bleGatt      = null
+        connectionId = 0
+    }
+
+    // ── Explicit cleanup ──────────────────────────────────────────────────────
+
+    /**
+     * Tears down any active GATT connection and notifies the CHIP C++ layer.
+     *
+     * Safe to call in any state, including before a connection was established.
+     *
+     * Why we inject STATE_DISCONNECTED manually:
+     * Android's [BluetoothGatt.close] immediately deregisters our callback,
+     * so the real STATE_DISCONNECTED event will never arrive.  Without the
+     * manual injection the CHIP C++ layer keeps the connection in its table,
+     * and the next [pairDeviceThroughBLE] call fails with
+     * "bluetooth connection already in use".
+     */
+    fun close() {
+        val gatt = bleGatt ?: run {
+            Log.d(TAG, "close() — nothing to close")
+            return
+        }
+        Log.i(TAG, "close() connId=$connectionId addr=${gatt.device?.address}")
+
+        // 1. Notify the CHIP C++ layer that this connection is gone, BEFORE
+        //    calling gatt.close() which would suppress any further callbacks.
+        if (connectionId != 0) {
+            try {
+                ChipClient.getPlatform().bleManager.callback.onConnectionStateChange(
+                    gatt,
+                    BluetoothGatt.GATT_SUCCESS,
+                    BluetoothProfile.STATE_DISCONNECTED,
+                )
+                Log.d(TAG, "Injected STATE_DISCONNECTED into CHIP platform for connId=$connectionId")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to inject disconnect into CHIP layer: ${e.message}")
+            }
+        }
+
+        // 2. Cleanly close the Android GATT.
+        try { gatt.disconnect() } catch (e: Exception) { Log.w(TAG, "GATT disconnect: ${e.message}") }
+        try { gatt.close()     } catch (e: Exception) { Log.w(TAG, "GATT close: ${e.message}") }
+
+        bleGatt      = null
         connectionId = 0
     }
 
     // ── BLE scan ─────────────────────────────────────────────────────────────
 
-    /**
-     * Scans BLE for a Matter device whose service-data encodes [discriminator].
-     * Returns null on timeout.
-     */
     suspend fun findDevice(
         context: Context,
         discriminator: Int,
@@ -111,19 +158,21 @@ class BleConnectionManager : BleCallback {
     /**
      * Connects to [device], discovers services, negotiates MTU, then registers
      * the GATT connection with the CHIP platform.
-     * Returns the [BluetoothGatt] on success or null on failure.
+     *
+     * [addConnection] is intentionally called inside [onMtuChanged] — only
+     * once the GATT is fully ready — not immediately after [connectGatt].
+     * Registering too early leaves the platform holding a half-open connection
+     * if setup fails, which triggers "already in use" on the next attempt.
      */
     suspend fun connect(context: Context, device: BluetoothDevice): BluetoothGatt? =
         suspendCancellableCoroutine { cont ->
-            val gattCallback = buildGattCallback(context, cont)
             Log.i(TAG, "GATT connecting to ${device.address}")
-            bleGatt = device.connectGatt(context, false, gattCallback,
-                BluetoothDevice.TRANSPORT_LE)
-            // Register connection + set our BleCallback so the platform can call us back.
-            val platform = ChipClient.getPlatform()
-            connectionId = platform.bleManager.addConnection(bleGatt)
-            platform.bleManager.setBleCallback(this)
-            cont.invokeOnCancellation { bleGatt?.disconnect() }
+            bleGatt = device.connectGatt(
+                context, false,
+                buildGattCallback(cont),
+                BluetoothDevice.TRANSPORT_LE,
+            )
+            cont.invokeOnCancellation { close() }
         }
 
     // ── GATT callback ─────────────────────────────────────────────────────────
@@ -131,11 +180,9 @@ class BleConnectionManager : BleCallback {
     private enum class GattState { INIT, DISCOVER_SERVICES, REQUEST_MTU }
 
     private fun buildGattCallback(
-        context: Context,
         cont: CancellableContinuation<BluetoothGatt?>,
     ): BluetoothGattCallback {
         return object : BluetoothGattCallback() {
-            // CHIP platform's internal callback – forward everything to it.
             private val chipCb: BluetoothGattCallback
                 get() = ChipClient.getPlatform().bleManager.callback
 
@@ -143,15 +190,16 @@ class BleConnectionManager : BleCallback {
 
             override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
                 chipCb.onConnectionStateChange(gatt, status, newState)
-                if (newState == BluetoothProfile.STATE_CONNECTED &&
-                    status == BluetoothGatt.GATT_SUCCESS
-                ) {
-                    Log.i(TAG, "GATT connected – discovering services")
-                    state = GattState.DISCOVER_SERVICES
-                    gatt?.discoverServices()
-                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    Log.w(TAG, "GATT disconnected status=$status")
-                    if (cont.isActive) cont.resume(null)
+                when {
+                    newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS -> {
+                        Log.i(TAG, "GATT connected – discovering services")
+                        state = GattState.DISCOVER_SERVICES
+                        gatt?.discoverServices()
+                    }
+                    newState == BluetoothProfile.STATE_DISCONNECTED -> {
+                        Log.w(TAG, "GATT disconnected status=$status")
+                        if (cont.isActive) cont.resume(null)
+                    }
                 }
             }
 
@@ -166,7 +214,13 @@ class BleConnectionManager : BleCallback {
             override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                 chipCb.onMtuChanged(gatt, mtu, status)
                 if (state != GattState.REQUEST_MTU) return
-                Log.i(TAG, "MTU=$mtu – GATT ready")
+                // GATT is fully ready — register with the CHIP platform NOW.
+                // Doing this here (not in connectGatt) means the CHIP C++ layer
+                // only ever sees one live connection at a time.
+                val platform  = ChipClient.getPlatform()
+                connectionId  = platform.bleManager.addConnection(gatt)
+                platform.bleManager.setBleCallback(this@BleConnectionManager)
+                Log.i(TAG, "GATT ready — connectionId=$connectionId MTU=$mtu")
                 if (cont.isActive) cont.resume(gatt)
             }
 
@@ -199,7 +253,6 @@ class BleConnectionManager : BleCallback {
     }
 
     // ── BLE service-data encoding ─────────────────────────────────────────────
-    // Matches the Matter spec §5.4.2.5 BLE advertisement payload.
 
     private fun matterServiceData(discriminator: Int): ByteArray {
         val version = 0

@@ -10,6 +10,7 @@ enum DeviceType {
   // ── Switches ─────────────────────────────────────────────────────────────
   onOffSwitch,
   dimmerSwitch,
+  genericSwitch,
   // ── Smart energy ──────────────────────────────────────────────────────────
   onOffPlugInUnit,
   // ── HVAC ──────────────────────────────────────────────────────────────────
@@ -25,6 +26,8 @@ enum DeviceType {
   lightSensor,
   occupancySensor,
   smokeCOAlarm,
+  // ── Air quality ────────────────────────────────────────────────────────────
+  airQualitySensor,
   // ── Access control ────────────────────────────────────────────────────────
   doorLock,
   windowCovering,
@@ -41,6 +44,7 @@ enum DeviceType {
         extendedColorLight    => 'Color Light',
         onOffSwitch           => 'On/Off Switch',
         dimmerSwitch          => 'Dimmer Switch',
+        genericSwitch         => 'Switch',
         onOffPlugInUnit       => 'Smart Plug',
         thermostat            => 'Thermostat',
         fan                   => 'Fan',
@@ -53,6 +57,7 @@ enum DeviceType {
         lightSensor           => 'Light Sensor',
         occupancySensor       => 'Occupancy Sensor',
         smokeCOAlarm          => 'Smoke/CO Alarm',
+        airQualitySensor      => 'Air Quality Sensor',
         doorLock              => 'Door Lock',
         windowCovering        => 'Window Covering',
         roboticVacuumCleaner  => 'Robotic Vacuum',
@@ -95,7 +100,8 @@ enum DeviceType {
         contactSensor     ||
         lightSensor       ||
         occupancySensor   ||
-        smokeCOAlarm      => true,
+        smokeCOAlarm      ||
+        airQualitySensor  => true,
         _                 => false,
       };
 
@@ -109,6 +115,7 @@ enum DeviceType {
         // Switches
         0x0103 => onOffSwitch,
         0x0104 => dimmerSwitch,
+        0x000F => genericSwitch,
         // Smart energy
         0x010A => onOffPlugInUnit,
         // HVAC
@@ -124,6 +131,8 @@ enum DeviceType {
         0x0106 => lightSensor,
         0x0107 => occupancySensor,
         0x0076 => smokeCOAlarm,
+        0x0073 => airQualitySensor,
+        0x002C => airQualitySensor, // Matter draft ID, used by IKEA ALPSTUGA and others
         // Access control
         0x000A => doorLock,
         0x0202 => windowCovering,
@@ -139,7 +148,8 @@ enum DeviceType {
         colorTemperatureLight ||
         extendedColorLight    => Icons.lightbulb_outline,
         onOffSwitch ||
-        dimmerSwitch          => Icons.toggle_on_outlined,
+        dimmerSwitch ||
+        genericSwitch         => Icons.toggle_on_outlined,
         onOffPlugInUnit       => Icons.power_outlined,
         thermostat            => Icons.thermostat,
         fan                   => Icons.wind_power_outlined,
@@ -152,6 +162,7 @@ enum DeviceType {
         lightSensor           => Icons.light_mode_outlined,
         occupancySensor       => Icons.person_search_outlined,
         smokeCOAlarm          => Icons.emergency_outlined,
+        airQualitySensor      => Icons.air_outlined,
         doorLock              => Icons.lock_outline,
         windowCovering        => Icons.blinds_outlined,
         roboticVacuumCleaner  => Icons.smart_toy_outlined,

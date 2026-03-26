@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'ui/screens/commission_screen.dart';
 import 'ui/screens/device_detail_screen.dart';
 import 'ui/screens/home_screen.dart';
+import 'ui/screens/qr_payload_detail_screen.dart';
 import 'ui/screens/settings_screen.dart';
 
 final appRouter = GoRouter(
@@ -27,6 +28,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       pageBuilder: (_, state) => _slide(state, const SettingsScreen()),
+    ),
+    GoRoute(
+      path: '/qr-detail',
+      pageBuilder: (_, state) {
+        final args = state.extra! as QrPayloadDetailArgs;
+        return _slide(state, QrPayloadDetailScreen(args: args));
+      },
     ),
   ],
 );

@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/matter_device.dart';
 import '../../providers/device_provider.dart';
 import '../../services/matter_channel.dart';
+import '../../services/qr_payload_service.dart';
 import '../../services/thread_settings_service.dart';
+import 'qr_payload_detail_screen.dart';
 import 'qr_scanner_screen.dart';
 
 // ── Commissioning method ──────────────────────────────────────────────────
@@ -23,7 +26,6 @@ class CommissionScreen extends StatefulWidget {
 
 class _CommissionScreenState extends State<CommissionScreen> {
   // ── Form state ────────────────────────────────────────────────────────────
-  final _nameCtrl    = TextEditingController();
   final _threadCtrl  = TextEditingController();
   final _ssidCtrl    = TextEditingController();
   final _passCtrl    = TextEditingController();
@@ -58,11 +60,14 @@ class _CommissionScreenState extends State<CommissionScreen> {
     ThreadSettingsService.load().then((ds) {
       if (mounted) _threadCtrl.text = ds;
     });
+    // Restore the last scanned payload so the user doesn't have to re-scan.
+    QrPayloadService.load().then((saved) {
+      if (saved != null && mounted) _setPayload(saved);
+    });
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
     _threadCtrl.dispose();
     _ssidCtrl.dispose();
     _passCtrl.dispose();
@@ -95,11 +100,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
       return;
     }
 
-    // Auto-fill name if still empty / default.
-    if (_nameCtrl.text.isEmpty) {
-      _nameCtrl.text = result.suggestedName;
-    }
-
     // Auto-select commissioning method from discoveryCapabilities.
     final method = result.prefersBle
         ? _CommissionMethod.ble
@@ -110,6 +110,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _parsing = false;
       _method  = method;
     });
+
+    // Persist so the screen restores after an app restart.
+    await QrPayloadService.save(raw);
   }
 
   // ── QR scan ───────────────────────────────────────────────────────────────
@@ -157,10 +160,28 @@ class _CommissionScreenState extends State<CommissionScreen> {
     return true;
   }
 
+  // ── Name generation ───────────────────────────────────────────────────────
+
+  /// Generates a unique device name from the parsed payload.
+  /// Uses suggestedName (vendor-based) and appends " 2", " 3", … if a device
+  /// with that name already exists in the fabric.
+  String _generateName(List<String> existingNames) {
+    final base = _parsed?.suggestedName ?? 'Matter Device';
+    if (!existingNames.contains(base)) return base;
+    for (int i = 2; i <= 99; i++) {
+      final candidate = '$base $i';
+      if (!existingNames.contains(candidate)) return candidate;
+    }
+    return '$base ${DateTime.now().millisecondsSinceEpoch}';
+  }
+
   // ── Commission ────────────────────────────────────────────────────────────
 
   Future<void> _commission() async {
-    if (!_formKey.currentState!.validate()) return;
+    // When retrying from the log screen the form widget is no longer in the
+    // tree, so currentState is null.  Skip validation in that case — the data
+    // was already validated on the first attempt.
+    if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
     if (_rawPayload == null) return;
 
     if (_method == _CommissionMethod.ble) {
@@ -169,9 +190,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (!mounted) return;
 
     final provider = context.read<DeviceProvider>();
-    final name     = _nameCtrl.text.trim().isEmpty
-        ? (_parsed?.suggestedName ?? 'Matter Device')
-        : _nameCtrl.text.trim();
+    final name     = _generateName(provider.devices.map((d) => d.name).toList());
 
     _log.clear();
     setState(() {
@@ -224,8 +243,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
     if (device != null) {
       setState(() => _commissionDone = true);
+      await QrPayloadService.clear(); // commissioned — don't restore this payload again
       await Future.delayed(const Duration(milliseconds: 700));
-      if (mounted) context.go('/device/${device.id}');
+      if (mounted) context.pushReplacement('/device/${device.id}');
     } else {
       setState(() => _commissionFailed = true);
       _appendLog(provider.errorMessage ?? 'Commissioning failed',
@@ -332,7 +352,13 @@ class _CommissionScreenState extends State<CommissionScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _commission,
+                    onPressed: () {
+                      // Cancel any stale event subscription before retrying so
+                      // we don't get duplicate log lines from a previous attempt.
+                      _eventSub?.cancel();
+                      _eventSub = null;
+                      _commission();
+                    },
                     child: const Text('Retry'),
                   ),
                 ),
@@ -357,30 +383,45 @@ class _CommissionScreenState extends State<CommissionScreen> {
             children: [
 
               // ── Step 1: Scan / Enter code ─────────────────────────────
-              _SectionLabel('Pairing code'),
-              const SizedBox(height: 10),
               _PayloadEntry(
                 onScan:         _scanQr,
                 onCodeEntered:  _setPayload,
                 parsed:         _parsed,
+                rawPayload:     _rawPayload,
                 parsing:        _parsing,
                 parseError:     _parseError,
+                onViewDetails: _rawPayload != null && _parsed != null
+                    ? () => context.push('/qr-detail',
+                          extra: QrPayloadDetailArgs(
+                            rawPayload: _rawPayload!,
+                            parsed:     _parsed!,
+                          ))
+                    : null,
               ),
 
-              // ── Step 2: Parsed device info + editable name ────────────
-              if (_parsed != null) ...[
-                const SizedBox(height: 20),
-                _SectionLabel('Device'),
-                const SizedBox(height: 10),
-                _DeviceInfoTile(
-                  parsed:    _parsed!,
-                  nameCtrl:  _nameCtrl,
-                  method:    _method,
-                  onMethodChanged: (m) => setState(() => _method = m),
+              // ── Method toggle (only when device supports both) ─────────
+              if (_parsed != null &&
+                  _parsed!.hasBle && _parsed!.hasOnNetwork) ...[
+                const SizedBox(height: 16),
+                SegmentedButton<_CommissionMethod>(
+                  segments: const [
+                    ButtonSegment(
+                      value: _CommissionMethod.ble,
+                      icon:  Icon(Icons.bluetooth, size: 16),
+                      label: Text('BLE'),
+                    ),
+                    ButtonSegment(
+                      value: _CommissionMethod.ip,
+                      icon:  Icon(Icons.lan_outlined, size: 16),
+                      label: Text('IP'),
+                    ),
+                  ],
+                  selected: {_method},
+                  onSelectionChanged: (s) => setState(() => _method = s.first),
                 ),
               ],
 
-              // ── Step 3: Network credentials (BLE only) ────────────────
+              // ── Step 2: Network credentials (BLE only) ────────────────
               if (_parsed != null && _method == _CommissionMethod.ble) ...[
                 const SizedBox(height: 20),
                 _SectionLabel('Network'),
@@ -464,15 +505,19 @@ class _PayloadEntry extends StatefulWidget {
   final VoidCallback          onScan;
   final ValueChanged<String>  onCodeEntered;
   final ParsedPayload?        parsed;
+  final String?               rawPayload;
   final bool                  parsing;
   final String?               parseError;
+  final VoidCallback?         onViewDetails;
 
   const _PayloadEntry({
     required this.onScan,
     required this.onCodeEntered,
     required this.parsed,
+    required this.rawPayload,
     required this.parsing,
     required this.parseError,
+    this.onViewDetails,
   });
 
   @override
@@ -489,12 +534,12 @@ class _PayloadEntryState extends State<_PayloadEntry> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final scanned = widget.parsed != null;
-    final scanColor = scanned ? const Color(0xFF34A853) : cs.primary;
+    final scanColor = scanned ? const Color(0xFF34A853) : Colors.white;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Scan button
+        // ── Scan button ──────────────────────────────────────────────────
         OutlinedButton.icon(
           onPressed: widget.onScan,
           icon: widget.parsing
@@ -505,11 +550,52 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           label: Text(scanned ? 'QR scanned ✓' : 'Scan QR code',
               style: TextStyle(color: scanColor)),
           style: OutlinedButton.styleFrom(
-            side: BorderSide(color: scanned ? const Color(0xFF34A853) : cs.outline),
+            side: BorderSide(color: scanned ? const Color(0xFF34A853) : Colors.white54),
           ),
         ),
 
-        // Divider
+        // ── QR thumbnail + details link ──────────────────────────────────
+        if (scanned && widget.rawPayload != null) ...[
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // QR image on white background
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+                child: QrImageView(
+                  data: widget.rawPayload!,
+                  version: QrVersions.auto,
+                  size: 88,
+                  eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.square, color: Colors.black),
+                  dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Colors.black),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Details button
+              if (widget.onViewDetails != null)
+                OutlinedButton.icon(
+                  onPressed: widget.onViewDetails,
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  label: const Text('View details'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+            ],
+          ),
+        ],
+
+        // ── Divider ──────────────────────────────────────────────────────
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 10),
           child: Row(children: [
@@ -522,7 +608,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           ]),
         ),
 
-        // Manual code field
+        // ── Manual code field ────────────────────────────────────────────
         TextField(
           controller: _ctrl,
           decoration: InputDecoration(
@@ -552,119 +638,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
       ],
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Device info tile  (shows VID/PID, suggests name, shows method badge)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DeviceInfoTile extends StatelessWidget {
-  final ParsedPayload              parsed;
-  final TextEditingController      nameCtrl;
-  final _CommissionMethod          method;
-  final ValueChanged<_CommissionMethod> onMethodChanged;
-
-  const _DeviceInfoTile({
-    required this.parsed,
-    required this.nameCtrl,
-    required this.method,
-    required this.onMethodChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final canBle      = parsed.hasBle;
-    final canOnNetwork = parsed.hasOnNetwork;
-
-    return Card(
-      color: cs.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // VID / PID chips
-            Row(children: [
-              _Chip('VID 0x${parsed.vendorId.toRadixString(16).padLeft(4,'0').toUpperCase()}'),
-              const SizedBox(width: 6),
-              _Chip('PID 0x${parsed.productId.toRadixString(16).padLeft(4,'0').toUpperCase()}'),
-              const SizedBox(width: 6),
-              _Chip('disc ${parsed.discriminator}'),
-              const Spacer(),
-              // Method badge
-              if (canBle && canOnNetwork)
-                SegmentedButton<_CommissionMethod>(
-                  segments: const [
-                    ButtonSegment(value: _CommissionMethod.ble,  label: Text('BLE')),
-                    ButtonSegment(value: _CommissionMethod.ip,   label: Text('IP')),
-                  ],
-                  selected: {method},
-                  onSelectionChanged: (s) => onMethodChanged(s.first),
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                )
-              else
-                _MethodBadge(canBle ? 'BLE' : 'IP'),
-            ]),
-
-            const SizedBox(height: 14),
-
-            // Editable device name
-            TextFormField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Device name',
-                prefixIcon: Icon(Icons.label_outline),
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
-              textInputAction: TextInputAction.done,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  const _Chip(this.label);
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Text(label,
-        style: TextStyle(
-          fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.onSecondaryContainer,
-        )),
-  );
-}
-
-class _MethodBadge extends StatelessWidget {
-  final String label;
-  const _MethodBadge(this.label);
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(label,
-        style: TextStyle(
-          fontSize: 11, fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        )),
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

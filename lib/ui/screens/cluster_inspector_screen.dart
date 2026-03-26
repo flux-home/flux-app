@@ -8,8 +8,74 @@ import '../../models/matter_device.dart';
 import '../../services/matter_channel.dart';
 
 // ---------------------------------------------------------------------------
-// Well-known cluster / attribute names
+// Well-known Matter device type names (spec §7 + Node types §2)
 // ---------------------------------------------------------------------------
+
+const _kDeviceTypeNames = <int, String>{
+  // ── Node / infrastructure ───────────────────────────────────────────────
+  0x0011: 'Root Node',
+  0x0016: 'Secondary Network Interface',
+  0x0014: 'OTA Provider',
+  0x0012: 'OTA Requestor',
+  0x0013: 'Bridged Node',
+  0x000E: 'Aggregator',
+  // ── Lighting ─────────────────────────────────────────────────────────────
+  0x0100: 'On/Off Light',
+  0x0101: 'Dimmable Light',
+  0x010C: 'Color Temp. Light',
+  0x010D: 'Extended Color Light',
+  0x0109: 'Light Sensor',           // reuse (also in sensors below)
+  // ── Switches ─────────────────────────────────────────────────────────────
+  0x0103: 'On/Off Switch',
+  0x0104: 'Dimmer Switch',
+  0x0105: 'Color Dimmer Switch',
+  0x000F: 'Generic Switch',
+  // ── Plugs / outlets ──────────────────────────────────────────────────────
+  0x010A: 'On/Off Plug-in Unit',
+  0x010B: 'Dimmable Plug-in Unit',
+  // ── HVAC ─────────────────────────────────────────────────────────────────
+  0x0301: 'Thermostat',
+  0x002B: 'Fan',
+  0x002D: 'Air Purifier',
+  0x0072: 'Air Purifier (alt)',
+  0x0073: 'Air Quality Sensor',
+  0x0071: 'HEPA Filter Monitoring',
+  // ── Sensors ───────────────────────────────────────────────────────────────
+  0x0302: 'Temperature Sensor',
+  0x0307: 'Humidity Sensor',
+  0x0305: 'Pressure Sensor',
+  0x0306: 'Flow Sensor',
+  0x0015: 'Contact Sensor',
+  0x0106: 'Light Sensor',
+  0x0107: 'Occupancy Sensor',
+  0x0076: 'Smoke / CO Alarm',
+  0x002C: 'Air Quality Sensor',
+  0x002E: 'Water Freeze Detector',
+  0x0041: 'Water Leak Detector',
+  // ── Access control ────────────────────────────────────────────────────────
+  0x000A: 'Door Lock',
+  0x000B: 'Door Lock Controller',
+  0x0202: 'Window Covering',
+  0x0203: 'Window Covering Controller',
+  // ── Energy ───────────────────────────────────────────────────────────────
+  0x050C: 'EVSE',
+  0x0050: 'Heat Pump',
+  0x0510: 'Solar Power',
+  0x0511: 'Battery Storage',
+  // ── AV / Media ────────────────────────────────────────────────────────────
+  0x0022: 'Speaker',
+  0x0023: 'Cast Video Player',
+  0x002A: 'Basic Video Player',
+  0x0028: 'Video Remote Control',
+  0x0035: 'Casting Video Client',
+  0x0024: 'Content App',
+  // ── Robotic ───────────────────────────────────────────────────────────────
+  0x0074: 'Robotic Vacuum',
+};
+
+String _deviceTypeName(int id) =>
+    _kDeviceTypeNames[id] ??
+    '0x${id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
 const _kClusterNames = <int, String>{
   0x0003: 'Identify',
@@ -120,7 +186,7 @@ class ClusterInspectorScreen extends StatefulWidget {
 }
 
 class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
-  late Future<List<_ClusterData>> _future;
+  late Future<List<Object>> _future;
 
   @override
   void initState() {
@@ -128,14 +194,15 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
     _future = _load();
   }
 
-  Future<List<_ClusterData>> _load() async {
+  Future<List<Object>> _load() async {
     final channel = context.read<MatterChannel>();
     final jsonStr = await channel.readClusters(widget.device.nodeId);
     if (jsonStr == null || jsonStr == '[]') return [];
 
     final raw = json.decode(jsonStr) as List<dynamic>;
-    // Group by endpoint first, then by cluster ID
-    final Map<int, Map<int, List<_AttrData>>> byEpCluster = {};
+
+    // Group by endpoint → clusterId
+    final Map<int, Map<int, _ClusterData>> byEpCluster = {};
     for (final entry in raw) {
       final ep  = (entry['endpoint'] as num).toInt();
       final cid = (entry['clusterId'] as num).toInt();
@@ -145,24 +212,42 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
                 value: a['value']?.toString() ?? 'null',
               ))
           .toList();
-      byEpCluster.putIfAbsent(ep, () => {})[cid] = attrs;
+      // Parse device types from the Descriptor cluster entry
+      List<int>? deviceTypeIds;
+      if (cid == 0x001D && entry['deviceTypes'] != null) {
+        deviceTypeIds = (entry['deviceTypes'] as List<dynamic>)
+            .map((e) => (e as num).toInt())
+            .toList();
+      }
+      byEpCluster.putIfAbsent(ep, () => {})[cid] = _ClusterData(
+        endpoint:      ep,
+        clusterId:     cid,
+        attributes:    attrs,
+        deviceTypeIds: deviceTypeIds,
+      );
     }
 
-    // Flatten into a sorted list of _ClusterData
-    final result = <_ClusterData>[];
+    // Build device-type map per endpoint (from Descriptor cluster)
+    final Map<int, List<int>> epDeviceTypes = {
+      for (final ep in byEpCluster.keys)
+        ep: byEpCluster[ep]![0x001D]?.deviceTypeIds ?? [],
+    };
+
+    // Flatten into mixed list: _EndpointHeader + _ClusterData, sorted
+    final items = <Object>[];
     final sortedEps = byEpCluster.keys.toList()..sort();
     for (final ep in sortedEps) {
-      final clusters = byEpCluster[ep]!;
+      items.add(_EndpointHeader(
+        endpoint:      ep,
+        deviceTypeIds: epDeviceTypes[ep] ?? [],
+      ));
+      final clusters    = byEpCluster[ep]!;
       final sortedClusters = clusters.keys.toList()..sort();
       for (final cid in sortedClusters) {
-        result.add(_ClusterData(
-          endpoint: ep,
-          clusterId: cid,
-          attributes: clusters[cid]!,
-        ));
+        items.add(clusters[cid]!);
       }
     }
-    return result;
+    return items;
   }
 
   @override
@@ -192,7 +277,7 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<_ClusterData>>(
+      body: FutureBuilder<List<Object>>(
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
@@ -210,15 +295,24 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
           if (snap.hasError) {
             return Center(child: Text('Error: ${snap.error}'));
           }
-          final clusters = snap.data ?? [];
-          if (clusters.isEmpty) {
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
             return const Center(child: Text('No cluster data returned'));
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: clusters.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) => _ClusterCard(data: clusters[i]),
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            itemCount: items.length,
+            itemBuilder: (ctx, i) {
+              final item = items[i];
+              if (item is _EndpointHeader) {
+                return _EndpointHeaderTile(header: item);
+              } else {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ClusterCard(data: item as _ClusterData),
+                );
+              }
+            },
           );
         },
       ),
@@ -240,10 +334,15 @@ class _ClusterData {
   final int endpoint;
   final int clusterId;
   final List<_AttrData> attributes;
-  const _ClusterData(
-      {required this.endpoint,
-      required this.clusterId,
-      required this.attributes});
+  /// Non-null only for the Descriptor cluster (0x001D) — the parsed device type IDs.
+  final List<int>? deviceTypeIds;
+
+  const _ClusterData({
+    required this.endpoint,
+    required this.clusterId,
+    required this.attributes,
+    this.deviceTypeIds,
+  });
 
   String get clusterName =>
       _kClusterNames[clusterId] ??
@@ -259,6 +358,105 @@ class _ClusterData {
     }
     if (_kGlobalAttrs.containsKey(attrId)) return _kGlobalAttrs[attrId]!;
     return '0x${attrId.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+  }
+}
+
+/// A synthetic list item that introduces a new endpoint section.
+class _EndpointHeader {
+  final int endpoint;
+  final List<int> deviceTypeIds;
+  const _EndpointHeader({required this.endpoint, required this.deviceTypeIds});
+}
+
+// ---------------------------------------------------------------------------
+// Endpoint section header
+// ---------------------------------------------------------------------------
+
+class _EndpointHeaderTile extends StatelessWidget {
+  final _EndpointHeader header;
+  const _EndpointHeaderTile({required this.header});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── "ENDPOINT N" label ──────────────────────────────────────────
+          Row(
+            children: [
+              Text(
+                'ENDPOINT ${header.endpoint}',
+                style: tt.labelSmall?.copyWith(
+                  color: cs.primary,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Divider(color: cs.outlineVariant, thickness: 1)),
+            ],
+          ),
+
+          // ── Device type chips ───────────────────────────────────────────
+          if (header.deviceTypeIds.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: header.deviceTypeIds.map((id) {
+                final name = _deviceTypeName(id);
+                final hexId = '0x${id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+                // Use a more prominent colour for application types, muted for infra types
+                final isInfra = const {0x0011, 0x0016, 0x0014, 0x0012, 0x0013, 0x000E}
+                    .contains(id);
+                final bg = isInfra
+                    ? cs.surfaceContainerHighest
+                    : cs.primaryContainer;
+                final fg = isInfra
+                    ? cs.onSurfaceVariant
+                    : cs.onPrimaryContainer;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isInfra ? cs.outlineVariant : cs.primary.withAlpha(60),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: tt.labelSmall?.copyWith(
+                          color: fg,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        hexId,
+                        style: tt.labelSmall?.copyWith(
+                          color: fg.withAlpha(150),
+                          fontFamily: 'monospace',
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

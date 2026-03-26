@@ -48,7 +48,14 @@ class ICDDeviceInfo
 
 class ICDRegistrationInfo private constructor() {
     companion object {
-        @JvmStatic fun createForDeferredConfiguration(): ICDRegistrationInfo? = throw ChipSdkStubException()
+        @JvmStatic fun newBuilder(): Builder = throw ChipSdkStubException()
+    }
+    class Builder {
+        fun setSymmetricKey(key: ByteArray): Builder    = throw ChipSdkStubException()
+        fun setCheckInNodeId(nodeId: Long): Builder     = throw ChipSdkStubException()
+        fun setMonitoredSubject(subject: Long): Builder = throw ChipSdkStubException()
+        fun setClientType(type: Int?): Builder          = throw ChipSdkStubException()
+        fun build(): ICDRegistrationInfo                = throw ChipSdkStubException()
     }
 }
 

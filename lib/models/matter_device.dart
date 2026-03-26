@@ -17,6 +17,8 @@ class MatterDevice {
   /// Cached thermostat local temperature in centidegrees (0.01 °C). Null if
   /// not a thermostat or not yet read.
   final int? localTempCenti;
+  /// Product name from BasicInformation cluster (cached across sessions).
+  final String? productName;
 
   const MatterDevice({
     required this.id,
@@ -30,6 +32,7 @@ class MatterDevice {
     this.sharedWithGoogleHome = false,
     required this.commissionedAt,
     this.localTempCenti,
+    this.productName,
   });
 
   MatterDevice copyWith({
@@ -45,6 +48,8 @@ class MatterDevice {
     DateTime? commissionedAt,
     int? localTempCenti,
     bool clearLocalTemp = false,
+    String? productName,
+    bool clearProductName = false,
   }) {
     return MatterDevice(
       id: id ?? this.id,
@@ -58,6 +63,7 @@ class MatterDevice {
       sharedWithGoogleHome: sharedWithGoogleHome ?? this.sharedWithGoogleHome,
       commissionedAt: commissionedAt ?? this.commissionedAt,
       localTempCenti: clearLocalTemp ? null : (localTempCenti ?? this.localTempCenti),
+      productName: clearProductName ? null : (productName ?? this.productName),
     );
   }
 
@@ -73,6 +79,7 @@ class MatterDevice {
         'sharedWithGoogleHome': sharedWithGoogleHome,
         'commissionedAt': commissionedAt.toIso8601String(),
         if (localTempCenti != null) 'localTempCenti': localTempCenti,
+        if (productName    != null) 'productName':    productName,
       };
 
   factory MatterDevice.fromJson(Map<String, dynamic> json) {
@@ -91,6 +98,7 @@ class MatterDevice {
       sharedWithGoogleHome: json['sharedWithGoogleHome'] as bool? ?? false,
       commissionedAt: DateTime.parse(json['commissionedAt'] as String),
       localTempCenti: json['localTempCenti'] as int?,
+      productName:    json['productName']    as String?,
     );
   }
 

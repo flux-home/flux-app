@@ -47,6 +47,10 @@ class ChipDeviceController(params: ControllerParams) {
         ignoreAttestationFailure: Boolean,
     ): Unit = throw ChipSdkStubException()
 
+    fun updateCommissioningICDRegistrationInfo(
+        info: ICDRegistrationInfo?,
+    ): Unit = throw ChipSdkStubException()
+
     fun pairDeviceThroughBLE(
         gatt: android.bluetooth.BluetoothGatt?,
         connId: Int,
@@ -109,6 +113,8 @@ class ChipDeviceController(params: ControllerParams) {
     ): Unit = throw ChipSdkStubException()
 
     fun unpairDevice(nodeId: Long): Unit = throw ChipSdkStubException()
+
+    fun onNotifyChipConnectionClosed(connId: Int): Unit = throw ChipSdkStubException()
 
     fun close(): Unit = throw ChipSdkStubException()
 }

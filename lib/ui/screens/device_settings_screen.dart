@@ -4,11 +4,32 @@ import 'package:provider/provider.dart';
 
 import '../../models/matter_device.dart';
 import '../../providers/device_provider.dart';
+import '../../services/matter_channel.dart';
 import 'cluster_inspector_screen.dart';
+import 'thread_diag_screen.dart';
 
-class DeviceSettingsScreen extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Main settings screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class DeviceSettingsScreen extends StatefulWidget {
   final MatterDevice device;
   const DeviceSettingsScreen({super.key, required this.device});
+
+  @override
+  State<DeviceSettingsScreen> createState() => _DeviceSettingsScreenState();
+}
+
+class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
+  bool _identifying = false;
+
+  Future<void> _identify(MatterDevice d) async {
+    if (_identifying) return;
+    setState(() => _identifying = true);
+    await context.read<MatterChannel>().identify(d.nodeId);
+    await Future.delayed(const Duration(seconds: 15));
+    if (mounted) setState(() => _identifying = false);
+  }
 
   Future<void> _remove(BuildContext context, MatterDevice d) async {
     final confirmed = await showDialog<bool>(
@@ -41,7 +62,7 @@ class DeviceSettingsScreen extends StatelessWidget {
   }
 
   Future<void> _rename(BuildContext context) async {
-    final ctrl = TextEditingController(text: device.name);
+    final ctrl = TextEditingController(text: widget.device.name);
     final newName = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -65,8 +86,7 @@ class DeviceSettingsScreen extends StatelessWidget {
       ),
     );
     if (newName != null && newName.isNotEmpty && context.mounted) {
-      await context.read<DeviceProvider>().renameDevice(device.id, newName);
-      // Refresh the title after rename
+      await context.read<DeviceProvider>().renameDevice(widget.device.id, newName);
       if (context.mounted) Navigator.pop(context);
     }
   }
@@ -77,8 +97,7 @@ class DeviceSettingsScreen extends StatelessWidget {
 
     return Consumer<DeviceProvider>(
       builder: (context, provider, _) {
-        // Use fresh copy in case name was just updated
-        final d = provider.findById(device.id) ?? device;
+        final d = provider.findById(widget.device.id) ?? widget.device;
 
         return Scaffold(
           appBar: AppBar(
@@ -88,44 +107,33 @@ class DeviceSettingsScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ── Rename ──────────────────────────────────────────────────
-              _SectionLabel('Name'),
+              // ── Identify ────────────────────────────────────────────────
+              _SectionLabel('Identify'),
               Card(
                 color: cs.surface,
                 child: ListTile(
-                  leading: Icon(Icons.label_outline, color: cs.primary),
-                  title: Text(d.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Tap to rename'),
-                  trailing: const Icon(Icons.edit_outlined, size: 18),
-                  onTap: () => _rename(context),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ── Device info ──────────────────────────────────────────────
-              _SectionLabel('Device info'),
-              Card(
-                color: cs.surface,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
-                  child: Column(
-                    children: [
-                      _InfoRow(label: 'Type',
-                          value: d.deviceType.displayName),
-                      _InfoRow(
-                        label: 'Node ID',
-                        value: '0x${d.nodeId.toRadixString(16).padLeft(16, '0').toUpperCase()}',
-                        mono: true,
-                      ),
-                      _InfoRow(
-                        label: 'Commissioned',
-                        value: _formatDate(d.commissionedAt),
-                      ),
-                    ],
+                  leading: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _identifying
+                        ? SizedBox(
+                            key: const ValueKey('spinner'),
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2.5, color: cs.primary),
+                          )
+                        : Icon(Icons.lightbulb_outline,
+                            key: const ValueKey('icon'), color: cs.primary),
                   ),
+                  title: Text(
+                    _identifying ? 'Identifying…' : 'Identify device',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(_identifying
+                      ? 'Device is blinking for 15 s'
+                      : 'Makes the device blink / beep'),
+                  trailing: _identifying ? null : const Icon(Icons.chevron_right),
+                  onTap: _identifying ? null : () => _identify(d),
                 ),
               ),
 
@@ -138,22 +146,37 @@ class DeviceSettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: Icon(Icons.refresh, color: cs.primary),
-                      title: const Text('Refresh state'),
+                      leading: Icon(Icons.info_outline, color: cs.primary),
+                      title: const Text('Device info'),
+                      subtitle: const Text('Type, node ID, commissioned date'),
                       trailing: const Icon(Icons.chevron_right),
                       shape: const RoundedRectangleBorder(
                         borderRadius:
                             BorderRadius.vertical(top: Radius.circular(16)),
                       ),
-                      onTap: () {
-                        provider.refreshDevice(d.id);
-                        Navigator.pop(context);
-                      },
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DeviceInfoScreen(device: d),
+                        ),
+                      ),
                     ),
-                    Divider(
-                        height: 1,
-                        indent: 16,
-                        endIndent: 16,
+                    Divider(height: 1, indent: 16, endIndent: 16,
+                        color: cs.outlineVariant),
+                    ListTile(
+                      leading: Icon(Icons.hub_outlined, color: cs.primary),
+                      title: const Text('Thread diagnostics'),
+                      subtitle: const Text(
+                          'Channel, role, neighbours, routing table'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ThreadDiagScreen(device: d),
+                        ),
+                      ),
+                    ),
+                    Divider(height: 1, indent: 16, endIndent: 16,
                         color: cs.outlineVariant),
                     ListTile(
                       leading: Icon(Icons.manage_search, color: cs.primary),
@@ -178,7 +201,7 @@ class DeviceSettingsScreen extends StatelessWidget {
 
               const SizedBox(height: 32),
 
-              // ── Remove device ─────────────────────────────────────────
+              // ── Remove device ─────────────────────────────────────────────
               OutlinedButton.icon(
                 onPressed: () => _remove(context, d),
                 icon: const Icon(Icons.delete_outline),
@@ -200,6 +223,83 @@ class DeviceSettingsScreen extends StatelessWidget {
       },
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device info sub-screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class DeviceInfoScreen extends StatelessWidget {
+  final MatterDevice device;
+  const DeviceInfoScreen({super.key, required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs   = Theme.of(context).colorScheme;
+    final live = context.watch<DeviceProvider>().liveDataFor(device.id);
+
+    // Helper: only show a row if the value is non-null and non-empty.
+    List<Widget> rows = [];
+    void add(String label, String? value, {bool mono = false, bool link = false}) {
+      if (value == null || value.isEmpty) return;
+      rows.add(_InfoRow(label: label, value: value, mono: mono, link: link));
+    }
+
+    // ── Identity ───────────────────────────────────────────────────────
+    add('Product',    device.productName ?? live?.productName);
+    add('Vendor',     live?.vendorName);
+    add('Vendor ID',  live?.vendorId,  mono: true);
+    add('Product ID', live?.productId, mono: true);
+    add('Part no.',   live?.partNumber);
+
+    // ── Versions ───────────────────────────────────────────────────────
+    add('Hardware',   live?.hwVersion);
+    add('Firmware',   live?.softwareVersion);
+
+    // ── Manufacturing ──────────────────────────────────────────────────
+    add('Mfg. date',  live?.manufacturingDate);
+
+    // ── Device type / node ─────────────────────────────────────────────
+    add('Type',       device.deviceType.displayName);
+    add('Node ID',
+        '0x${device.nodeId.toRadixString(16).padLeft(16, '0').toUpperCase()}',
+        mono: true);
+    add('Commissioned', _formatDate(device.commissionedAt));
+
+    // ── Identifiers ────────────────────────────────────────────────────
+    add('Serial no.', live?.serialNumber, mono: true);
+    add('Unique ID',  live?.uniqueId,     mono: true);
+
+    // ── Links ──────────────────────────────────────────────────────────
+    add('Product URL', live?.productUrl, link: true);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Device info',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            color: cs.surface,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: rows.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Text('Loading…',
+                            style: TextStyle(color: Colors.white54)),
+                      ),
+                    )
+                  : Column(children: rows),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _formatDate(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
@@ -207,6 +307,10 @@ class DeviceSettingsScreen extends StatelessWidget {
       '${dt.hour.toString().padLeft(2, '0')}:'
       '${dt.minute.toString().padLeft(2, '0')}';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared widgets
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -230,12 +334,14 @@ class _SectionLabel extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
-  final bool mono;
-  const _InfoRow(
-      {required this.label, required this.value, this.mono = false});
+  final bool   mono;
+  final bool   link;
+  const _InfoRow({required this.label, required this.value,
+      this.mono = false, this.link = false});
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -245,7 +351,7 @@ class _InfoRow extends StatelessWidget {
             width: 130,
             child: Text(label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: cs.onSurfaceVariant,
                     )),
           ),
           Expanded(
@@ -254,6 +360,8 @@ class _InfoRow extends StatelessWidget {
                   fontSize: 13,
                   fontFamily: mono ? 'monospace' : null,
                   fontWeight: FontWeight.w500,
+                  color: link ? cs.primary : null,
+                  decoration: link ? TextDecoration.underline : null,
                 )),
           ),
         ],

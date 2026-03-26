@@ -12,9 +12,10 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     companion object {
-        private const val TAG            = "MainActivity"
-        private const val METHOD_CHANNEL = "com.example.matter_home/matter"
-        private const val EVENT_CHANNEL  = "com.example.matter_home/commission_events"
+        private const val TAG             = "MainActivity"
+        private const val METHOD_CHANNEL  = "com.example.matter_home/matter"
+        private const val EVENT_CHANNEL   = "com.example.matter_home/commission_events"
+        private const val DEVICE_CHANNEL  = "com.example.matter_home/device_state"
     }
 
     private val bridge by lazy { MatterBridge(applicationContext) }
@@ -33,6 +34,17 @@ class MainActivity : FlutterActivity() {
                 }
                 override fun onCancel(arguments: Any?) {
                     bridge.setEventSink(null)
+                }
+            })
+
+        // ── EventChannel: live device state (subscriptions) ───────────────────
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    bridge.setDeviceStateSink(events)
+                }
+                override fun onCancel(arguments: Any?) {
+                    bridge.setDeviceStateSink(null)
                 }
             })
 
@@ -108,6 +120,16 @@ class MainActivity : FlutterActivity() {
                         bridge.readHumidity(nodeId, result)
                     }
 
+                    "readBattery" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.readBattery(nodeId, result)
+                    }
+
+                    "readThreadNetworkDiagnostics" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.readThreadNetworkDiagnostics(nodeId, result)
+                    }
+
                     "readClusters" -> {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
                         bridge.readClusters(nodeId, result)
@@ -116,6 +138,11 @@ class MainActivity : FlutterActivity() {
                     "readDeviceType" -> {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
                         bridge.readDeviceType(nodeId, result)
+                    }
+
+                    "identify" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.identify(nodeId, result)
                     }
 
                     "shareDevice" -> {
@@ -128,10 +155,22 @@ class MainActivity : FlutterActivity() {
                         bridge.removeDevice(nodeId, result)
                     }
 
+                    "startSubscription" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.startSubscription(nodeId, result)
+                    }
+
+                    "stopSubscription" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.stopSubscription(nodeId, result)
+                    }
+
                     "readAndroidThreadCredentials" ->
                         AndroidThreadCredentialReader.requestPreferredCredentials(this, result)
 
                     "discoverThreadNetworks" -> bridge.discoverThreadNetworks(result)
+
+                    "runNetworkDiagnostics" -> bridge.runNetworkDiagnostics(result)
 
                     "parsePayload" -> {
                         val payload = call.argument<String>("payload") ?: ""

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/device_provider.dart';
 import '../../services/matter_channel.dart';
 import '../../services/thread_settings_service.dart';
+import 'network_check_screen.dart';
 // ---------------------------------------------------------------------------
 // Main settings screen
 // ---------------------------------------------------------------------------
@@ -52,6 +53,22 @@ class SettingsScreen extends StatelessWidget {
                   title: const Text('Thread'),
                   subtitle: const Text('Operational dataset'),
                   trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ThreadSettingsScreen()),
+                  ),
+                ),
+                Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: cs.outlineVariant),
+                ListTile(
+                  leading: Icon(Icons.network_check_outlined, color: cs.primary),
+                  title: const Text('Network Check'),
+                  subtitle: const Text('Diagnose IPv6 & Thread commissioning'),
+                  trailing: const Icon(Icons.chevron_right),
                   shape: const RoundedRectangleBorder(
                     borderRadius:
                         BorderRadius.vertical(bottom: Radius.circular(16)),
@@ -59,7 +76,7 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const ThreadSettingsScreen()),
+                        builder: (_) => const NetworkCheckScreen()),
                   ),
                 ),
               ],

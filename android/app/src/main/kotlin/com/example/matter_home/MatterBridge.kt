@@ -7,6 +7,7 @@ import android.util.Log
 import com.example.matter_home.chip.ChipClient
 import com.example.matter_home.chip.ClusterClient
 import com.example.matter_home.chip.MatterCommissioner
+import com.example.matter_home.chip.NetworkDiagnosticsRunner
 import com.example.matter_home.chip.SetupPayloadHelper
 import com.example.matter_home.chip.AndroidThreadCredentialReader
 import com.example.matter_home.chip.ThreadBorderRouterScanner
@@ -26,14 +27,24 @@ class MatterBridge(private val context: Context) {
     private val main  = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // ── EventChannel sink (set by MainActivity) ───────────────────────────────
-    @Volatile private var eventSink: EventChannel.EventSink? = null
+    // ── EventChannel sinks ────────────────────────────────────────────────────
+    @Volatile private var commissionEventSink: EventChannel.EventSink? = null
+    @Volatile private var deviceStateSink:     EventChannel.EventSink? = null
 
-    fun setEventSink(sink: EventChannel.EventSink?) { eventSink = sink }
+    fun setEventSink(sink: EventChannel.EventSink?)       { commissionEventSink = sink }
+    fun setDeviceStateSink(sink: EventChannel.EventSink?) { deviceStateSink = sink }
 
     fun emitEvent(msg: String) {
-        main.post { eventSink?.success(msg) }
+        main.post { commissionEventSink?.success(msg) }
     }
+
+    private fun emitDeviceState(payload: Map<String, Any?>) {
+        main.post { deviceStateSink?.success(payload) }
+    }
+
+    // ── Subscription management ───────────────────────────────────────────────
+    /** Node IDs for which we should suppress further events (stopped/removed). */
+    private val cancelledNodeIds = mutableSetOf<Long>()
 
     // ── Guard: require real CHIP SDK ──────────────────────────────────────────
     private fun requireChip(result: MethodChannel.Result, block: suspend () -> Unit) {
@@ -51,6 +62,46 @@ class MatterBridge(private val context: Context) {
                 main.post { result.error("CHIP_ERROR", e.message, null) }
             }
         }
+    }
+
+    // ── Subscription start / stop ─────────────────────────────────────────────
+
+    fun startSubscription(nodeId: Long, result: MethodChannel.Result) = requireChip(result) {
+        cancelledNodeIds.remove(nodeId)
+        ClusterClient.subscribeDeviceState(
+            context = context,
+            nodeId  = nodeId,
+            onUpdate = { nid, attrs ->
+                if (nid !in cancelledNodeIds) {
+                    val payload = mutableMapOf<String, Any?>(
+                        "nodeId" to nid.toInt(),
+                        "type"   to "update",
+                    )
+                    payload.putAll(attrs)
+                    emitDeviceState(payload)
+                }
+            },
+            onEstablished = { nid ->
+                if (nid !in cancelledNodeIds)
+                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "established"))
+            },
+            onResubscribing = { nid, nextMs ->
+                if (nid !in cancelledNodeIds)
+                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "resubscribing",
+                                         "nextMs" to nextMs))
+            },
+            onError = { nid, err ->
+                if (nid !in cancelledNodeIds)
+                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "error",
+                                         "message" to (err.message ?: "unknown")))
+            },
+        )
+        main.post { result.success(true) }
+    }
+
+    fun stopSubscription(nodeId: Long, result: MethodChannel.Result) {
+        cancelledNodeIds.add(nodeId)
+        result.success(true)
     }
 
     // ── ping ──────────────────────────────────────────────────────────────────
@@ -201,6 +252,99 @@ class MatterBridge(private val context: Context) {
 
     private fun jsonStr(s: String) = "\"${s.replace("\\","\\\\").replace("\"","\\\"")}\""
 
+    // ── Network diagnostics ───────────────────────────────────────────────────
+
+    fun runNetworkDiagnostics(result: MethodChannel.Result) {
+        scope.launch {
+            try {
+                val report = NetworkDiagnosticsRunner.run(context)
+                val json   = buildDiagnosticsJson(report)
+                main.post { result.success(json) }
+            } catch (e: Exception) {
+                Log.e(TAG, "runNetworkDiagnostics error", e)
+                main.post { result.error("DIAGNOSTICS_ERROR", e.message, null) }
+            }
+        }
+    }
+
+    private fun buildDiagnosticsJson(r: NetworkDiagnosticsRunner.DiagnosticsReport): String {
+        val sb = StringBuilder()
+        sb.append("{")
+
+        // phoneIpv6
+        sb.append("\"phoneIpv6\":{")
+        sb.append("\"hasRoutableIpv6\":${r.phoneIpv6.hasRoutableIpv6},")
+        sb.append("\"guaAddresses\":${jsonStrArray(r.phoneIpv6.guaAddresses)},")
+        sb.append("\"ulaAddresses\":${jsonStrArray(r.phoneIpv6.ulaAddresses)},")
+        sb.append("\"linkLocalAddresses\":${jsonStrArray(r.phoneIpv6.linkLocalAddresses)}")
+        sb.append("},")
+
+        // multicastLockAcquired
+        sb.append("\"multicastLockAcquired\":${r.multicastLockAcquired},")
+
+        // wifi
+        sb.append("\"wifi\":{")
+        sb.append("\"frequencyMhz\":${r.wifi.frequencyMhz},")
+        sb.append("\"band\":${jsonStr(r.wifi.band)},")
+        sb.append("\"ssid\":${jsonStr(r.wifi.ssid)},")
+        sb.append("\"hasBandSuffix\":${r.wifi.hasBandSuffix}")
+        sb.append("},")
+
+        // vpn
+        sb.append("\"vpn\":{")
+        sb.append("\"isActive\":${r.vpn.isActive}")
+        sb.append("},")
+
+        // borderRouters
+        sb.append("\"borderRouters\":[")
+        r.borderRouters.forEachIndexed { i, br ->
+            if (i > 0) sb.append(",")
+            sb.append("{")
+            sb.append("\"serviceName\":${jsonStr(br.serviceName)},")
+            sb.append("\"networkName\":${jsonStr(br.networkName)},")
+            sb.append("\"extPanId\":${jsonStr(br.extPanId)},")
+            sb.append("\"vendorName\":${jsonStr(br.vendorName)},")
+            sb.append("\"modelName\":${jsonStr(br.modelName)},")
+            sb.append("\"port\":${br.port},")
+            sb.append("\"hostsV4\":${jsonStrArray(br.hostsV4)},")
+            sb.append("\"hostsV6LinkLocal\":${jsonStrArray(br.hostsV6LinkLocal)},")
+            sb.append("\"hostsV6Ula\":${jsonStrArray(br.hostsV6Ula)},")
+            sb.append("\"hostsV6Gua\":${jsonStrArray(br.hostsV6Gua)},")
+            sb.append("\"tcpReachable\":${br.tcpReachable?.toString() ?: "null"},")
+            sb.append("\"sameSubnetAsPhone\":${br.sameSubnetAsPhone?.toString() ?: "null"},")
+            sb.append("\"ipv6PrefixMatchesPhone\":${br.ipv6PrefixMatchesPhone?.toString() ?: "null"},")
+            if (br.stateBitmap != null) {
+                val bm = br.stateBitmap
+                sb.append("\"stateBitmap\":{")
+                sb.append("\"raw\":${bm.raw},")
+                sb.append("\"connectionMode\":${bm.connectionMode},")
+                sb.append("\"connectionModeLabel\":${jsonStr(bm.connectionModeLabel)},")
+                sb.append("\"threadInterfaceStatus\":${bm.threadInterfaceStatus},")
+                sb.append("\"threadInterfaceLabel\":${jsonStr(bm.threadInterfaceLabel)},")
+                sb.append("\"threadInterfaceActive\":${bm.threadInterfaceActive},")
+                sb.append("\"availability\":${bm.availability},")
+                sb.append("\"bbrActive\":${bm.bbrActive},")
+                sb.append("\"bbrIsPrimary\":${bm.bbrIsPrimary}")
+                sb.append("}")
+            } else {
+                sb.append("\"stateBitmap\":null")
+            }
+            sb.append("}")
+        }
+        sb.append("],")
+
+        // matterTcpServices
+        sb.append("\"matterTcpServices\":${jsonStrArray(r.matterTcpServices)}")
+
+        sb.append("}")
+        return sb.toString()
+    }
+
+    private fun jsonStrArray(list: List<String>): String {
+        val items = list.joinToString(",") { jsonStr(it) }
+        return "[$items]"
+    }
+
     // ── Parse setup payload (for UI pre-fill) ────────────────────────────────
 
     fun parsePayload(payload: String, result: MethodChannel.Result) {
@@ -212,11 +356,12 @@ class MatterBridge(private val context: Context) {
             val parsed = SetupPayloadHelper.parse(payload)
             val caps = parsed.discoveryCapabilities.map { it.name }
             result.success(mapOf(
-                "vendorId"             to parsed.vendorId,
-                "productId"            to parsed.productId,
-                "discriminator"        to parsed.discriminator,
+                "vendorId"              to parsed.vendorId,
+                "productId"             to parsed.productId,
+                "discriminator"         to parsed.discriminator,
                 "hasShortDiscriminator" to parsed.hasShortDiscriminator,
-                "discoveryCapabilities" to caps,   // e.g. ["BLE"], ["ON_NETWORK"], ["BLE","ON_NETWORK"]
+                "setupPinCode"          to parsed.setupPinCode.toInt(),
+                "discoveryCapabilities" to caps,
             ))
         } catch (e: Exception) {
             result.error("PARSE_ERROR", e.message, null)
@@ -231,11 +376,20 @@ class MatterBridge(private val context: Context) {
 
     fun readBasicInfo(nodeId: Long, result: MethodChannel.Result) =
         requireChip(result) {
-            val (serial, swVer) = ClusterClient.readBasicInfo(context, nodeId)
+            val info = ClusterClient.readBasicInfo(context, nodeId)
             main.post {
                 result.success(mapOf(
-                    "serialNumber"    to (serial  ?: ""),
-                    "softwareVersion" to (swVer   ?: ""),
+                    "productName"      to (info.productName      ?: ""),
+                    "vendorName"       to (info.vendorName       ?: ""),
+                    "vendorId"         to (info.vendorId         ?: ""),
+                    "productId"        to (info.productId        ?: ""),
+                    "hwVersion"        to (info.hwVersion        ?: ""),
+                    "softwareVersion"  to (info.swVersion        ?: ""),
+                    "manufacturingDate" to (info.manufacturingDate ?: ""),
+                    "partNumber"       to (info.partNumber       ?: ""),
+                    "productUrl"       to (info.productUrl       ?: ""),
+                    "serialNumber"     to (info.serialNumber     ?: ""),
+                    "uniqueId"         to (info.uniqueId         ?: ""),
                 ))
             }
         }
@@ -273,11 +427,26 @@ class MatterBridge(private val context: Context) {
     fun readHumidity(nodeId: Long, result: MethodChannel.Result) =
         requireChip(result) {
             val centi = ClusterClient.readHumidity(context, nodeId)
-            // null → send as -1 so MethodChannel (which can't carry Dart null for Int) is unambiguous
             main.post { result.success(centi) }
         }
 
+    fun readBattery(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) {
+            val data = ClusterClient.readBattery(context, nodeId)
+            // Pass null when cluster was absent (empty map), else the attribute map
+            main.post { result.success(if (data.isEmpty()) null else data) }
+        }
+
     // ── Cluster Inspector — wildcard read ────────────────────────────────────
+
+    fun readThreadNetworkDiagnostics(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) {
+            val json = ClusterClient.readThreadNetworkDiagnostics(context, nodeId)
+            main.post {
+                if (json != null) result.success(json)
+                else result.error("CLUSTER_ABSENT", "ThreadNetworkDiagnostics cluster not found on this device", null)
+            }
+        }
 
     fun readClusters(nodeId: Long, result: MethodChannel.Result) =
         requireChip(result) {
@@ -286,6 +455,12 @@ class MatterBridge(private val context: Context) {
         }
 
     // ── Read device type from Descriptor cluster ───────────────────────────────
+
+    fun identify(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) {
+            ClusterClient.sendIdentify(context, nodeId)
+            main.post { result.success(null) }
+        }
 
     fun readDeviceType(nodeId: Long, result: MethodChannel.Result) =
         requireChip(result) {
@@ -303,13 +478,24 @@ class MatterBridge(private val context: Context) {
      * We try endpoint 1 first; if it yields nothing useful we fall back to
      * endpoint 0 while skipping known infrastructure types.
      */
-    private val infraTypes = setOf(0x000E, 0x000F, 0x0011, 0x0016)
+    private val infraTypes = setOf(
+        0x000E, // Aggregator
+        0x0011, // Root Node
+        0x0012, // OTA Requestor
+        0x0013, // Bridged Node
+        0x0014, // OTA Provider
+        0x0016, // Secondary Network Interface
+        0x0017, // Power Source (utility node type)
+        // Note: 0x000F is Generic Switch — an APPLICATION type, NOT infra
+    )
 
     private suspend fun readPrimaryDeviceType(nodeId: Long): Int {
-        // Try endpoint 1 first (primary application endpoint for most devices)
-        for (ep in listOf(1, 0)) {
+        // Endpoint 0 is the Root Node endpoint — skip it entirely.
+        // Application device types always live on endpoint 1 or higher.
+        for (ep in 1..5) {
             try {
                 val types = ClusterClient.readDeviceTypes(context, nodeId, ep)
+                if (types.isEmpty()) continue
                 Log.d(TAG, "Descriptor ep=$ep types=${types.map { "0x%04X".format(it) }}")
                 val appType = types.firstOrNull { it !in infraTypes }
                 if (appType != null) {
