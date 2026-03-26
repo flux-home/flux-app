@@ -1,6 +1,7 @@
 package com.example.matter_home
 
 import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -210,6 +211,60 @@ class MatterBridge(private val context: Context) {
             ChipClient.getController().unpairDevice(nodeId)
             main.post { result.success(true) }
         }
+
+    // ── Wi-Fi network scan ────────────────────────────────────────────────────
+
+    /**
+     * Returns the list of nearby Wi-Fi networks visible to Android, sorted by
+     * signal strength (strongest first).  Each entry is a map with:
+     *   - ssid        (String)  — network name
+     *   - rssi        (Int)     — signal strength in dBm
+     *   - isConnected (Boolean) — true for the currently connected network
+     *
+     * Uses cached scan results; no active scan is triggered (avoids throttling).
+     */
+    fun scanWifiNetworks(result: MethodChannel.Result) {
+        try {
+            val wifiManager =
+                context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+            // Currently connected SSID — strip Android's surrounding quotes
+            val currentSsid = wifiManager.connectionInfo?.ssid
+                ?.removeSurrounding("\"")
+                ?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+
+            val seen      = mutableSetOf<String>()
+            val networks  = mutableListOf<Map<String, Any?>>()
+
+            // Prepend the connected network so it's always first and pre-selected
+            if (!currentSsid.isNullOrEmpty()) {
+                seen.add(currentSsid)
+                networks.add(mapOf(
+                    "ssid"        to currentSsid,
+                    "rssi"        to (wifiManager.connectionInfo.rssi),
+                    "isConnected" to true,
+                ))
+            }
+
+            wifiManager.scanResults
+                .asSequence()
+                .filter { it.SSID.isNotEmpty() && it.SSID !in seen }
+                .sortedByDescending { it.level }
+                .forEach { sr ->
+                    seen.add(sr.SSID)
+                    networks.add(mapOf(
+                        "ssid"        to sr.SSID,
+                        "rssi"        to sr.level,
+                        "isConnected" to false,
+                    ))
+                }
+
+            main.post { result.success(networks) }
+        } catch (e: Exception) {
+            Log.w(TAG, "scanWifiNetworks failed: ${e.message}")
+            main.post { result.success(emptyList<Any>()) }
+        }
+    }
 
     // ── Thread credential store ───────────────────────────────────────────────
 

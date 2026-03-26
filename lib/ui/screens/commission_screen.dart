@@ -6,9 +6,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import '../../models/matter_device.dart';
-import '../../providers/device_provider.dart';
 import '../../models/commission_models.dart';
+import '../../models/matter_device.dart';
+import '../../models/wifi_network.dart';
+import '../../providers/device_provider.dart';
 import '../../services/matter_channel.dart';
 import '../../services/qr_payload_service.dart';
 import '../../services/thread_settings_service.dart';
@@ -656,7 +657,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
 // Network credentials section
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NetworkSection extends StatelessWidget {
+class _NetworkSection extends StatefulWidget {
   final int netType;
   final TextEditingController threadCtrl;
   final TextEditingController ssidCtrl;
@@ -680,6 +681,52 @@ class _NetworkSection extends StatelessWidget {
   });
 
   @override
+  State<_NetworkSection> createState() => _NetworkSectionState();
+}
+
+class _NetworkSectionState extends State<_NetworkSection> {
+  List<WifiNetwork> _networks = [];
+  bool _loadingNetworks = false;
+  // null = nothing picked yet (user can still type freely)
+  WifiNetwork? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.netType == 1) _loadNetworks();
+  }
+
+  @override
+  void didUpdateWidget(_NetworkSection old) {
+    super.didUpdateWidget(old);
+    // Start loading when the user switches to Wi-Fi tab
+    if (widget.netType == 1 && old.netType != 1 && _networks.isEmpty) {
+      _loadNetworks();
+    }
+  }
+
+  Future<void> _loadNetworks() async {
+    if (_loadingNetworks) return;
+    setState(() => _loadingNetworks = true);
+    final nets = await context.read<MatterChannel>().scanWifiNetworks();
+    if (!mounted) return;
+    setState(() {
+      _networks        = nets;
+      _loadingNetworks = false;
+      // Auto-select the currently connected network if the SSID field is empty
+      if (_selected == null && widget.ssidCtrl.text.isEmpty) {
+        final connected = nets.where((n) => n.isConnected).firstOrNull;
+        if (connected != null) _pickNetwork(connected);
+      }
+    });
+  }
+
+  void _pickNetwork(WifiNetwork net) {
+    setState(() => _selected = net);
+    widget.ssidCtrl.text = net.ssid;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
@@ -697,18 +744,17 @@ class _NetworkSection extends StatelessWidget {
                 ButtonSegment(value: 1, icon: Icon(Icons.wifi_outlined, size: 16),   label: Text('Wi-Fi')),
                 ButtonSegment(value: 2, icon: Icon(Icons.lan_outlined, size: 16),    label: Text('None')),
               ],
-              selected: {netType},
-              onSelectionChanged: (s) => onNetTypeChanged(s.first),
+              selected: {widget.netType},
+              onSelectionChanged: (s) => widget.onNetTypeChanged(s.first),
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
             ),
             const SizedBox(height: 14),
 
             // ── Thread ─────────────────────────────────────────────────
-            if (netType == 0) ...[
-              // Summary row
+            if (widget.netType == 0) ...[
               InkWell(
                 borderRadius: BorderRadius.circular(8),
-                onTap: () => onShowDatasetChanged(!showThreadDataset),
+                onTap: () => widget.onShowDatasetChanged(!widget.showThreadDataset),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -731,17 +777,16 @@ class _NetworkSection extends StatelessWidget {
                                            color: cs.onSurfaceVariant)),
                       ],
                     )),
-                    Icon(showThreadDataset
+                    Icon(widget.showThreadDataset
                         ? Icons.expand_less : Icons.expand_more,
                         size: 18, color: cs.onSurfaceVariant),
                   ]),
                 ),
               ),
-              // Expandable raw dataset
-              if (showThreadDataset) ...[
+              if (widget.showThreadDataset) ...[
                 const SizedBox(height: 10),
                 TextField(
-                  controller: threadCtrl,
+                  controller: widget.threadCtrl,
                   decoration: InputDecoration(
                     labelText: 'Active Operational Dataset (hex TLV)',
                     border: const OutlineInputBorder(),
@@ -749,7 +794,7 @@ class _NetworkSection extends StatelessWidget {
                       icon: const Icon(Icons.restart_alt_outlined),
                       tooltip: 'Restore default',
                       onPressed: () async =>
-                          threadCtrl.text = await ThreadSettingsService.load(),
+                          widget.threadCtrl.text = await ThreadSettingsService.load(),
                     ),
                   ),
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
@@ -759,33 +804,125 @@ class _NetworkSection extends StatelessWidget {
             ],
 
             // ── Wi-Fi ──────────────────────────────────────────────────
-            if (netType == 1) ...[
+            if (widget.netType == 1) ...[
+              // Network picker list
+              if (_loadingNetworks)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Row(children: [
+                    SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 10),
+                    Text('Scanning for networks…', style: TextStyle(fontSize: 13)),
+                  ]),
+                )
+              else if (_networks.isNotEmpty) ...[
+                ..._networks.map((net) {
+                  final selected = _selected?.ssid == net.ssid;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _pickNetwork(net),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? cs.primaryContainer
+                            : cs.surface.withAlpha(180),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? cs.primary : cs.outlineVariant,
+                          width: selected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(children: [
+                        _WifiSignalIcon(bars: net.bars,
+                            color: selected ? cs.primary : cs.onSurfaceVariant),
+                        const SizedBox(width: 10),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(net.ssid,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: selected ? cs.onPrimaryContainer : cs.onSurface,
+                                )),
+                            if (net.isConnected)
+                              Text('Connected',
+                                  style: TextStyle(fontSize: 11,
+                                      color: selected ? cs.primary : cs.onSurfaceVariant)),
+                          ],
+                        )),
+                        if (selected)
+                          Icon(Icons.check_circle, size: 18, color: cs.primary),
+                      ]),
+                    ),
+                  );
+                }),
+                // Refresh button
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _loadNetworks,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Refresh', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // No networks found — fall back to manual entry header
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    Icon(Icons.wifi_off_outlined, size: 16, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Text('No networks found — enter manually',
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant)),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: _loadNetworks,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    ),
+                  ]),
+                ),
+              ],
+              // SSID field — always shown; auto-filled when a network is picked
               TextFormField(
-                controller: ssidCtrl,
-                decoration: const InputDecoration(
+                controller: widget.ssidCtrl,
+                decoration: InputDecoration(
                   labelText: 'Wi-Fi SSID',
-                  prefixIcon: Icon(Icons.wifi_outlined),
-                  border: OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.wifi_outlined),
+                  border: const OutlineInputBorder(),
+                  helperText: _networks.isNotEmpty
+                      ? 'Pick a network above or type a hidden SSID'
+                      : null,
                 ),
                 textInputAction: TextInputAction.next,
+                onChanged: (_) => setState(() => _selected = null),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'SSID is required' : null,
               ),
               const SizedBox(height: 10),
+              // Password field
               TextFormField(
-                controller: passCtrl,
+                controller: widget.passCtrl,
                 decoration: InputDecoration(
                   labelText: 'Wi-Fi password',
                   prefixIcon: const Icon(Icons.lock_outline),
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(showPassword
+                    icon: Icon(widget.showPassword
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined),
-                    onPressed: () => onShowPasswordChanged(!showPassword),
+                    onPressed: () => widget.onShowPasswordChanged(!widget.showPassword),
                   ),
                 ),
-                obscureText: !showPassword,
+                obscureText: !widget.showPassword,
                 textInputAction: TextInputAction.done,
                 validator: (v) =>
                     (v == null || v.isEmpty) ? 'Password is required' : null,
@@ -793,7 +930,7 @@ class _NetworkSection extends StatelessWidget {
             ],
 
             // ── None ───────────────────────────────────────────────────
-            if (netType == 2)
+            if (widget.netType == 2)
               Text('No network credentials — for Ethernet-only devices.',
                   style: Theme.of(context).textTheme.bodySmall
                       ?.copyWith(color: cs.onSurfaceVariant)),
@@ -801,6 +938,28 @@ class _NetworkSection extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Wi-Fi signal icon ─────────────────────────────────────────────────────────
+
+class _WifiSignalIcon extends StatelessWidget {
+  final int   bars;  // 0–4
+  final Color color;
+  const _WifiSignalIcon({required this.bars, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (bars) {
+      4      => Icons.wifi,
+      3      => Icons.wifi,
+      2      => Icons.wifi_2_bar,
+      1      => Icons.wifi_1_bar,
+      _      => Icons.wifi_off_outlined,
+    };
+    // bars 4/3 share the same icon; use opacity to show strength
+    final opacity = bars >= 3 ? 1.0 : bars == 2 ? 0.75 : 0.5;
+    return Icon(icon, size: 18, color: color.withOpacity(opacity));
   }
 }
 

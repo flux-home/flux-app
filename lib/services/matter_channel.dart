@@ -7,6 +7,7 @@ import '../models/commission_models.dart';
 import '../models/network_diagnostics.dart';
 import '../models/thermostat_models.dart';
 import '../models/thread_models.dart';
+import '../models/wifi_network.dart';
 
 /// Flutter ↔ Android bridge.
 class MatterChannel {
@@ -334,6 +335,23 @@ class MatterChannel {
   }
 
   // ── Share / remove / fabric ────────────────────────────────────────────────
+
+  /// Returns nearby Wi-Fi networks visible to Android, sorted by signal
+  /// strength, with the currently connected network first.
+  /// Falls back to an empty list if location permission is denied or the
+  /// system has no cached scan results.
+  Future<List<WifiNetwork>> scanWifiNetworks() async {
+    try {
+      final raw = await _method.invokeMethod<List<dynamic>>('scanWifiNetworks');
+      if (raw == null) return [];
+      return raw
+          .map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>))
+          .toList();
+    } on PlatformException catch (e) {
+      debugPrint('scanWifiNetworks error: ${e.message}');
+      return [];
+    }
+  }
 
   Future<bool> shareDevice(int nodeId) async {
     try {

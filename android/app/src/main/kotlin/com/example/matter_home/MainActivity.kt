@@ -165,6 +165,9 @@ class MainActivity : FlutterActivity() {
                         bridge.stopSubscription(nodeId, result)
                     }
 
+                    "scanWifiNetworks" ->
+                        bridge.scanWifiNetworks(result)
+
                     "readAndroidThreadCredentials" ->
                         AndroidThreadCredentialReader.requestPreferredCredentials(this, result)
 
