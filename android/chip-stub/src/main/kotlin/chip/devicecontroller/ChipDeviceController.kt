@@ -51,6 +51,10 @@ class ChipDeviceController(params: ControllerParams) {
         info: ICDRegistrationInfo?,
     ): Unit = throw ChipSdkStubException()
 
+    fun updateCommissioningNetworkCredentials(
+        creds: NetworkCredentials,
+    ): Unit = throw ChipSdkStubException()
+
     fun pairDeviceThroughBLE(
         gatt: android.bluetooth.BluetoothGatt?,
         connId: Int,

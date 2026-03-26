@@ -107,10 +107,20 @@ class _CommissionScreenState extends State<CommissionScreen> {
         ? _CommissionMethod.ble
         : _CommissionMethod.ip;
 
+    // Auto-select network type:
+    // ON_NETWORK devices are already on the network — no credentials needed.
+    // BLE devices that aren't known Thread products default to Wi-Fi
+    // (smart plugs, lights, etc. are almost always Wi-Fi).
+    // Users can always override manually.
+    final netType = result.hasOnNetwork
+        ? 2 // None — device is already on the network
+        : 1; // Wi-Fi — safer default; Thread users can switch
+
     setState(() {
-      _parsed  = result;
-      _parsing = false;
-      _method  = method;
+      _parsed   = result;
+      _parsing  = false;
+      _method   = method;
+      _netType  = netType;
     });
 
     // Persist so the screen restores after an app restart.
@@ -750,7 +760,7 @@ class _NetworkSection extends StatelessWidget {
 
             // ── Wi-Fi ──────────────────────────────────────────────────
             if (netType == 1) ...[
-              TextField(
+              TextFormField(
                 controller: ssidCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Wi-Fi SSID',
@@ -758,9 +768,11 @@ class _NetworkSection extends StatelessWidget {
                   border: OutlineInputBorder(),
                 ),
                 textInputAction: TextInputAction.next,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'SSID is required' : null,
               ),
               const SizedBox(height: 10),
-              TextField(
+              TextFormField(
                 controller: passCtrl,
                 decoration: InputDecoration(
                   labelText: 'Wi-Fi password',
@@ -775,6 +787,8 @@ class _NetworkSection extends StatelessWidget {
                 ),
                 obscureText: !showPassword,
                 textInputAction: TextInputAction.done,
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Password is required' : null,
               ),
             ],
 

@@ -35,6 +35,10 @@ fun chipErrorDescription(code: Long): String = when (code) {
     17L  -> "Wrong node ID (0x11)"
     24L  -> "Buffer too small (0x18)"
     32L  -> "Timeout (0x20) — device did not respond in time; check range and power"
+    45L  -> "Device firmware bug (0x2D) — the device reported a Thread network endpoint " +
+            "but is not providing valid Thread capability. This usually means the device's " +
+            "Network Commissioning cluster has an incorrect feature map. " +
+            "Check for a firmware update from the manufacturer."
     47L  -> "Invalid PASE parameter (0x2F)"
     50L  -> "No shared trusted root (0x32)"
     70L  -> "Internal error (0x46)"
@@ -124,11 +128,12 @@ object MatterCommissioner {
         onEvent("✓ BLE connected (MTU negotiated)")
 
         // 3 ── Network credentials ─────────────────────────────────────────────
+        val safeSsid = wifiSsid?.trim()?.takeIf { it.isNotEmpty() }
         val networkCreds: NetworkCredentials? = when {
-            wifiSsid != null -> {
-                onEvent("📶 Using Wi-Fi SSID: $wifiSsid")
+            safeSsid != null -> {
+                onEvent("📶 Using Wi-Fi SSID: $safeSsid")
                 NetworkCredentials.forWiFi(
-                    NetworkCredentials.WiFiCredentials(wifiSsid, wifiPassword ?: "")
+                    NetworkCredentials.WiFiCredentials(safeSsid, wifiPassword ?: "")
                 )
             }
             threadDatasetTlv != null -> {
@@ -146,13 +151,15 @@ object MatterCommissioner {
         // 4 ── CHIP pairing ────────────────────────────────────────────────────
         onEvent("⚙ Starting CHIP commissioning (PASE)…")
         val commissionedNodeId = pairViaBle(
-            context  = context,
-            gatt     = gatt,
-            connId   = ble.connectionId,
-            nodeId   = nodeId,
-            pinCode  = payload.setupPinCode,
-            network  = networkCreds,
-            onEvent  = onEvent,
+            context      = context,
+            gatt         = gatt,
+            connId       = ble.connectionId,
+            nodeId       = nodeId,
+            pinCode      = payload.setupPinCode,
+            network      = networkCreds,
+            wifiSsid     = safeSsid,
+            wifiPassword = wifiPassword,
+            onEvent      = onEvent,
         )
 
         activeBle = null  // CHIP SDK owns the BLE lifecycle from here; clear our ref
@@ -232,6 +239,8 @@ object MatterCommissioner {
         nodeId: Long,
         pinCode: Long,
         network: NetworkCredentials?,
+        wifiSsid: String?,
+        wifiPassword: String?,
         onEvent: (String) -> Unit,
     ): Long = suspendCancellableCoroutine { cont ->
         val controller = ChipClient.getController()
@@ -262,12 +271,42 @@ object MatterCommissioner {
                 vendorId: Int, productId: Int,
                 wifiEndpointId: Int, threadEndpointId: Int,
             ) {
+                val kInvalidEndpointId = 0xFFFF
                 onEvent(
                     "📋 Device info: " +
                     "VID=0x${vendorId.toString(16).uppercase().padStart(4,'0')} " +
                     "PID=0x${productId.toString(16).uppercase().padStart(4,'0')} " +
-                    "wifi-ep=$wifiEndpointId thread-ep=$threadEndpointId"
+                    "wifi-ep=${if (wifiEndpointId == kInvalidEndpointId) "none" else wifiEndpointId} " +
+                    "thread-ep=${if (threadEndpointId == kInvalidEndpointId) "none" else threadEndpointId}"
                 )
+
+                // Workaround for devices with a firmware bug where the Network Commissioning
+                // cluster reports Thread endpoint (thread-ep=0) but no WiFi endpoint (wifi-ep=none).
+                // The CHIP SDK will stall at RequestThreadCredentials with error 45.
+                // Providing empty Thread credentials pre-satisfies that stage and lets commissioning
+                // continue.  Real WiFi credentials are provided alongside them so the SDK can
+                // also attempt WiFi provisioning via the network credentials path.
+                if (wifiEndpointId == kInvalidEndpointId &&
+                    threadEndpointId != kInvalidEndpointId &&
+                    !wifiSsid.isNullOrBlank()
+                ) {
+                    Log.w(TAG, "Device firmware quirk: wifi-ep=none but thread-ep=$threadEndpointId " +
+                        "— injecting combined credentials to bypass RequestThreadCredentials stall")
+                    onEvent("⚠ Device firmware quirk detected (no WiFi endpoint, unexpected Thread endpoint)")
+                    onEvent("  Injecting combined credentials workaround…")
+                    try {
+                        val combined = NetworkCredentials.forWiFi(
+                            NetworkCredentials.WiFiCredentials(wifiSsid, wifiPassword ?: "")
+                        )
+                        // Setting empty Thread credentials pre-satisfies RequestThreadCredentials
+                        // so the SDK does not stall waiting for them.
+                        combined.setThreadCredentials(ByteArray(0))
+                        controller.updateCommissioningNetworkCredentials(combined)
+                        onEvent("  ✓ Combined credentials injected")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "updateCommissioningNetworkCredentials failed: ${e.message}")
+                    }
+                }
             }
 
             override fun onCommissioningComplete(returnedNodeId: Long, errorCode: Long) {
