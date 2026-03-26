@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'device_type.dart';
 
 /// Represents a commissioned Matter device held in our local fabric.
@@ -101,11 +99,6 @@ class MatterDevice {
       productName:    json['productName']    as String?,
     );
   }
-
-  static MatterDevice fromJsonString(String raw) =>
-      MatterDevice.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-
-  String toJsonString() => jsonEncode(toJson());
 
   @override
   bool operator ==(Object other) =>

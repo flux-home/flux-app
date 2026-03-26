@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../models/matter_device.dart';
 import '../../providers/device_provider.dart';
 import '../../services/matter_channel.dart';
+import '../widgets/info_row.dart';
+import '../widgets/section_label.dart';
 import 'cluster_inspector_screen.dart';
 import 'thread_diag_screen.dart';
 
@@ -103,12 +105,19 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
           appBar: AppBar(
             title: const Text('Device settings',
                 style: TextStyle(fontWeight: FontWeight.bold)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.drive_file_rename_outline_outlined),
+                tooltip: 'Rename',
+                onPressed: () => _rename(context),
+              ),
+            ],
           ),
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
               // ── Identify ────────────────────────────────────────────────
-              _SectionLabel('Identify'),
+              const SectionLabel('Identify'),
               Card(
                 color: cs.surface,
                 child: ListTile(
@@ -140,7 +149,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
               const SizedBox(height: 20),
 
               // ── Tools ────────────────────────────────────────────────────
-              _SectionLabel('Tools'),
+              const SectionLabel('Tools'),
               Card(
                 color: cs.surface,
                 child: Column(
@@ -242,7 +251,7 @@ class DeviceInfoScreen extends StatelessWidget {
     List<Widget> rows = [];
     void add(String label, String? value, {bool mono = false, bool link = false}) {
       if (value == null || value.isEmpty) return;
-      rows.add(_InfoRow(label: label, value: value, mono: mono, link: link));
+      rows.add(InfoRow(label: label, value: value, mono: mono, link: link));
     }
 
     // ── Identity ───────────────────────────────────────────────────────
@@ -308,64 +317,4 @@ class DeviceInfoScreen extends StatelessWidget {
       '${dt.minute.toString().padLeft(2, '0')}';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared widgets
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        text.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              letterSpacing: 1.1,
-            ),
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool   mono;
-  final bool   link;
-  const _InfoRow({required this.label, required this.value,
-      this.mono = false, this.link = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    )),
-          ),
-          Expanded(
-            child: Text(value,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontFamily: mono ? 'monospace' : null,
-                  fontWeight: FontWeight.w500,
-                  color: link ? cs.primary : null,
-                  decoration: link ? TextDecoration.underline : null,
-                )),
-          ),
-        ],
-      ),
-    );
-  }
-}

@@ -7,6 +7,7 @@ import '../models/device_live_data.dart';
 import '../models/device_type.dart';
 import '../models/matter_device.dart';
 import '../services/device_store.dart';
+import '../models/commission_models.dart';
 import '../services/matter_channel.dart';
 
 enum DeviceProviderState { idle, loading, error }
@@ -90,7 +91,7 @@ class DeviceProvider extends ChangeNotifier {
       );
     }
     if (productName != null && productName.isNotEmpty) {
-      final idx = _devices.indexWhere((d) => d.id == deviceId);
+      final idx = _indexById(deviceId);
       if (idx != -1 && _devices[idx].productName != productName) {
         _devices[idx] = _devices[idx].copyWith(productName: productName);
         _persist();
@@ -106,8 +107,9 @@ class DeviceProvider extends ChangeNotifier {
     final type   = event['type']   as String? ?? 'update';
     if (nodeId == null) return;
 
-    final device = _devices.firstWhere(
-      (d) => d.nodeId == nodeId, orElse: () => throw StateError('not found'));
+    final candidates = _devices.where((d) => d.nodeId == nodeId);
+    if (candidates.isEmpty) return; // event for a device we no longer track
+    final device = candidates.first;
 
     switch (type) {
       case 'error':
@@ -128,7 +130,7 @@ class DeviceProvider extends ChangeNotifier {
 
         // Mirror on/off + brightness + temp into the persisted MatterDevice
         // so the home screen tiles stay accurate.
-        final idx = _devices.indexWhere((d) => d.id == device.id);
+        final idx = _indexById(device.id);
         if (idx != -1) {
           final isOn  = event['onOff']          as bool?;
           final level = event['level']           as int?;
@@ -168,7 +170,7 @@ class DeviceProvider extends ChangeNotifier {
       if (typeId == null) return;
       final resolved = DeviceType.fromMatterDeviceTypeId(typeId);
       if (resolved == DeviceType.unknown) return;
-      final idx = _devices.indexWhere((d) => d.id == device.id);
+      final idx = _indexById(device.id);
       if (idx == -1) return;
       _devices[idx] = _devices[idx].copyWith(deviceType: resolved);
       await _persist();
@@ -273,7 +275,7 @@ class DeviceProvider extends ChangeNotifier {
   // ── Control ────────────────────────────────────────────────────────────────
 
   Future<void> toggle(String deviceId) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return;
     final device = _devices[idx];
     if (!device.deviceType.hasOnOff) return;
@@ -292,7 +294,7 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> setBrightness(String deviceId, double value) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return;
     _devices[idx] = _devices[idx].copyWith(brightness: value);
     notifyListeners();
@@ -304,7 +306,7 @@ class DeviceProvider extends ChangeNotifier {
   // ── Refresh (on-demand one-shot read) ──────────────────────────────────────
 
   Future<void> refreshDevice(String deviceId) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return;
     final device = _devices[idx];
 
@@ -379,11 +381,11 @@ class DeviceProvider extends ChangeNotifier {
   // ── Share / rename / remove ────────────────────────────────────────────────
 
   Future<bool> shareWithGoogleHome(String deviceId) async {
-    final device = _devices.firstWhere((d) => d.id == deviceId,
-        orElse: () => throw StateError('not found'));
+    final device = findById(deviceId);
+    if (device == null) return false;
     final ok = await _channel.shareDevice(device.nodeId);
     if (ok) {
-      final idx = _devices.indexWhere((d) => d.id == deviceId);
+      final idx = _indexById(deviceId);
       _devices[idx] = device.copyWith(sharedWithGoogleHome: true);
       await _persist();
       notifyListeners();
@@ -392,7 +394,7 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> renameDevice(String deviceId, String newName) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return;
     _devices[idx] = _devices[idx].copyWith(name: newName);
     await _persist();
@@ -400,7 +402,7 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> setRoom(String deviceId, String room) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return;
     _devices[idx] = _devices[idx].copyWith(room: room);
     await _persist();
@@ -408,7 +410,7 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<bool> removeDevice(String deviceId) async {
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
+    final idx = _indexById(deviceId);
     if (idx == -1) return false;
     final device = _devices[idx];
     await _stopSubscription(device);
@@ -432,13 +434,11 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  MatterDevice? findById(String id) {
-    try {
-      return _devices.firstWhere((d) => d.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
+  MatterDevice? findById(String id) => _indexById(id) >= 0
+      ? _devices[_indexById(id)]
+      : null;
+
+  int _indexById(String id) => _devices.indexWhere((d) => d.id == id);
 
   List<String> get rooms {
     final set = <String>{};

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import '../../services/matter_channel.dart';
+import '../../models/commission_models.dart';
+import '../widgets/info_row.dart';
 
 // ── Route args ────────────────────────────────────────────────────────────────
 
@@ -85,16 +86,17 @@ class QrPayloadDetailScreen extends StatelessWidget {
               label: 'Device identifiers',
               child: Column(
                 children: [
-                  _FieldRow('Vendor ID',
-                      '0x${p.vendorId.toRadixString(16).padLeft(4,'0').toUpperCase()}'
-                      '  (${p.vendorId})'),
-                  _FieldRow('Product ID',
-                      '0x${p.productId.toRadixString(16).padLeft(4,'0').toUpperCase()}'
-                      '  (${p.productId})'),
-                  _FieldRow(
-                    'Discriminator',
-                    '${p.discriminator}'
+                  InfoRow(label: 'Vendor ID',
+                      value: '0x${p.vendorId.toRadixString(16).padLeft(4,'0').toUpperCase()}'
+                      '  (${p.vendorId})', mono: true),
+                  InfoRow(label: 'Product ID',
+                      value: '0x${p.productId.toRadixString(16).padLeft(4,'0').toUpperCase()}'
+                      '  (${p.productId})', mono: true),
+                  InfoRow(
+                    label: 'Discriminator',
+                    value: '${p.discriminator}'
                     '${p.hasShortDiscriminator ? '  (short, 4-bit)' : '  (long, 12-bit)'}',
+                    mono: true,
                   ),
                 ],
               ),
@@ -202,39 +204,7 @@ class _CopyableRow extends StatelessWidget {
   );
 }
 
-// ── Key-value field row ───────────────────────────────────────────────────────
 
-class _FieldRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FieldRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label,
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant)),
-          ),
-          Expanded(
-            child: Text(value,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w600,
-                )),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ── Setup PIN row (masked / reveal) ──────────────────────────────────────────
 

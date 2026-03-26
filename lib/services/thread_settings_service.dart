@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'matter_channel.dart';
+import '../models/thread_models.dart';
 
 /// Persists the Thread operational dataset hex string and the last discovered
 /// border router list across app restarts.

@@ -1,4 +1,4 @@
-import '../services/matter_channel.dart';
+import 'thermostat_models.dart';
 
 /// In-memory-only live state cache for a commissioned device.
 /// Populated by CHIP SDK subscriptions; never persisted.

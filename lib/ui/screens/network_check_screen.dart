@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/network_diagnostics.dart';
 import '../../services/matter_channel.dart';
 import '../../services/thread_settings_service.dart';
+import '../widgets/info_row.dart';
+import '../widgets/section_label.dart';
 
 // ── Check status ──────────────────────────────────────────────────────────────
 
@@ -691,14 +694,14 @@ class _NetworkCheckScreenState extends State<NetworkCheckScreen> {
 
         // Phone + network inline
         for (final s in preBr) ...[
-          _SectionLabel(s.heading),
+          SectionLabel(s.heading),
           const SizedBox(height: 6),
           _DiagCard(checks: s.checks),
           const SizedBox(height: 16),
         ],
 
         // Border routers — nav cards
-        _SectionLabel('Thread Border Routers'),
+        SectionLabel('Thread Border Routers'),
         const SizedBox(height: 6),
         if (r.borderRouters.isEmpty)
           _DiagCard(checks: [
@@ -750,7 +753,7 @@ class _NetworkCheckScreenState extends State<NetworkCheckScreen> {
 
         // Matter devices
         for (final s in postBr) ...[
-          _SectionLabel(s.heading),
+          SectionLabel(s.heading),
           const SizedBox(height: 6),
           _DiagCard(checks: s.checks),
           const SizedBox(height: 16),
@@ -895,30 +898,30 @@ class _BorderRouterDetailScreen extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ── Checks ───────────────────────────────────────────────────────
-          _SectionLabel('Checks'),
+          SectionLabel('Checks'),
           const SizedBox(height: 6),
           _DiagCard(checks: checks),
           const SizedBox(height: 20),
 
           // ── Identity ─────────────────────────────────────────────────────
-          _SectionLabel('Identity'),
+          SectionLabel('Identity'),
           const SizedBox(height: 6),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Column(
                 children: [
-                  _InfoRow('Network name', br.networkName),
-                  _InfoRow('Extended PAN ID', br.extPanId),
+                  InfoRow(label: 'Network name',    value: br.networkName),
+                  InfoRow(label: 'Extended PAN ID', value: br.extPanId, mono: true),
                   if (br.hostsV4.isNotEmpty)
-                    _InfoRow('IPv4', br.hostsV4.join(', ')),
+                    InfoRow(label: 'IPv4',           value: br.hostsV4.join(', '), mono: true),
                   if (br.hostsV6Ula.isNotEmpty)
-                    _InfoRow('IPv6 ULA', br.hostsV6Ula.join(', ')),
+                    InfoRow(label: 'IPv6 ULA',       value: br.hostsV6Ula.join(', '), mono: true),
                   if (br.hostsV6Gua.isNotEmpty)
-                    _InfoRow('IPv6 GUA', br.hostsV6Gua.join(', ')),
+                    InfoRow(label: 'IPv6 GUA',       value: br.hostsV6Gua.join(', '), mono: true),
                   if (br.hostsV6LinkLocal.isNotEmpty)
-                    _InfoRow('IPv6 link-local', br.hostsV6LinkLocal.join(', ')),
-                  _InfoRow('Service', br.serviceName),
+                    InfoRow(label: 'IPv6 link-local', value: br.hostsV6LinkLocal.join(', '), mono: true),
+                  InfoRow(label: 'Service',          value: br.serviceName, mono: true),
                 ],
               ),
             ),
@@ -927,7 +930,7 @@ class _BorderRouterDetailScreen extends StatelessWidget {
           // ── State bitmap raw ─────────────────────────────────────────────
           if (br.stateBitmap != null) ...[
             const SizedBox(height: 20),
-            _SectionLabel('State Bitmap  (sb)'),
+            SectionLabel('State Bitmap  (sb)'),
             const SizedBox(height: 6),
             Card(
               child: Padding(
@@ -935,16 +938,12 @@ class _BorderRouterDetailScreen extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Column(
                   children: [
-                    _InfoRow('Raw (hex)',
-                        '0x${br.stateBitmap!.raw.toRadixString(16).padLeft(8, '0').toUpperCase()}'),
-                    _InfoRow('Connection mode',
-                        '${br.stateBitmap!.connectionMode} — ${br.stateBitmap!.connectionModeLabel}'),
-                    _InfoRow('Thread interface',
-                        '${br.stateBitmap!.threadInterfaceStatus} — ${br.stateBitmap!.threadInterfaceLabel}'),
-                    _InfoRow('Availability',
-                        br.stateBitmap!.availability == 1 ? 'High' : 'Infrequent'),
+                    InfoRow(label: 'Raw (hex)',         value: '0x${br.stateBitmap!.raw.toRadixString(16).padLeft(8, '0').toUpperCase()}', mono: true),
+                    InfoRow(label: 'Connection mode',  value: '${br.stateBitmap!.connectionMode} — ${br.stateBitmap!.connectionModeLabel}'),
+                    InfoRow(label: 'Thread interface',  value: '${br.stateBitmap!.threadInterfaceStatus} — ${br.stateBitmap!.threadInterfaceLabel}'),
+                    InfoRow(label: 'Availability',      value: br.stateBitmap!.availability == 1 ? 'High' : 'Infrequent'),
                     if (br.stateBitmap!.bbrActive)
-                      _InfoRow('BBR', br.stateBitmap!.bbrIsPrimary
+                      InfoRow(label: 'BBR', value: br.stateBitmap!.bbrIsPrimary
                           ? 'Active (Primary)' : 'Active (Secondary)'),
                   ],
                 ),
@@ -1141,55 +1140,6 @@ class _CheckRowState extends State<_CheckRow> {
       ),
     );
   }
-}
-
-// ── Small helpers ─────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  final String title;
-  const _SectionLabel(this.title);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: Text(
-          title.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                letterSpacing: 1.1,
-              ),
-        ),
-      );
-}
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _InfoRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 130,
-              child: Text(label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      )),
-            ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500)),
-            ),
-          ],
-        ),
-      );
 }
 
 class _BulletList extends StatelessWidget {

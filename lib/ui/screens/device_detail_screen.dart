@@ -4,12 +4,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/device_live_data.dart';
 import '../../models/device_type.dart';
 import '../../models/matter_device.dart';
 import '../../providers/device_provider.dart';
+import '../../models/thermostat_models.dart';
 import '../../services/matter_channel.dart';
 import '../widgets/dot_matrix_painter.dart';
+import '../widgets/info_row.dart';
 import 'device_settings_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,15 +386,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   List<_Reading>? _readings;
   bool            _readingsLoading = false;
 
+  // ── Cached provider ref (safe to use in dispose) ──────────────────────────
+  late final DeviceProvider _provider;
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  DeviceProvider get _provider => context.read<DeviceProvider>();
-  MatterDevice?  get _device   => _provider.findById(widget.deviceId);
-  DeviceLiveData? get _live    => _provider.liveDataFor(widget.deviceId);
+  MatterDevice? get _device => _provider.findById(widget.deviceId);
 
   @override
   void initState() {
     super.initState();
+    _provider = context.read<DeviceProvider>();
     _provider.addListener(_onProviderUpdate);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _seedReadingsFromCache();
@@ -403,7 +406,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   @override
   void dispose() {
-    try { _provider.removeListener(_onProviderUpdate); } catch (_) {}
+    _provider.removeListener(_onProviderUpdate);
     super.dispose();
   }
 
@@ -644,91 +647,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hero card  — icon + toggle only, matches home-screen tile style
-// ─────────────────────────────────────────────────────────────────────────────
-
-const _kCardShape = RoundedRectangleBorder(
-  borderRadius: BorderRadius.all(Radius.circular(20)),
-  side: BorderSide(color: Colors.white, width: 1.5),
-);
-
-class _HeroCard extends StatelessWidget {
-  final MatterDevice device;
-  final VoidCallback onToggle;
-  const _HeroCard({required this.device, required this.onToggle});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
-    final isActive = device.isOnline && device.isOn;
-
-    return Card(
-      color: Colors.transparent,
-      shape: _kCardShape,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(30),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(device.deviceType.icon, size: 26,
-                color: isActive ? cs.primary : Colors.white70),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              device.name,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  fontSize: 15),
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (device.deviceType.hasOnOff)
-            _ToggleSwitch(device: device, onToggle: onToggle),
-        ]),
-      ),
-    );
-  }
-}
-
-class _ToggleSwitch extends StatelessWidget {
-  final MatterDevice device;
-  final VoidCallback onToggle;
-  const _ToggleSwitch({required this.device, required this.onToggle});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: device.isOnline ? onToggle : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 44, height: 24,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: device.isOn && device.isOnline ? cs.primary : Colors.white30,
-        ),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 200),
-          alignment: device.isOn ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            width: 20, height: 20,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: const BoxDecoration(
-                color: Colors.white, shape: BoxShape.circle),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Brightness card
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -808,7 +726,6 @@ class _ReadingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs      = Theme.of(context).colorScheme;
     final isNum   = _isNumeric;
     final hasUnit = reading.unit.isNotEmpty;
 
@@ -967,8 +884,8 @@ class _ThermostatCard extends StatelessWidget {
             const SizedBox(height: 14),
             const Divider(height: 1),
             const SizedBox(height: 10),
-            if (serialNumber    != null) _InfoLine(label: 'Serial',     value: serialNumber!),
-            if (softwareVersion != null) _InfoLine(label: 'SW version', value: softwareVersion!),
+            if (serialNumber    != null) InfoRow(label: 'Serial',     value: serialNumber!,     labelWidth: 90, mono: true),
+            if (softwareVersion != null) InfoRow(label: 'SW version', value: softwareVersion!,  labelWidth: 90, mono: true),
           ],
         ]),
       ),
@@ -977,18 +894,8 @@ class _ThermostatCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Thermostat dial (unchanged)
+// Thermostat dial
 // ─────────────────────────────────────────────────────────────────────────────
-
-const _dialGlyphs = <String, List<int>>{
-  '0': [0x0E,0x11,0x13,0x15,0x19,0x11,0x0E], '1': [0x04,0x0C,0x04,0x04,0x04,0x04,0x0E],
-  '2': [0x0E,0x11,0x01,0x06,0x08,0x10,0x1F], '3': [0x0E,0x11,0x01,0x06,0x01,0x11,0x0E],
-  '4': [0x02,0x06,0x0A,0x12,0x1F,0x02,0x02], '5': [0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E],
-  '6': [0x0E,0x10,0x1E,0x11,0x11,0x11,0x0E], '7': [0x1F,0x01,0x02,0x04,0x08,0x08,0x08],
-  '8': [0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E], '9': [0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E],
-  '.': [0x00,0x00,0x00,0x00,0x00,0x02,0x02], '-': [0x00,0x00,0x00,0x1F,0x00,0x00,0x00],
-};
-int _dialCharCols(String ch) => ch == '.' ? 3 : 5;
 
 const _kArcStart = 135.0 * math.pi / 180.0;
 const _kArcSweep = 270.0 * math.pi / 180.0;
@@ -1113,7 +1020,7 @@ class _DialPainter extends CustomPainter {
       {required double mW, required double mH, required Color color}) {
     final chars = text.characters.toList();
     if (chars.isEmpty) return;
-    final total = chars.fold(0, (s, c) => s + _dialCharCols(c)) + (chars.length-1);
+    final total = chars.fold(0, (s, c) => s + dotMatrixCharCols(c)) + (chars.length-1);
     const gap   = 2.0;
     final step  = math.min((mW+gap)/total, (mH+gap)/7);
     final r     = (step-gap)/2;
@@ -1122,8 +1029,8 @@ class _DialPainter extends CustomPainter {
     final p     = Paint()..color=color..style=PaintingStyle.fill;
     double cx   = ox;
     for (final ch in chars) {
-      final g    = _dialGlyphs[ch] ?? _dialGlyphs['-']!;
-      final cols = _dialCharCols(ch);
+      final g    = dotMatrixGlyphs[ch] ?? dotMatrixGlyphs['-']!;
+      final cols = dotMatrixCharCols(ch);
       for (int row = 0; row < 7; row++) {
         for (int col = 0; col < cols; col++) {
           if (((g[row] >> ((cols-1)-col)) & 1) == 1)
@@ -1143,24 +1050,6 @@ class _DialPainter extends CustomPainter {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared small widgets
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _InfoLine extends StatelessWidget {
-  final String label, value;
-  const _InfoLine({required this.label, required this.value});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 90, child: Text(label, style: Theme.of(context)
-            .textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant))),
-        Expanded(child: Text(value, style: const TextStyle(
-            fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w500))),
-      ]),
-    );
-  }
-}
 
 class _SensorPill extends StatelessWidget {
   final IconData icon; final Color iconColor;

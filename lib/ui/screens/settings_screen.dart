@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/device_provider.dart';
+import '../../models/thread_models.dart';
 import '../../services/matter_channel.dart';
 import '../../services/thread_settings_service.dart';
+import '../widgets/info_row.dart';
+import '../widgets/section_label.dart';
 import 'network_check_screen.dart';
 // ---------------------------------------------------------------------------
 // Main settings screen
@@ -86,7 +89,7 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
 
           // ── About ──────────────────────────────────────────────────────
-          _SectionHeader(title: 'About'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('About')),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('Flux'),
@@ -117,7 +120,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    MatterChannel().getFabricId().then((id) {
+    context.read<MatterChannel>().getFabricId().then((id) {
       if (mounted) setState(() => _fabricId = id ?? 'N/A');
     });
   }
@@ -166,7 +169,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
       body: ListView(
         children: [
           const SizedBox(height: 8),
-          _SectionHeader(title: 'Fabric'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Fabric')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: ListTile(
@@ -196,7 +199,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
           ),
 
           const SizedBox(height: 24),
-          _SectionHeader(title: 'Device management'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: ListTile(
@@ -564,7 +567,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
         children: [
 
           // ── Configured dataset ───────────────────────────────────────
-          _SectionHeader(title: 'Configured dataset'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Configured dataset')),
           Card(
             child: ListTile(
               leading: Icon(Icons.router_outlined, color: cs.primary),
@@ -589,7 +592,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
           const SizedBox(height: 24),
 
           // ── Android credential store ─────────────────────────────────
-          _SectionHeader(title: 'Android credential store'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Android credential store')),
           Card(
             child: Column(
               children: [
@@ -696,7 +699,7 @@ class _ThreadNetworkScreen extends StatelessWidget {
         children: [
 
           // ── Border routers ─────────────────────────────────────────────
-          _SectionHeader(title: 'Border routers'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Border routers')),
           if (network.borderRouters.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -767,7 +770,7 @@ class _ThreadNetworkScreen extends StatelessWidget {
           // ── Dataset details (configured network only) ─────────────────
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 20),
-            _SectionHeader(title: 'Dataset'),
+            Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Dataset')),
             Card(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -775,7 +778,7 @@ class _ThreadNetworkScreen extends StatelessWidget {
                 child: Column(
                   children: fields
                       .map((f) =>
-                          _FieldRow(label: f.label, value: f.value))
+                          InfoRow(label: f.label, value: f.value))
                       .toList(),
                 ),
               ),
@@ -1018,7 +1021,7 @@ class _ThreadDatasetDetailScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: fields
-                      .map((f) => _FieldRow(label: f.label, value: f.value))
+                      .map((f) => InfoRow(label: f.label, value: f.value))
                       .toList(),
                 ),
               ),
@@ -1027,7 +1030,7 @@ class _ThreadDatasetDetailScreenState
           const SizedBox(height: 20),
 
           // ── Hex input ──────────────────────────────────────────────────
-          _SectionHeader(title: 'Hex (TLV)'),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Hex (TLV)')),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -1231,60 +1234,4 @@ class _ThreadDecoder {
   static String _hexUpper(List<int> b) => _hex(b).toUpperCase();
 }
 
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
 
-class _FieldRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FieldRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-      child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              letterSpacing: 1.1,
-            ),
-      ),
-    );
-  }
-}

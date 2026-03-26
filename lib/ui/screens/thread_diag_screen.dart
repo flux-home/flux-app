@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/matter_device.dart';
+import '../../models/thread_models.dart';
 import '../../services/matter_channel.dart';
+import '../widgets/info_row.dart';
+import '../widgets/section_label.dart';
 
 // ── Routing role helpers ──────────────────────────────────────────────────────
 
@@ -245,43 +248,43 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
           const SizedBox(height: 16),
 
           // ── Network identity ──────────────────────────────────────────────
-          _SectionLabel('Network'),
+          SectionLabel('Network'),
           const SizedBox(height: 6),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Column(children: [
-                _Row('Network name',  d.networkName  ?? '—'),
-                _Row('Channel',       d.channel != null ? '${d.channel}' : '—'),
-                _Row('PAN ID',        d.panId != null
+                InfoRow(label: 'Network name',    value: d.networkName  ?? '—'),
+                InfoRow(label: 'Channel',         value: d.channel != null ? '${d.channel}' : '—'),
+                InfoRow(label: 'PAN ID',          value: d.panId != null
                     ? '0x${d.panId!.toRadixString(16).padLeft(4,'0').toUpperCase()}'
                     : '—', mono: true),
-                _Row('Extended PAN ID', d.extendedPanId ?? '—', mono: true),
-                _Row('Mesh prefix',   d.meshLocalPrefix ?? '—', mono: true),
+                InfoRow(label: 'Extended PAN ID', value: d.extendedPanId ?? '—', mono: true),
+                InfoRow(label: 'Mesh prefix',     value: d.meshLocalPrefix ?? '—', mono: true),
               ]),
             ),
           ),
           const SizedBox(height: 16),
 
           // ── Node status ───────────────────────────────────────────────────
-          _SectionLabel('Node status'),
+          SectionLabel('Node status'),
           const SizedBox(height: 6),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Column(children: [
-                _Row('Partition ID',  d.partitionId != null ? '${d.partitionId}' : '—'),
-                _Row('Leader router', d.leaderRouterId != null
+                InfoRow(label: 'Partition ID',  value: d.partitionId != null ? '${d.partitionId}' : '—'),
+                InfoRow(label: 'Leader router', value: d.leaderRouterId != null
                     ? 'Router #${d.leaderRouterId}'
                     : '—'),
-                _Row('Weighting',     d.weighting != null ? '${d.weighting}' : '—'),
+                InfoRow(label: 'Weighting',     value: d.weighting != null ? '${d.weighting}' : '—'),
               ]),
             ),
           ),
           const SizedBox(height: 16),
 
           // ── Neighbors ─────────────────────────────────────────────────────
-          _SectionLabel('Neighbors  (${d.neighbors.length})'),
+          SectionLabel('Neighbors  (${d.neighbors.length})'),
           const SizedBox(height: 6),
           if (d.neighbors.isEmpty)
             _EmptyCard('No neighbors found')
@@ -302,7 +305,7 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
           const SizedBox(height: 16),
 
           // ── Routing table ──────────────────────────────────────────────────
-          _SectionLabel('Routing table  (${d.routes.length})'),
+          SectionLabel('Routing table  (${d.routes.length})'),
           const SizedBox(height: 6),
           if (d.routes.isEmpty)
             _EmptyCard('Routing table empty')
@@ -532,56 +535,6 @@ class _RouteTile extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Shared widgets ─────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: Text(
-          text.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                letterSpacing: 1.1,
-              ),
-        ),
-      );
-}
-
-class _Row extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool   mono;
-  const _Row(this.label, this.value, {this.mono = false});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 140,
-              child: Text(label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      )),
-            ),
-            Expanded(
-              child: Text(value,
-                  style: TextStyle(
-                      fontFamily: mono ? 'monospace' : null,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500)),
-            ),
-          ],
-        ),
-      );
 }
 
 class _Badge extends StatelessWidget {

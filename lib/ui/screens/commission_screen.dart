@@ -8,9 +8,11 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/matter_device.dart';
 import '../../providers/device_provider.dart';
+import '../../models/commission_models.dart';
 import '../../services/matter_channel.dart';
 import '../../services/qr_payload_service.dart';
 import '../../services/thread_settings_service.dart';
+import '../widgets/section_label.dart';
 import 'qr_payload_detail_screen.dart';
 import 'qr_scanner_screen.dart';
 
@@ -89,7 +91,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _parsing     = true;
     });
 
-    final result = await MatterChannel().parsePayload(raw);
+    final result = await context.read<MatterChannel>().parsePayload(raw);
 
     if (!mounted) return;
     if (result == null) {
@@ -198,7 +200,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _commissionDone   = false;
       _commissionFailed = false;
     });
-    _eventSub = MatterChannel().commissionEvents.listen(
+    _eventSub = context.read<MatterChannel>().commissionEvents.listen(
       (event) {
         _LogLevel lvl = _LogLevel.info;
         if (event.startsWith('✓') || event.startsWith('🎉')) lvl = _LogLevel.success;
@@ -424,7 +426,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
               // ── Step 2: Network credentials (BLE only) ────────────────
               if (_parsed != null && _method == _CommissionMethod.ble) ...[
                 const SizedBox(height: 20),
-                _SectionLabel('Network'),
+                const SectionLabel('Network', style: SectionLabelStyle.prominent),
                 const SizedBox(height: 10),
                 _NetworkSection(
                   netType:              _netType,
@@ -442,7 +444,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
               // ── IP fields (IP method) ─────────────────────────────────
               if (_parsed != null && _method == _CommissionMethod.ip) ...[
                 const SizedBox(height: 20),
-                _SectionLabel('IP commissioning'),
+                const SectionLabel('IP commissioning', style: SectionLabelStyle.prominent),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _ipCtrl,
@@ -789,25 +791,7 @@ class _NetworkSection extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Section label
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  final String title;
-  const _SectionLabel(this.title);
-  @override
-  Widget build(BuildContext context) => Text(
-    title,
-    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: Theme.of(context).colorScheme.primary,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 0.4,
-    ),
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Log row (reused from previous version)
+// Log row
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _LogLevel { step, info, success, error }

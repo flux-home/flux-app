@@ -36,7 +36,7 @@ class HomeScreen extends StatelessWidget {
           }
 
           if (provider.devices.isEmpty) {
-            return _EmptyState();
+            return _EmptyState(onAdd: () => context.push('/commission'));
           }
 
           return RefreshIndicator(
@@ -104,8 +104,38 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
+  final VoidCallback onAdd;
+  const _EmptyState({required this.onAdd});
+
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.devices_outlined, size: 72,
+                color: cs.onSurface.withAlpha(40)),
+            const SizedBox(height: 20),
+            Text('No devices yet',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Tap + to commission your first Matter device.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: const Text('Add device'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
