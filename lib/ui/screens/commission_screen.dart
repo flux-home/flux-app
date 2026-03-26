@@ -805,107 +805,49 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
             // ── Wi-Fi ──────────────────────────────────────────────────
             if (widget.netType == 1) ...[
-              // Network picker list
-              if (_loadingNetworks)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Row(children: [
-                    SizedBox(width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 10),
-                    Text('Scanning for networks…', style: TextStyle(fontSize: 13)),
-                  ]),
-                )
-              else if (_networks.isNotEmpty) ...[
-                ..._networks.map((net) {
-                  final selected = _selected?.ssid == net.ssid;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => _pickNetwork(net),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? cs.primaryContainer
-                            : cs.surface.withAlpha(180),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: selected ? cs.primary : cs.outlineVariant,
-                          width: selected ? 1.5 : 1,
-                        ),
-                      ),
-                      child: Row(children: [
-                        _WifiSignalIcon(bars: net.bars,
-                            color: selected ? cs.primary : cs.onSurfaceVariant),
-                        const SizedBox(width: 10),
-                        Expanded(child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(net.ssid,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  color: selected ? cs.onPrimaryContainer : cs.onSurface,
-                                )),
-                            if (net.isConnected)
-                              Text('Connected',
-                                  style: TextStyle(fontSize: 11,
-                                      color: selected ? cs.primary : cs.onSurfaceVariant)),
-                          ],
-                        )),
-                        if (selected)
-                          Icon(Icons.check_circle, size: 18, color: cs.primary),
-                      ]),
-                    ),
-                  );
-                }),
-                // Refresh button
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _loadNetworks,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('Refresh', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
+              // Network dropdown
+              DropdownButtonFormField<String>(
+                value: _selected?.ssid,
+                decoration: InputDecoration(
+                  labelText: 'Wi-Fi network',
+                  prefixIcon: _loadingNetworks
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : const Icon(Icons.wifi_outlined),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.refresh_outlined, size: 20),
+                    tooltip: 'Rescan',
+                    onPressed: _loadingNetworks ? null : _loadNetworks,
                   ),
                 ),
-              ] else ...[
-                // No networks found — fall back to manual entry header
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                hint: Text(_loadingNetworks ? 'Scanning…' : 'Select a network'),
+                items: _networks.map((net) => DropdownMenuItem(
+                  value: net.ssid,
                   child: Row(children: [
-                    Icon(Icons.wifi_off_outlined, size: 16, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Text('No networks found — enter manually',
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: cs.onSurfaceVariant)),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: _loadNetworks,
-                      icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text('Retry', style: TextStyle(fontSize: 12)),
-                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                    ),
+                    _WifiSignalIcon(bars: net.bars, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(net.ssid,
+                        overflow: TextOverflow.ellipsis)),
+                    if (net.isConnected) ...[
+                      const SizedBox(width: 6),
+                      Text('connected',
+                          style: TextStyle(fontSize: 11, color: cs.primary)),
+                    ],
                   ]),
-                ),
-              ],
-              // SSID field — always shown; auto-filled when a network is picked
-              TextFormField(
-                controller: widget.ssidCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Wi-Fi SSID',
-                  prefixIcon: const Icon(Icons.wifi_outlined),
-                  border: const OutlineInputBorder(),
-                  helperText: _networks.isNotEmpty
-                      ? 'Pick a network above or type a hidden SSID'
-                      : null,
-                ),
-                textInputAction: TextInputAction.next,
-                onChanged: (_) => setState(() => _selected = null),
+                )).toList(),
+                onChanged: (ssid) {
+                  if (ssid == null) return;
+                  final net = _networks.firstWhere((n) => n.ssid == ssid);
+                  _pickNetwork(net);
+                },
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'SSID is required' : null,
+                    (v == null || v.isEmpty) ? 'Select a network' : null,
               ),
               const SizedBox(height: 10),
               // Password field
