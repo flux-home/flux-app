@@ -16,15 +16,18 @@ class HomeScreen extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_outlined),
-            tooltip: 'Add device',
-            onPressed: () => context.push('/commission'),
-          ),
-          IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/settings'),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/commission'),
+        backgroundColor: const Color(0xFFFFD600),
+        foregroundColor: Colors.black,
+        elevation: 2,
+        shape: const CircleBorder(),
+        child: const Icon(Icons.add, size: 28),
       ),
       body: Consumer<DeviceProvider>(
         builder: (context, provider, _) {
@@ -41,7 +44,7 @@ class HomeScreen extends StatelessWidget {
             child: CustomScrollView(
               slivers: [
                 ..._buildRoomSections(context, provider),
-                const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
               ],
             ),
           );
