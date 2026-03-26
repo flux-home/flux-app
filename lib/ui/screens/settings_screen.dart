@@ -116,12 +116,17 @@ class MatterSettingsScreen extends StatefulWidget {
 
 class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   String? _fabricId;
+  int?    _vendorId;
 
   @override
   void initState() {
     super.initState();
-    context.read<MatterChannel>().getFabricId().then((id) {
+    final ch = context.read<MatterChannel>();
+    ch.getFabricId().then((id) {
       if (mounted) setState(() => _fabricId = id ?? 'N/A');
+    });
+    ch.getVendorId().then((vid) {
+      if (mounted) setState(() => _vendorId = vid);
     });
   }
 
@@ -172,29 +177,55 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
           Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Fabric')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListTile(
-              leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
-              title: const Text('Fabric ID'),
-              subtitle: Text(
-                _fabricId ?? '…',
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              ),
-              trailing: _fabricId != null && _fabricId != 'N/A'
-                  ? IconButton(
-                      icon: const Icon(Icons.copy_outlined),
-                      tooltip: 'Copy',
-                      onPressed: () {
-                        Clipboard.setData(
-                            ClipboardData(text: _fabricId!));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Fabric ID copied'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                    )
-                  : null,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
+                  title: const Text('Fabric ID'),
+                  subtitle: Text(
+                    _fabricId ?? '…',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  ),
+                  trailing: _fabricId != null && _fabricId != 'N/A'
+                      ? IconButton(
+                          icon: const Icon(Icons.copy_outlined),
+                          tooltip: 'Copy',
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: _fabricId!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Fabric ID copied'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                        )
+                      : null,
+                ),
+                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+                ListTile(
+                  leading: Icon(Icons.badge_outlined, color: cs.primary),
+                  title: const Text('Vendor ID'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _vendorId != null
+                            ? '0x${_vendorId!.toRadixString(16).toUpperCase().padLeft(4, '0')}'
+                            : '…',
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Test VID — not for production use. '
+                        'Range 0xFFF1–0xFFF4 is reserved by the Matter spec for testing only.',
+                        style: TextStyle(fontSize: 11, color: cs.error),
+                      ),
+                    ],
+                  ),
+                  isThreeLine: true,
+                ),
+              ],
             ),
           ),
 

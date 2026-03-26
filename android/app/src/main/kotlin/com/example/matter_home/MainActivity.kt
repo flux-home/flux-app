@@ -183,6 +183,9 @@ class MainActivity : FlutterActivity() {
                     "getFabricId" ->
                         bridge.getFabricId(result)
 
+                    "getVendorId" ->
+                        bridge.getVendorId(result)
+
                     else ->
                         result.notImplemented()
                 }

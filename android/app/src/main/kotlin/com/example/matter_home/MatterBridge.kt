@@ -484,6 +484,10 @@ class MatterBridge(private val context: Context) {
         result.success("0x${id.toULong().toString(16).padStart(16,'0').uppercase()}")
     }
 
+    fun getVendorId(result: MethodChannel.Result) {
+        result.success(ChipClient.VENDOR_ID)
+    }
+
     fun readBasicInfo(nodeId: Long, result: MethodChannel.Result) =
         requireChip(result) {
             val info = ClusterClient.readBasicInfo(context, nodeId)

@@ -395,4 +395,15 @@ class MatterChannel {
       return null;
     }
   }
+
+  /// Returns the controller vendor ID used to create the fabric.
+  /// This is a compile-time constant from ChipClient — currently a test VID
+  /// (range 0xFFF1–0xFFF4 is reserved by the Matter spec for testing only).
+  Future<int?> getVendorId() async {
+    try {
+      return await _method.invokeMethod<int>('getVendorId');
+    } on PlatformException {
+      return null;
+    }
+  }
 }
