@@ -1,6 +1,9 @@
 package com.example.matter_home
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
@@ -17,13 +20,12 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class MatterBridge(private val context: Context) {
-
-    companion object {
-        private const val TAG = "MatterBridge"
-    }
 
     private val main  = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -215,55 +217,106 @@ class MatterBridge(private val context: Context) {
     // ── Wi-Fi network scan ────────────────────────────────────────────────────
 
     /**
-     * Returns the list of nearby Wi-Fi networks visible to Android, sorted by
-     * signal strength (strongest first).  Each entry is a map with:
-     *   - ssid        (String)  — network name
-     *   - rssi        (Int)     — signal strength in dBm
-     *   - isConnected (Boolean) — true for the currently connected network
+     * Triggers a fresh Wi-Fi scan and returns only networks that respond within
+     * [WIFI_SCAN_TIMEOUT_MS].  Falls back to the last cached results if the scan
+     * is throttled or times out.
      *
-     * Uses cached scan results; no active scan is triggered (avoids throttling).
+     * Each entry is a map with:
+     *   - ssid        (String)  — network name
+     *   - rssi        (Int)     — signal in dBm (only networks ≥ [WIFI_MIN_RSSI])
+     *   - isConnected (Boolean) — true for the currently associated network
      */
     fun scanWifiNetworks(result: MethodChannel.Result) {
-        try {
-            val wifiManager =
-                context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        scope.launch {
+            val networks = doWifiScan()
+            main.post { result.success(networks) }
+        }
+    }
 
-            // Currently connected SSID — strip Android's surrounding quotes
-            val currentSsid = wifiManager.connectionInfo?.ssid
-                ?.removeSurrounding("\"")
-                ?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+    private suspend fun doWifiScan(): List<Map<String, Any?>> {
+        val wifiManager =
+            context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-            val seen      = mutableSetOf<String>()
-            val networks  = mutableListOf<Map<String, Any?>>()
+        // ── Trigger a fresh scan, wait for the broadcast ──────────────────────
+        val scanCompleted = suspendCancellableCoroutine { cont ->
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    try { ctx.unregisterReceiver(this) } catch (_: Exception) {}
+                    if (cont.isActive) cont.resume(Unit)
+                }
+            }
+            try {
+                context.registerReceiver(
+                    receiver,
+                    IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION),
+                )
+                @Suppress("DEPRECATION")
+                val started = wifiManager.startScan()
+                if (!started) {
+                    // Throttled by Android — unregister and fall through to cache
+                    try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+                    Log.d(TAG, "Wi-Fi startScan throttled — using cached results")
+                    if (cont.isActive) cont.resume(Unit)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Wi-Fi scan setup failed: ${e.message}")
+                if (cont.isActive) cont.resume(Unit)
+            }
+            // Timeout: unregister and proceed with whatever is in cache
+            cont.invokeOnCancellation {
+                try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+            }
+        }
 
-            // Prepend the connected network so it's always first and pre-selected
-            if (!currentSsid.isNullOrEmpty()) {
-                seen.add(currentSsid)
+        // Allow the OS a brief moment to populate results after the broadcast
+        delay(WIFI_SCAN_TIMEOUT_MS)
+        return buildWifiResults(wifiManager)
+    }
+
+    private fun buildWifiResults(wifiManager: WifiManager): List<Map<String, Any?>> {
+        val currentSsid = wifiManager.connectionInfo?.ssid
+            ?.removeSurrounding("\"")
+            ?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+
+        val seen     = mutableSetOf<String>()
+        val networks = mutableListOf<Map<String, Any?>>()
+
+        // Connected network always first regardless of RSSI
+        if (!currentSsid.isNullOrEmpty()) {
+            seen.add(currentSsid)
+            networks.add(mapOf(
+                "ssid"        to currentSsid,
+                "rssi"        to wifiManager.connectionInfo.rssi,
+                "isConnected" to true,
+            ))
+        }
+
+        wifiManager.scanResults
+            .asSequence()
+            .filter { sr ->
+                sr.SSID.isNotEmpty()        // ignore unnamed (hidden) networks
+                && sr.SSID !in seen         // deduplicate
+                && sr.level >= WIFI_MIN_RSSI // only networks with usable signal
+            }
+            .sortedByDescending { it.level }
+            .forEach { sr ->
+                seen.add(sr.SSID)
                 networks.add(mapOf(
-                    "ssid"        to currentSsid,
-                    "rssi"        to (wifiManager.connectionInfo.rssi),
-                    "isConnected" to true,
+                    "ssid"        to sr.SSID,
+                    "rssi"        to sr.level,
+                    "isConnected" to false,
                 ))
             }
 
-            wifiManager.scanResults
-                .asSequence()
-                .filter { it.SSID.isNotEmpty() && it.SSID !in seen }
-                .sortedByDescending { it.level }
-                .forEach { sr ->
-                    seen.add(sr.SSID)
-                    networks.add(mapOf(
-                        "ssid"        to sr.SSID,
-                        "rssi"        to sr.level,
-                        "isConnected" to false,
-                    ))
-                }
+        return networks
+    }
 
-            main.post { result.success(networks) }
-        } catch (e: Exception) {
-            Log.w(TAG, "scanWifiNetworks failed: ${e.message}")
-            main.post { result.success(emptyList<Any>()) }
-        }
+    companion object {
+        private const val TAG = "MatterBridge"
+        /** Minimum RSSI to include a network — filters out ghost/stale entries. */
+        private const val WIFI_MIN_RSSI         = -85 // dBm
+        /** How long to wait after the scan broadcast before reading results. */
+        private const val WIFI_SCAN_TIMEOUT_MS  = 300L
     }
 
     // ── Thread credential store ───────────────────────────────────────────────
