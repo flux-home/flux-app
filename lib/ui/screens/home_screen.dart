@@ -16,18 +16,15 @@ class HomeScreen extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
+            icon: const Icon(Icons.add_outlined),
+            tooltip: 'Add device',
+            onPressed: () => context.push('/commission'),
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/settings'),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/commission'),
-        backgroundColor: const Color(0xFFB85450), // washed-out red
-        foregroundColor: Colors.white,
-        elevation: 2,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add, size: 28),
       ),
       body: Consumer<DeviceProvider>(
         builder: (context, provider, _) {
@@ -36,17 +33,15 @@ class HomeScreen extends StatelessWidget {
           }
 
           if (provider.devices.isEmpty) {
-            return _EmptyState(onAdd: () => context.push('/commission'));
+            return const SizedBox.shrink();
           }
 
           return RefreshIndicator(
             onRefresh: provider.refreshAll,
             child: CustomScrollView(
               slivers: [
-                // Rooms grouping
                 ..._buildRoomSections(context, provider),
-                // FAB spacer
-                const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
               ],
             ),
           );
@@ -100,42 +95,5 @@ class HomeScreen extends StatelessWidget {
         ),
       ];
     }).toList();
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final VoidCallback onAdd;
-  const _EmptyState({required this.onAdd});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.devices_outlined, size: 72,
-                color: cs.onSurface.withAlpha(40)),
-            const SizedBox(height: 20),
-            Text('No devices yet',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Tap + to commission your first Matter device.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: cs.onSurfaceVariant)),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add),
-              label: const Text('Add device'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
