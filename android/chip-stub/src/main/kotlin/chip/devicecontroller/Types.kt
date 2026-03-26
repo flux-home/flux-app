@@ -27,14 +27,6 @@ class NetworkCredentials private constructor() {
 
     class WiFiCredentials(val ssid: String, val password: String)
     class ThreadCredentials(val operationalDataset: ByteArray)
-
-    /** Set WiFi credentials on an existing instance (real SDK has this setter). */
-    fun setWiFiCredentials(ssid: String, password: String): Unit = throw ChipSdkStubException()
-
-    /** Set Thread credentials on an existing instance (real SDK has this setter).
-     *  Passing an empty ByteArray tells the SDK credentials are "provided but empty",
-     *  which skips the RequestThreadCredentials stage without failing. */
-    fun setThreadCredentials(dataset: ByteArray): Unit = throw ChipSdkStubException()
 }
 // ── CommissionParameters ─────────────────────────────────────────────────────
 
