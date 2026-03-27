@@ -44,6 +44,53 @@ int dotMatrixCharCols(String ch) => ch == '.' ? 3 : 5;
 // Painter
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Renders [text] as a 5×7 dot-matrix directly onto [canvas], centred at
+/// [centre], scaled to fit within [maxWidth] × [maxHeight].
+///
+/// Extracted as a free function so [CustomPainter] subclasses can reuse the
+/// same rendering logic without instantiating a [DotMatrixPainter] widget.
+void paintDotMatrix(
+  Canvas canvas,
+  Offset centre,
+  String text, {
+  required double maxWidth,
+  required double maxHeight,
+  required Color color,
+}) {
+  final chars = text.characters.toList();
+  if (chars.isEmpty) return;
+  final totalCols =
+      chars.fold(0, (s, c) => s + dotMatrixCharCols(c)) + (chars.length - 1);
+  const gap  = 2.0;
+  final step = math.min((maxWidth + gap) / totalCols, (maxHeight + gap) / 7);
+  final r    = (step - gap) / 2;
+  final matW = step * totalCols - gap;
+  final matH = step * 7 - gap;
+  final ox   = centre.dx - matW / 2;
+  final oy   = centre.dy - matH / 2;
+  final p    = Paint()..color = color..style = PaintingStyle.fill;
+  double cx  = ox;
+  for (final ch in chars) {
+    final g    = dotMatrixGlyphs[ch] ?? dotMatrixGlyphs['-']!;
+    final cols = dotMatrixCharCols(ch);
+    for (int row = 0; row < 7; row++) {
+      for (int col = 0; col < cols; col++) {
+        if (((g[row] >> ((cols - 1) - col)) & 1) == 1) {
+          canvas.drawCircle(
+            Offset(cx + col * step + step / 2, oy + row * step + step / 2),
+            r, p,
+          );
+        }
+      }
+    }
+    cx += cols * step + step;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Painter
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Renders [text] as a 5 × 7 dot-matrix in the given canvas, centred and
 /// scaled to fill the available size.
 ///

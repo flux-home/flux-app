@@ -109,6 +109,30 @@ class DeviceProvider extends ChangeNotifier {
     _mergeLiveCache(deviceId, (e) => e.withOtaSupported(supported, endpoint));
   }
 
+  /// Searches for the OTA Requestor cluster (0x002A) across all endpoints,
+  /// starting at EP0 then walking PartsList. Updates [otaSupported] in the
+  /// live cache once found (or confirmed absent).
+  /// No-ops if the result is already known from a previous session.
+  Future<void> detectAndUpdateOtaSupport(String deviceId) async {
+    if (liveDataFor(deviceId)?.otaSupported != null) return;
+    final device = findById(deviceId);
+    if (device == null) return;
+
+    const otaClusterId = 0x002A;
+    int? foundEndpoint;
+
+    final ep0 = await _channel.readServerClusterList(device.nodeId, endpoint: 0);
+    if (ep0.contains(otaClusterId)) {
+      foundEndpoint = 0;
+    } else {
+      for (final ep in await _channel.readPartsList(device.nodeId)) {
+        final clusters = await _channel.readServerClusterList(device.nodeId, endpoint: ep);
+        if (clusters.contains(otaClusterId)) { foundEndpoint = ep; break; }
+      }
+    }
+    updateOtaSupport(deviceId, foundEndpoint != null, endpoint: foundEndpoint ?? 0);
+  }
+
   // ── Subscription event handler ─────────────────────────────────────────────
 
   void _onDeviceStateEvent(Map<String, dynamic> event) {

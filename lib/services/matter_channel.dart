@@ -3,91 +3,89 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../models/basic_info.dart';
 import '../models/commission_models.dart';
 import '../models/network_diagnostics.dart';
 import '../models/thermostat_models.dart';
 import '../models/thread_models.dart';
 import '../models/wifi_network.dart';
 
-/// Flutter ↔ Android bridge.
+/// Flutter ↔ Android MethodChannel bridge.
+///
+/// Every public method maps 1-to-1 to a handler in [MainActivity] / [MatterBridge].
+/// All channel calls are funnelled through [_invoke] which handles the
+/// [PlatformException] → fallback value pattern in one place.
 class MatterChannel {
   static const _method       = MethodChannel('com.example.matter_home/matter');
   static const _events       = EventChannel('com.example.matter_home/commission_events');
   static const _deviceEvents = EventChannel('com.example.matter_home/device_state');
 
-  // ── Commission progress stream ─────────────────────────────────────────────
+  // ── Internal helper ────────────────────────────────────────────────────────
+
+  /// Invokes [method] with optional [args], returns [fallback] on any
+  /// [PlatformException].  Supply [decode] to transform the raw result into [T].
+  Future<T> _invoke<T>(
+    String method,
+    T fallback, {
+    Map<String, dynamic>? args,
+    T Function(dynamic raw)? decode,
+  }) async {
+    try {
+      final raw = await _method.invokeMethod<dynamic>(method, args);
+      return decode != null ? decode(raw) : (raw as T? ?? fallback);
+    } on PlatformException catch (e) {
+      debugPrint('$method error: ${e.message}');
+      return fallback;
+    }
+  }
+
+  // ── Streams ────────────────────────────────────────────────────────────────
+
   /// Emits plain-text progress lines from the Android commissioning flow.
   Stream<String> get commissionEvents =>
       _events.receiveBroadcastStream().map((e) => e as String);
 
-  // ── Live device state stream ───────────────────────────────────────────────
-  /// Emits subscription updates from the Android CHIP SDK for all subscribed
-  /// devices.  Each event is a map with at least:
-  ///   - `nodeId` (int)
-  ///   - `type`   (String): "established" | "update" | "resubscribing" | "error"
-  /// Update events also carry any subset of:
-  ///   onOff, level, localTempCenti, heatingSetptCenti, coolingSetptCenti,
-  ///   systemMode, controlSequence, humidityCenti, tempMeasureCenti,
-  ///   batPercentRaw (0–200), batChargeLevel, occupancy, contactState.
+  /// Emits subscription updates from the Android CHIP SDK.
+  /// Each event has at least `nodeId` (int) and `type` (String).
   Stream<Map<String, dynamic>> get deviceStateUpdates =>
       _deviceEvents.receiveBroadcastStream().map(
         (e) => Map<String, dynamic>.from(e as Map<Object?, Object?>));
 
   // ── Subscription control ───────────────────────────────────────────────────
 
-  Future<bool> startSubscription(int nodeId) async {
-    try {
-      return await _method.invokeMethod<bool>(
-              'startSubscription', {'nodeId': nodeId}) ?? false;
-    } on PlatformException catch (e) {
-      debugPrint('startSubscription error: ${e.message}');
-      return false;
-    }
-  }
+  Future<bool> startSubscription(int nodeId) =>
+      _invoke('startSubscription', false, args: {'nodeId': nodeId});
 
-  Future<void> stopSubscription(int nodeId) async {
-    try {
-      await _method.invokeMethod<void>('stopSubscription', {'nodeId': nodeId});
-    } on PlatformException catch (e) {
-      debugPrint('stopSubscription error: ${e.message}');
-    }
-  }
+  Future<void> stopSubscription(int nodeId) =>
+      _invoke('stopSubscription', null, args: {'nodeId': nodeId});
 
   // ── Parse setup payload ────────────────────────────────────────────────────
 
-  /// Parses a QR code or manual pairing code string and returns device metadata.
+  /// Parses a QR code or 11-digit manual pairing code.
   /// Returns null if the payload is invalid or the SDK is unavailable.
-  Future<ParsedPayload?> parsePayload(String payload) async {
-    try {
-      final result = await _method.invokeMapMethod<String, dynamic>(
-        'parsePayload', {'payload': payload},
-      );
-      if (result == null) return null;
-
-      DiscoveryCapability cap(String s) => switch (s) {
-            'BLE'        => DiscoveryCapability.ble,
-            'ON_NETWORK' => DiscoveryCapability.onNetwork,
-            'SOFT_AP'    => DiscoveryCapability.softAp,
-            'WIFI_PAF'   => DiscoveryCapability.wifiPaf,
-            'NFC'        => DiscoveryCapability.nfc,
-            _            => DiscoveryCapability.unknown,
-          };
-
-      return ParsedPayload(
-        vendorId:              result['vendorId']              as int,
-        productId:             result['productId']             as int,
-        discriminator:         result['discriminator']         as int,
-        hasShortDiscriminator: result['hasShortDiscriminator'] as bool? ?? false,
-        setupPinCode:          result['setupPinCode']          as int? ?? 0,
-        discoveryCapabilities: (result['discoveryCapabilities'] as List<dynamic>?)
-                ?.map((e) => cap(e as String))
-                .toList() ??
-            [],
-      );
-    } on PlatformException {
-      return null;
-    }
-  }
+  Future<ParsedPayload?> parsePayload(String payload) =>
+      _invoke<ParsedPayload?>('parsePayload', null, args: {'payload': payload},
+          decode: (raw) {
+            if (raw == null) return null;
+            final map = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
+            DiscoveryCapability cap(String s) => switch (s) {
+              'BLE'        => DiscoveryCapability.ble,
+              'ON_NETWORK' => DiscoveryCapability.onNetwork,
+              'SOFT_AP'    => DiscoveryCapability.softAp,
+              'WIFI_PAF'   => DiscoveryCapability.wifiPaf,
+              'NFC'        => DiscoveryCapability.nfc,
+              _            => DiscoveryCapability.unknown,
+            };
+            return ParsedPayload(
+              vendorId:              map['vendorId']              as int,
+              productId:             map['productId']             as int,
+              discriminator:         map['discriminator']         as int,
+              hasShortDiscriminator: map['hasShortDiscriminator'] as bool? ?? false,
+              setupPinCode:          map['setupPinCode']          as int? ?? 0,
+              discoveryCapabilities: (map['discoveryCapabilities'] as List<dynamic>?)
+                      ?.map((e) => cap(e as String)).toList() ?? [],
+            );
+          });
 
   // ── Commission via BLE ─────────────────────────────────────────────────────
 
@@ -145,232 +143,124 @@ class MatterChannel {
 
   // ── Device control ─────────────────────────────────────────────────────────
 
-  Future<bool> toggleDevice(int nodeId, {required bool on}) async {
-    try {
-      return await _method.invokeMethod<bool>(
-            'toggleDevice', {'nodeId': nodeId, 'on': on}) ??
-          false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  Future<bool> toggleDevice(int nodeId, {required bool on}) =>
+      _invoke('toggleDevice', false, args: {'nodeId': nodeId, 'on': on});
 
-  Future<bool> setLevel(int nodeId, int level) async {
-    try {
-      return await _method.invokeMethod<bool>(
-            'setLevel', {'nodeId': nodeId, 'level': level}) ??
-          false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  Future<bool> setLevel(int nodeId, int level) =>
+      _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
+
+  // ── Basic information ──────────────────────────────────────────────────────
+
+  /// Reads the BasicInformation cluster (0x0028) from EP0.
+  /// Returns null if the device is unreachable.
+  Future<BasicInfo?> readBasicInfo(int nodeId) =>
+      _invoke<BasicInfo?>('readBasicInfo', null, args: {'nodeId': nodeId},
+          decode: (raw) {
+            if (raw == null) return null;
+            final map = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
+            String s(String k) => (map[k] as String?) ?? '';
+            final rawNum = map['softwareVersionNum'];
+            final swNum  = rawNum is int && rawNum >= 0 ? rawNum : null;
+            return BasicInfo(
+              productName:        s('productName'),
+              vendorName:         s('vendorName'),
+              vendorId:           s('vendorId'),
+              productId:          s('productId'),
+              hwVersion:          s('hwVersion'),
+              softwareVersion:    s('softwareVersion'),
+              softwareVersionNum: swNum,
+              manufacturingDate:  s('manufacturingDate'),
+              partNumber:         s('partNumber'),
+              productUrl:         s('productUrl'),
+              serialNumber:       s('serialNumber'),
+              uniqueId:           s('uniqueId'),
+            );
+          });
+
+  /// Reads the ServerList attribute from the Descriptor cluster on [endpoint].
+  Future<List<int>> readServerClusterList(int nodeId, {int endpoint = 0}) =>
+      _invoke<List<int>>('readServerClusterList', [],
+          args: {'nodeId': nodeId, 'endpoint': endpoint},
+          decode: (raw) => (raw as List<dynamic>?)?.map((e) => e as int).toList() ?? []);
+
+  /// Reads the PartsList from EP0's Descriptor cluster.
+  Future<List<int>> readPartsList(int nodeId) =>
+      _invoke<List<int>>('readPartsList', [], args: {'nodeId': nodeId},
+          decode: (raw) => (raw as List<dynamic>?)?.map((e) => e as int).toList() ?? []);
 
   // ── Thermostat ─────────────────────────────────────────────────────────────
 
-  /// Reads LocalTemperature, OccupiedHeatingSetpoint, OccupiedCoolingSetpoint
-  /// and SystemMode from the Thermostat cluster.
-  /// All temperatures are in centidegrees (divide by 100 for °C).
-  /// Returns null if the call fails.
-  Future<({
-    String productName,
-    String vendorName,
-    String vendorId,
-    String productId,
-    String hwVersion,
-    String softwareVersion,
-    int?   softwareVersionNum,
-    String manufacturingDate,
-    String partNumber,
-    String productUrl,
-    String serialNumber,
-    String uniqueId,
-  })?> readBasicInfo(int nodeId) async {
-    try {
-      final map = await _method
-          .invokeMapMethod<String, dynamic>('readBasicInfo', {'nodeId': nodeId});
-      if (map == null) return null;
-      String s(String k) => (map[k] as String?) ?? '';
-      final rawNum = map['softwareVersionNum'];
-      final swNum  = rawNum is int && rawNum >= 0 ? rawNum : null;
-      return (
-        productName:        s('productName'),
-        vendorName:         s('vendorName'),
-        vendorId:           s('vendorId'),
-        productId:          s('productId'),
-        hwVersion:          s('hwVersion'),
-        softwareVersion:    s('softwareVersion'),
-        softwareVersionNum: swNum,
-        manufacturingDate:  s('manufacturingDate'),
-        partNumber:         s('partNumber'),
-        productUrl:         s('productUrl'),
-        serialNumber:       s('serialNumber'),
-        uniqueId:           s('uniqueId'),
-      );
-    } on PlatformException catch (e) {
-      debugPrint('readBasicInfo error: ${e.message}');
-      return null;
-    }
-  }
+  Future<ThermostatState?> readThermostat(int nodeId) =>
+      _invoke<ThermostatState?>('readThermostat', null, args: {'nodeId': nodeId},
+          decode: (raw) {
+            if (raw == null) return null;
+            final map = Map<String, int>.from(raw as Map<Object?, Object?>);
+            int? orNull(int v) => v == -32768 || v == -2147483648 ? null : v;
+            return ThermostatState(
+              localTempCenti:    orNull(map['localTemp']    ?? -32768),
+              heatingSetptCenti: orNull(map['heatingSetpoint'] ?? -32768),
+              coolingSetptCenti: orNull(map['coolingSetpoint'] ?? -32768),
+              systemMode:        map['systemMode']      == -1 ? null : map['systemMode'],
+              controlSequence:   map['controlSequence'] == -1 ? null : map['controlSequence'],
+            );
+          });
 
-  /// Reads the Descriptor cluster's ServerList attribute from [endpoint] and returns
-  /// the list of server cluster IDs present on that endpoint.
-  Future<List<int>> readServerClusterList(int nodeId, {int endpoint = 0}) async {
-    try {
-      final raw = await _method.invokeMethod<List<dynamic>>(
-          'readServerClusterList', {'nodeId': nodeId, 'endpoint': endpoint});
-      return raw?.map((e) => (e as int)).toList() ?? [];
-    } on PlatformException catch (e) {
-      debugPrint('readServerClusterList error: ${e.message}');
-      return [];
-    }
-  }
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) =>
+      _invoke('writeHeatingSetpoint', false,
+          args: {'nodeId': nodeId, 'centidegrees': centidegrees});
 
-  /// Reads EP0's Descriptor PartsList (attribute 0x0003) and returns the list
-  /// of non-root endpoint numbers the device exposes.
-  Future<List<int>> readPartsList(int nodeId) async {
-    try {
-      final raw = await _method.invokeMethod<List<dynamic>>(
-          'readPartsList', {'nodeId': nodeId});
-      return raw?.map((e) => (e as int)).toList() ?? [];
-    } on PlatformException catch (e) {
-      debugPrint('readPartsList error: ${e.message}');
-      return [];
-    }
-  }
+  Future<bool> writeSystemMode(int nodeId, int mode) =>
+      _invoke('writeSystemMode', false, args: {'nodeId': nodeId, 'mode': mode});
 
-  Future<ThermostatState?> readThermostat(int nodeId) async {
-    try {
-      final map = await _method.invokeMapMethod<String, int>(
-          'readThermostat', {'nodeId': nodeId});
-      if (map == null) return null;
-      int? orNull(int v) => v == -32768 || v == -2147483648 ? null : v;
-      return ThermostatState(
-        localTempCenti:    orNull(map['localTemp'] ?? -32768),
-        heatingSetptCenti: orNull(map['heatingSetpoint'] ?? -32768),
-        coolingSetptCenti: orNull(map['coolingSetpoint'] ?? -32768),
-        systemMode:        map['systemMode'] == -1 ? null : map['systemMode'],
-        controlSequence:   map['controlSequence'] == -1 ? null : map['controlSequence'],
-      );
-    } on PlatformException catch (e) {
-      debugPrint('readThermostat error: ${e.message}');
-      return null;
-    }
-  }
+  // ── Sensors / Battery / Humidity ───────────────────────────────────────────
 
-  /// Writes [centidegrees] to OccupiedHeatingSetpoint (int16, 0.01 °C units).
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) async {
-    try {
-      await _method.invokeMethod<bool>(
-          'writeHeatingSetpoint', {'nodeId': nodeId, 'centidegrees': centidegrees});
-      return true;
-    } on PlatformException catch (e) {
-      debugPrint('writeHeatingSetpoint error: ${e.message}');
-      return false;
-    }
-  }
+  Future<String?> readAndroidThreadCredentials() =>
+      _invoke<String?>('readAndroidThreadCredentials', null);
 
-  /// Writes [mode] to SystemMode (0=Off 1=Auto 3=Cool 4=Heat 7=FanOnly).
-  Future<bool> writeSystemMode(int nodeId, int mode) async {
-    try {
-      await _method.invokeMethod<bool>(
-          'writeSystemMode', {'nodeId': nodeId, 'mode': mode});
-      return true;
-    } on PlatformException catch (e) {
-      debugPrint('writeSystemMode error: ${e.message}');
-      return false;
-    }
-  }
+  Future<List<ThreadBorderRouter>> discoverThreadNetworks() =>
+      _invoke<List<ThreadBorderRouter>>('discoverThreadNetworks', [],
+          decode: (raw) {
+            if (raw == null) return [];
+            final list = json.decode(raw as String) as List<dynamic>;
+            return list.map((e) =>
+                ThreadBorderRouter.fromJson(e as Map<String, dynamic>)).toList();
+          });
 
-  /// Opens the Android Thread credential picker (system consent UI).
-  /// Returns the selected hex dataset string, or empty string if cancelled.
-  Future<String?> readAndroidThreadCredentials() async {
-    try {
-      return await _method.invokeMethod<String>('readAndroidThreadCredentials');
-    } on PlatformException catch (e) {
-      debugPrint('readAndroidThreadCredentials error: ${e.message}');
-      return null;
-    }
-  }
+  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) =>
+      _invoke<ThreadNetworkDiagnostics?>('readThreadNetworkDiagnostics', null,
+          args: {'nodeId': nodeId},
+          decode: (raw) {
+            if (raw == null) return null;
+            return ThreadNetworkDiagnostics.fromJson(
+                json.decode(raw as String) as Map<String, dynamic>);
+          });
 
-  /// Scans the local network for Thread Border Routers via mDNS (_meshcop._udp).
-  /// Returns a list of [ThreadBorderRouter] records (may take up to 6 s).
-  Future<List<ThreadBorderRouter>> discoverThreadNetworks() async {
-    try {
-      final jsonStr = await _method.invokeMethod<String>('discoverThreadNetworks');
-      if (jsonStr == null || jsonStr == '[]') return [];
-      final list = json.decode(jsonStr) as List<dynamic>;
-      return list
-          .map((e) => ThreadBorderRouter.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } on PlatformException catch (e) {
-      debugPrint('discoverThreadNetworks error: ${e.message}');
-      return [];
-    }
-  }
+  Future<String?> readClusters(int nodeId) =>
+      _invoke<String?>('readClusters', null, args: {'nodeId': nodeId});
 
-  /// Reads Thread Network Diagnostics cluster (0x0035) from the device.
-  /// Returns null if the cluster is absent (device is not on Thread).
-  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) async {
-    try {
-      final jsonStr = await _method.invokeMethod<String>(
-          'readThreadNetworkDiagnostics', {'nodeId': nodeId});
-      if (jsonStr == null) return null;
-      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
-      return ThreadNetworkDiagnostics.fromJson(decoded);
-    } on PlatformException catch (e) {
-      debugPrint('readThreadNetworkDiagnostics: ${e.code} ${e.message}');
-      return null;
-    }
-  }
+  Future<int?> readDeviceTypeId(int nodeId) =>
+      _invoke<int?>('readDeviceType', null, args: {'nodeId': nodeId});
 
-  Future<String?> readClusters(int nodeId) async {
-    try {
-      return await _method.invokeMethod<String>('readClusters', {'nodeId': nodeId});
-    } on PlatformException catch (e) {
-      debugPrint('readClusters error: ${e.message}');
-      return null;
-    }
-  }
+  Future<void> identify(int nodeId) =>
+      _invoke('identify', null, args: {'nodeId': nodeId});
 
-  Future<int?> readDeviceTypeId(int nodeId) async {
-    try {
-      return await _method.invokeMethod<int>(
-          'readDeviceType', {'nodeId': nodeId});
-    } on PlatformException {
-      return null;
-    }
-  }
-
-  Future<void> identify(int nodeId) async {
-    try {
-      await _method.invokeMethod<void>('identify', {'nodeId': nodeId});
-    } on PlatformException catch (e) {
-      debugPrint('identify error: ${e.message}');
-    }
-  }
-
-  Future<DeviceStateResult> readDeviceState(int nodeId) async {
-    try {
-      final result = await _method.invokeMapMethod<String, dynamic>(
-        'readDeviceState', {'nodeId': nodeId},
-      );
-      if (result == null) return const DeviceStateResult(isOnline: false);
-      return DeviceStateResult(
-        isOnline:        result['isOnline']   as bool? ?? false,
-        isOn:            result['isOn']       as bool?,
-        brightnessLevel: result['brightness'] as int?,
-      );
-    } on PlatformException {
-      return const DeviceStateResult(isOnline: false);
-    }
-  }
+  Future<DeviceStateResult> readDeviceState(int nodeId) =>
+      _invoke('readDeviceState', const DeviceStateResult(isOnline: false),
+          args: {'nodeId': nodeId},
+          decode: (raw) {
+            if (raw == null) return const DeviceStateResult(isOnline: false);
+            final result = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
+            return DeviceStateResult(
+              isOnline:        result['isOnline']   as bool? ?? false,
+              isOn:            result['isOn']       as bool?,
+              brightnessLevel: result['brightness'] as int?,
+            );
+          });
 
   // ── OTA update ─────────────────────────────────────────────────────────────
 
-  /// Downloads the OTA image from [otaUrl] to device cache and initiates the
-  /// Matter BDX transfer to [nodeId]. Progress events arrive on the
-  /// [deviceStateUpdates] stream as `{type:"otaProgress", phase:..., ...}`.
-  ///
+  /// Downloads the OTA image from [otaUrl] and initiates the Matter BDX transfer.
+  /// Progress events arrive on [deviceStateUpdates] as `{type:"otaProgress", ...}`.
   /// [targetVersion] is passed as a String to avoid 32/64-bit channel issues.
   Future<bool> downloadAndFlash({
     required int    nodeId,
@@ -379,100 +269,41 @@ class MatterChannel {
     required String targetVersionString,
     bool            dryRun   = false,
     int             endpoint = 0,
-  }) async {
-    try {
-      return await _method.invokeMethod<bool>('downloadAndFlash', {
+  }) =>
+      _invoke('downloadAndFlash', false, args: {
         'nodeId':              nodeId,
         'otaUrl':              otaUrl,
         'targetVersion':       targetVersion.toString(),
         'targetVersionString': targetVersionString,
         'dryRun':              dryRun,
         'endpoint':            endpoint,
-      }) ?? false;
-    } on PlatformException catch (e) {
-      debugPrint('downloadAndFlash error: ${e.message}');
-      return false;
-    }
-  }
+      });
 
-  Future<bool> cancelOta() async {
-    try {
-      return await _method.invokeMethod<bool>('cancelOta') ?? false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  Future<bool> cancelOta() => _invoke('cancelOta', false);
 
   // ── Share / remove / fabric ────────────────────────────────────────────────
 
-  /// Returns nearby Wi-Fi networks visible to Android, sorted by signal
-  /// strength, with the currently connected network first.
-  /// Falls back to an empty list if location permission is denied or the
-  /// system has no cached scan results.
-  Future<List<WifiNetwork>> scanWifiNetworks() async {
-    try {
-      final raw = await _method.invokeMethod<List<dynamic>>('scanWifiNetworks');
-      if (raw == null) return [];
-      return raw
-          .map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>))
-          .toList();
-    } on PlatformException catch (e) {
-      debugPrint('scanWifiNetworks error: ${e.message}');
-      return [];
-    }
-  }
+  Future<List<WifiNetwork>> scanWifiNetworks() =>
+      _invoke<List<WifiNetwork>>('scanWifiNetworks', [],
+          decode: (raw) => (raw as List<dynamic>?)
+                  ?.map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>))
+                  .toList() ?? []);
 
-  Future<bool> shareDevice(int nodeId) async {
-    try {
-      return await _method.invokeMethod<bool>(
-            'shareDevice', {'nodeId': nodeId}) ??
-          false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  Future<bool> shareDevice(int nodeId) =>
+      _invoke('shareDevice', false, args: {'nodeId': nodeId});
 
-  Future<bool> removeDevice(int nodeId) async {
-    try {
-      return await _method.invokeMethod<bool>(
-            'removeDevice', {'nodeId': nodeId}) ??
-          false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  Future<bool> removeDevice(int nodeId) =>
+      _invoke('removeDevice', false, args: {'nodeId': nodeId});
 
-  /// Runs all passive network checks (takes ~6 s) and returns a structured
-  /// [NetworkDiagnosticsReport].  Returns null on error.
-  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() async {
-    try {
-      final jsonStr =
-          await _method.invokeMethod<String>('runNetworkDiagnostics');
-      if (jsonStr == null) return null;
-      final decoded = json.decode(jsonStr) as Map<String, dynamic>;
-      return NetworkDiagnosticsReport.fromJson(decoded);
-    } on PlatformException catch (e) {
-      debugPrint('runNetworkDiagnostics error: ${e.message}');
-      return null;
-    }
-  }
+  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() =>
+      _invoke<NetworkDiagnosticsReport?>('runNetworkDiagnostics', null,
+          decode: (raw) {
+            if (raw == null) return null;
+            return NetworkDiagnosticsReport.fromJson(
+                json.decode(raw as String) as Map<String, dynamic>);
+          });
 
-  Future<String?> getFabricId() async {
-    try {
-      return await _method.invokeMethod<String>('getFabricId');
-    } on PlatformException {
-      return null;
-    }
-  }
+  Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
 
-  /// Returns the controller vendor ID used to create the fabric.
-  /// This is a compile-time constant from ChipClient — currently a test VID
-  /// (range 0xFFF1–0xFFF4 is reserved by the Matter spec for testing only).
-  Future<int?> getVendorId() async {
-    try {
-      return await _method.invokeMethod<int>('getVendorId');
-    } on PlatformException {
-      return null;
-    }
-  }
+  Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);
 }
