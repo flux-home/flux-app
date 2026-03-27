@@ -23,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -363,8 +365,7 @@ class MatterBridge(private val context: Context) {
         // ── Teardown any previous attempt ─────────────────────────────────────
         queryWatchdogJob?.cancel()
         queryWatchdogJob = null
-        try { ChipClient.getController().finishOTAProvider() } catch (_: Exception) {}
-        otaManager.reset()
+        cleanupOtaSession(destPath = "${context.cacheDir.absolutePath}/ota_${nodeId}.bin")
 
         val destPath = "${context.cacheDir.absolutePath}/ota_${nodeId}.bin"
 
@@ -392,9 +393,7 @@ class MatterBridge(private val context: Context) {
         otaManager.onApplyUpdate = { nid ->
             if (dryRun) {
                 emitOtaProgress(nid, "dryrun", null, null)
-                ChipClient.getController().finishOTAProvider()
-                otaManager.reset()
-                cleanupOtaFile(destPath)
+                cleanupOtaSession(destPath)
             } else {
                 emitOtaProgress(nid, "applying", null, null)
             }
@@ -402,17 +401,13 @@ class MatterBridge(private val context: Context) {
         otaManager.onUpdateApplied = { nid ->
             queryWatchdogJob?.cancel()
             emitOtaProgress(nid, "complete", 100, null)
-            ChipClient.getController().finishOTAProvider()
-            otaManager.reset()
-            cleanupOtaFile(destPath)
+            cleanupOtaSession(destPath)
         }
         otaManager.onTransferComplete = { nid, success ->
             queryWatchdogJob?.cancel()
             if (!success) {
                 emitOtaProgress(nid, "error", null, "BDX transfer failed")
-                ChipClient.getController().finishOTAProvider()
-                otaManager.reset()
-                cleanupOtaFile(destPath)
+                cleanupOtaSession(destPath)
             }
         }
 
@@ -424,18 +419,16 @@ class MatterBridge(private val context: Context) {
             ClusterClient.announceOtaProvider(context, nodeId, providerNodeId, ChipClient.VENDOR_ID, otaEndpoint)
             emitOtaProgress(nodeId, "querying", null, null)
         } catch (e: Exception) {
-            // AnnounceOTAProvider is optional — some devices don't support it
-            // (returns UNSUPPORTED_COMMAND).  Try writing DefaultOTAProviders
-            // so the device's background polling picks up our provider instead.
+            // AnnounceOTAProvider is optional — some devices don't support it.
+            // Try writing DefaultOTAProviders so the device's background polling
+            // picks up our provider instead.
             Log.w(TAG, "AnnounceOTAProvider failed (${e.message}), trying DefaultOTAProviders")
             try {
                 ClusterClient.writeDefaultOtaProviders(context, nodeId, providerNodeId)
                 emitOtaProgress(nodeId, "querying", null, null)
             } catch (e2: Exception) {
                 Log.e(TAG, "DefaultOTAProviders write also failed: ${e2.message}")
-                ChipClient.getController().finishOTAProvider()
-                otaManager.reset()
-                cleanupOtaFile(destPath)
+                cleanupOtaSession(destPath)
                 emitOtaProgress(nodeId, "error", null,
                     "Could not reach OTA Requestor: ${e2.message}")
             }
@@ -446,9 +439,7 @@ class MatterBridge(private val context: Context) {
         queryWatchdogJob = scope.launch {
             delay(90_000L)
             Log.w(TAG, "OTA query watchdog expired for nodeId=$nodeId")
-            ChipClient.getController().finishOTAProvider()
-            otaManager.reset()
-            cleanupOtaFile(destPath)
+            cleanupOtaSession(destPath)
             emitOtaProgress(nodeId, "error", null,
                 "Device did not initiate an OTA session within 90 s")
         }
@@ -464,9 +455,18 @@ class MatterBridge(private val context: Context) {
         // reset its backoff state immediately so a new attempt works right away.
         otaManager.markNotAvailable()
         delay(3_000L)   // give the device a moment to query and get NotAvailable
-        ChipClient.getController().finishOTAProvider()
-        otaManager.reset()
+        val destPath = "${context.cacheDir.absolutePath}/ota_*.bin" // pattern — reset cleans up
+        cleanupOtaSession(destPath)
         main.post { result.success(true) }
+    }
+
+    // ── OTA session cleanup helper ────────────────────────────────────────────
+
+    /** Stops the OTA provider, resets the manager, and deletes the image file. */
+    private fun cleanupOtaSession(destPath: String) {
+        try { ChipClient.getController().finishOTAProvider() } catch (_: Exception) {}
+        otaManager.reset()
+        cleanupOtaFile(destPath)
     }
 
     private fun emitOtaProgress(nodeId: Long, phase: String, progress: Int?, message: String?) {
@@ -537,27 +537,20 @@ class MatterBridge(private val context: Context) {
         scope.launch {
             try {
                 val routers = ThreadBorderRouterScanner.scan(context)
-                val sb = StringBuilder("[")
-                routers.forEachIndexed { i, r ->
-                    if (i > 0) sb.append(",")
-                    sb.append("{")
-                    sb.append("\"serviceName\":${jsonStr(r.serviceName)},")
-                    sb.append("\"networkName\":${jsonStr(r.networkName)},")
-                    sb.append("\"extPanId\":${jsonStr(r.extPanId)},")
-                    sb.append("\"vendorName\":${jsonStr(r.vendorName)},")
-                    sb.append("\"modelName\":${jsonStr(r.modelName)},")
-                    sb.append("\"host\":${jsonStr(r.host)},")
-                    sb.append("\"port\":${r.port},")
-                    // txt: inline JSON object
-                    sb.append("\"txt\":{")
-                    r.txt.entries.forEachIndexed { j, (k, v) ->
-                        if (j > 0) sb.append(",")
-                        sb.append("${jsonStr(k)}:${jsonStr(v)}")
-                    }
-                    sb.append("}}")
+                val arr = JSONArray()
+                for (r in routers) {
+                    val txt = JSONObject().apply { r.txt.forEach { (k, v) -> put(k, v) } }
+                    arr.put(JSONObject()
+                        .put("serviceName", r.serviceName)
+                        .put("networkName", r.networkName)
+                        .put("extPanId",    r.extPanId)
+                        .put("vendorName",  r.vendorName)
+                        .put("modelName",   r.modelName)
+                        .put("host",        r.host)
+                        .put("port",        r.port)
+                        .put("txt",         txt))
                 }
-                sb.append("]")
-                main.post { result.success(sb.toString()) }
+                main.post { result.success(arr.toString()) }
             } catch (e: Exception) {
                 Log.e(TAG, "discoverThreadNetworks error", e)
                 main.post { result.error("THREAD_SCAN_ERROR", e.message, null) }
@@ -565,7 +558,6 @@ class MatterBridge(private val context: Context) {
         }
     }
 
-    private fun jsonStr(s: String) = "\"${s.replace("\\","\\\\").replace("\"","\\\"")}\""
 
     // ── Network diagnostics ───────────────────────────────────────────────────
 
@@ -583,81 +575,57 @@ class MatterBridge(private val context: Context) {
     }
 
     private fun buildDiagnosticsJson(r: NetworkDiagnosticsRunner.DiagnosticsReport): String {
-        val sb = StringBuilder()
-        sb.append("{")
-
-        // phoneIpv6
-        sb.append("\"phoneIpv6\":{")
-        sb.append("\"hasRoutableIpv6\":${r.phoneIpv6.hasRoutableIpv6},")
-        sb.append("\"guaAddresses\":${jsonStrArray(r.phoneIpv6.guaAddresses)},")
-        sb.append("\"ulaAddresses\":${jsonStrArray(r.phoneIpv6.ulaAddresses)},")
-        sb.append("\"linkLocalAddresses\":${jsonStrArray(r.phoneIpv6.linkLocalAddresses)}")
-        sb.append("},")
-
-        // multicastLockAcquired
-        sb.append("\"multicastLockAcquired\":${r.multicastLockAcquired},")
-
-        // wifi
-        sb.append("\"wifi\":{")
-        sb.append("\"frequencyMhz\":${r.wifi.frequencyMhz},")
-        sb.append("\"band\":${jsonStr(r.wifi.band)},")
-        sb.append("\"ssid\":${jsonStr(r.wifi.ssid)},")
-        sb.append("\"hasBandSuffix\":${r.wifi.hasBandSuffix}")
-        sb.append("},")
-
-        // vpn
-        sb.append("\"vpn\":{")
-        sb.append("\"isActive\":${r.vpn.isActive}")
-        sb.append("},")
-
-        // borderRouters
-        sb.append("\"borderRouters\":[")
-        r.borderRouters.forEachIndexed { i, br ->
-            if (i > 0) sb.append(",")
-            sb.append("{")
-            sb.append("\"serviceName\":${jsonStr(br.serviceName)},")
-            sb.append("\"networkName\":${jsonStr(br.networkName)},")
-            sb.append("\"extPanId\":${jsonStr(br.extPanId)},")
-            sb.append("\"vendorName\":${jsonStr(br.vendorName)},")
-            sb.append("\"modelName\":${jsonStr(br.modelName)},")
-            sb.append("\"port\":${br.port},")
-            sb.append("\"hostsV4\":${jsonStrArray(br.hostsV4)},")
-            sb.append("\"hostsV6LinkLocal\":${jsonStrArray(br.hostsV6LinkLocal)},")
-            sb.append("\"hostsV6Ula\":${jsonStrArray(br.hostsV6Ula)},")
-            sb.append("\"hostsV6Gua\":${jsonStrArray(br.hostsV6Gua)},")
-            sb.append("\"tcpReachable\":${br.tcpReachable?.toString() ?: "null"},")
-            sb.append("\"sameSubnetAsPhone\":${br.sameSubnetAsPhone?.toString() ?: "null"},")
-            sb.append("\"ipv6PrefixMatchesPhone\":${br.ipv6PrefixMatchesPhone?.toString() ?: "null"},")
+        val borderRouters = JSONArray()
+        for (br in r.borderRouters) {
+            val brObj = JSONObject()
+                .put("serviceName",  br.serviceName)
+                .put("networkName",  br.networkName)
+                .put("extPanId",     br.extPanId)
+                .put("vendorName",   br.vendorName)
+                .put("modelName",    br.modelName)
+                .put("port",         br.port)
+                .put("hostsV4",           JSONArray(br.hostsV4))
+                .put("hostsV6LinkLocal",  JSONArray(br.hostsV6LinkLocal))
+                .put("hostsV6Ula",        JSONArray(br.hostsV6Ula))
+                .put("hostsV6Gua",        JSONArray(br.hostsV6Gua))
+                .put("tcpReachable",          br.tcpReachable)
+                .put("sameSubnetAsPhone",     br.sameSubnetAsPhone)
+                .put("ipv6PrefixMatchesPhone",br.ipv6PrefixMatchesPhone)
             if (br.stateBitmap != null) {
                 val bm = br.stateBitmap
-                sb.append("\"stateBitmap\":{")
-                sb.append("\"raw\":${bm.raw},")
-                sb.append("\"connectionMode\":${bm.connectionMode},")
-                sb.append("\"connectionModeLabel\":${jsonStr(bm.connectionModeLabel)},")
-                sb.append("\"threadInterfaceStatus\":${bm.threadInterfaceStatus},")
-                sb.append("\"threadInterfaceLabel\":${jsonStr(bm.threadInterfaceLabel)},")
-                sb.append("\"threadInterfaceActive\":${bm.threadInterfaceActive},")
-                sb.append("\"availability\":${bm.availability},")
-                sb.append("\"bbrActive\":${bm.bbrActive},")
-                sb.append("\"bbrIsPrimary\":${bm.bbrIsPrimary}")
-                sb.append("}")
+                brObj.put("stateBitmap", JSONObject()
+                    .put("raw",                    bm.raw)
+                    .put("connectionMode",         bm.connectionMode)
+                    .put("connectionModeLabel",    bm.connectionModeLabel)
+                    .put("threadInterfaceStatus",  bm.threadInterfaceStatus)
+                    .put("threadInterfaceLabel",   bm.threadInterfaceLabel)
+                    .put("threadInterfaceActive",  bm.threadInterfaceActive)
+                    .put("availability",           bm.availability)
+                    .put("bbrActive",              bm.bbrActive)
+                    .put("bbrIsPrimary",           bm.bbrIsPrimary))
             } else {
-                sb.append("\"stateBitmap\":null")
+                brObj.put("stateBitmap", JSONObject.NULL)
             }
-            sb.append("}")
+            borderRouters.put(brObj)
         }
-        sb.append("],")
 
-        // matterTcpServices
-        sb.append("\"matterTcpServices\":${jsonStrArray(r.matterTcpServices)}")
-
-        sb.append("}")
-        return sb.toString()
-    }
-
-    private fun jsonStrArray(list: List<String>): String {
-        val items = list.joinToString(",") { jsonStr(it) }
-        return "[$items]"
+        return JSONObject()
+            .put("phoneIpv6", JSONObject()
+                .put("hasRoutableIpv6",    r.phoneIpv6.hasRoutableIpv6)
+                .put("guaAddresses",       JSONArray(r.phoneIpv6.guaAddresses))
+                .put("ulaAddresses",       JSONArray(r.phoneIpv6.ulaAddresses))
+                .put("linkLocalAddresses", JSONArray(r.phoneIpv6.linkLocalAddresses)))
+            .put("multicastLockAcquired", r.multicastLockAcquired)
+            .put("wifi", JSONObject()
+                .put("frequencyMhz", r.wifi.frequencyMhz)
+                .put("band",         r.wifi.band)
+                .put("ssid",         r.wifi.ssid)
+                .put("hasBandSuffix",r.wifi.hasBandSuffix))
+            .put("vpn", JSONObject()
+                .put("isActive", r.vpn.isActive))
+            .put("borderRouters",     borderRouters)
+            .put("matterTcpServices", JSONArray(r.matterTcpServices))
+            .toString()
     }
 
     // ── Parse setup payload (for UI pre-fill) ────────────────────────────────

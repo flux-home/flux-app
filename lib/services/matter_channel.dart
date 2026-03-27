@@ -243,7 +243,7 @@ class MatterChannel {
       final map = await _method.invokeMapMethod<String, int>(
           'readThermostat', {'nodeId': nodeId});
       if (map == null) return null;
-      int? orNull(int v) => v == -32768 || v == 0x80000000 ? null : v;
+      int? orNull(int v) => v == -32768 || v == -2147483648 ? null : v;
       return ThermostatState(
         localTempCenti:    orNull(map['localTemp'] ?? -32768),
         heatingSetptCenti: orNull(map['heatingSetpoint'] ?? -32768),

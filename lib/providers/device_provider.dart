@@ -62,12 +62,10 @@ class DeviceProvider extends ChangeNotifier {
 
   Future<void> _persist() => _store.saveDevices(_devices);
 
-  // ── Live cache accessors ───────────────────────────────────────────────────
+  // ── Live cache helpers ─────────────────────────────────────────────────────
 
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
-
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
-
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
   void clearOtaProgress(String deviceId) {
@@ -80,27 +78,24 @@ class DeviceProvider extends ChangeNotifier {
     // No notifyListeners needed — detail screen reads this directly.
   }
 
+  /// Applies [transform] to the live cache entry for [deviceId], creating
+  /// a blank entry if none exists.  Always calls [notifyListeners].
+  void _mergeLiveCache(String deviceId, DeviceLiveData Function(DeviceLiveData) transform) {
+    _liveCache[deviceId] = transform(
+      _liveCache[deviceId] ?? DeviceLiveData(updatedAt: DateTime.now(), isStale: false),
+    );
+    notifyListeners();
+  }
+
   void updateBasicInfo(String deviceId, String? productName, String? serial, String? swVersion,
       {String? vendorName, String? vendorId, String? productId,
        String? hwVersion, String? manufacturingDate, String? partNumber,
        String? productUrl, String? uniqueId, int? swVersionNum}) {
-    final existing = _liveCache[deviceId];
-    if (existing != null) {
-      _liveCache[deviceId] = existing.withBasicInfo(serial, swVersion, productName,
-          vendorName: vendorName, vendorId: vendorId, productId: productId,
-          hwVersion: hwVersion, manufacturingDate: manufacturingDate,
-          partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-          swVersionNum: swVersionNum);
-    } else {
-      _liveCache[deviceId] = DeviceLiveData(
-        updatedAt: DateTime.now(), isStale: false,
-        productName: productName, vendorName: vendorName, vendorId: vendorId,
-        productId: productId, hwVersion: hwVersion, serialNumber: serial,
-        softwareVersion: swVersion, softwareVersionNum: swVersionNum,
-        manufacturingDate: manufacturingDate,
+    _mergeLiveCache(deviceId, (e) => e.withBasicInfo(serial, swVersion, productName,
+        vendorName: vendorName, vendorId: vendorId, productId: productId,
+        hwVersion: hwVersion, manufacturingDate: manufacturingDate,
         partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-      );
-    }
+        swVersionNum: swVersionNum));
     if (productName != null && productName.isNotEmpty) {
       final idx = _indexById(deviceId);
       if (idx != -1 && _devices[idx].productName != productName) {
@@ -108,20 +103,10 @@ class DeviceProvider extends ChangeNotifier {
         _persist();
       }
     }
-    notifyListeners();
   }
 
-  /// Updates the OTA Requestor cluster presence flag in the live cache.
   void updateOtaSupport(String deviceId, bool supported, {int endpoint = 0}) {
-    final existing = _liveCache[deviceId];
-    if (existing != null) {
-      _liveCache[deviceId] = existing.withOtaSupported(supported, endpoint);
-    } else {
-      _liveCache[deviceId] = DeviceLiveData(
-        updatedAt: DateTime.now(), isStale: false,
-        otaSupported: supported, otaEndpoint: supported ? endpoint : null);
-    }
-    notifyListeners();
+    _mergeLiveCache(deviceId, (e) => e.withOtaSupported(supported, endpoint));
   }
 
   // ── Subscription event handler ─────────────────────────────────────────────
@@ -376,34 +361,24 @@ class DeviceProvider extends ChangeNotifier {
       final thermo = await _channel.readThermostat(device.nodeId);
       if (thermo != null) {
         localTempCenti = thermo.localTempCenti ?? localTempCenti;
-        // Seed live cache with thermostat data for immediate display.
-        final existing = _liveCache[device.id];
-        _liveCache[device.id] = DeviceLiveData(
-          updatedAt:        DateTime.now(),
-          isStale:          false,
-          isOn:             deviceState.isOn  ?? existing?.isOn,
-          levelRaw:         deviceState.brightnessLevel ?? existing?.levelRaw,
-          localTempCenti:   thermo.localTempCenti    ?? existing?.localTempCenti,
-          heatingSetptCenti:thermo.heatingSetptCenti ?? existing?.heatingSetptCenti,
-          coolingSetptCenti:thermo.coolingSetptCenti ?? existing?.coolingSetptCenti,
-          systemMode:       thermo.systemMode        ?? existing?.systemMode,
-          controlSequence:  thermo.controlSequence   ?? existing?.controlSequence,
-          humidityCenti:    existing?.humidityCenti,
-          tempMeasureCenti: existing?.tempMeasureCenti,
-          batPercentRaw:    existing?.batPercentRaw,
-          batChargeLevel:   existing?.batChargeLevel,
-          serialNumber:     existing?.serialNumber,
-          softwareVersion:  existing?.softwareVersion,
-        );
+        _mergeLiveCache(device.id, (e) => e.copyWith(
+          updatedAt:         DateTime.now(),
+          isStale:           false,
+          isOn:              deviceState.isOn  ?? e.isOn,
+          levelRaw:          deviceState.brightnessLevel ?? e.levelRaw,
+          localTempCenti:    thermo.localTempCenti    ?? e.localTempCenti,
+          heatingSetptCenti: thermo.heatingSetptCenti ?? e.heatingSetptCenti,
+          coolingSetptCenti: thermo.coolingSetptCenti ?? e.coolingSetptCenti,
+          systemMode:        thermo.systemMode        ?? e.systemMode,
+          controlSequence:   thermo.controlSequence   ?? e.controlSequence,
+          // All basic-info and OTA fields are preserved automatically via copyWith.
+        ));
       }
     } else {
-      // Seed basic on/off state into live cache.
-      final existing = _liveCache[device.id];
-      _liveCache[device.id] = (existing ?? DeviceLiveData(
-        updatedAt: DateTime.now(), isStale: false)).merge({
-        'onOff': deviceState.isOn,
-        'level': deviceState.brightnessLevel,
-      });
+      _mergeLiveCache(device.id, (e) => e.merge({
+        if (deviceState.isOn != null)            'onOff': deviceState.isOn,
+        if (deviceState.brightnessLevel != null) 'level': deviceState.brightnessLevel,
+      }));
     }
 
     _devices[idx] = device.copyWith(
@@ -481,9 +456,10 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  MatterDevice? findById(String id) => _indexById(id) >= 0
-      ? _devices[_indexById(id)]
-      : null;
+  MatterDevice? findById(String id) {
+    final idx = _indexById(id);
+    return idx >= 0 ? _devices[idx] : null;
+  }
 
   int _indexById(String id) => _devices.indexWhere((d) => d.id == id);
 

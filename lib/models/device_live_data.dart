@@ -1,5 +1,9 @@
 import 'thermostat_models.dart';
 
+// Sentinel used by [DeviceLiveData.copyWith] to mean "keep the existing value"
+// rather than "set to null".  Callers must not reference this directly.
+const _keep = Object();
+
 /// In-memory-only live state cache for a commissioned device.
 /// Populated by CHIP SDK subscriptions; never persisted.
 class DeviceLiveData {
@@ -40,19 +44,16 @@ class DeviceLiveData {
   final String? productId;
   final String? hwVersion;
   final String? serialNumber;
-  final String? softwareVersion;       // human-readable string, e.g. "1.2.0-s1"
-  final int?    softwareVersionNum;    // uint32 from BasicInformation (for DCL comparison)
+  final String? softwareVersion;    // human-readable string, e.g. "1.2.0-s1"
+  final int?    softwareVersionNum; // uint32 from BasicInformation (for DCL comparison)
   final String? manufacturingDate;
   final String? partNumber;
   final String? productUrl;
   final String? uniqueId;
 
   // ── Optional-cluster flags (checked once after commissioning) ──────────────
-  /// null = not yet checked, true = OTA Requestor cluster present on EP0
-  final bool?   otaSupported;
-  /// The endpoint on which the OTA Requestor cluster was found. Null when
-  /// [otaSupported] is null or false.
-  final int?    otaEndpoint;
+  final bool?   otaSupported; // null = not yet checked
+  final int?    otaEndpoint;  // endpoint where OTA Requestor was found
 
   const DeviceLiveData({
     required this.updatedAt,
@@ -87,138 +88,131 @@ class DeviceLiveData {
     this.otaEndpoint,
   });
 
-  // ── Derived helpers ────────────────────────────────────────────────────────
-
-  /// Convenience: build a [ThermostatState] if thermostat attributes are present.
-  ThermostatState? get thermoState {
-    if (localTempCenti == null && heatingSetptCenti == null) return null;
-    return ThermostatState(
-      localTempCenti:    _nullSentinel16(localTempCenti),
-      heatingSetptCenti: _nullSentinel16(heatingSetptCenti),
-      coolingSetptCenti: _nullSentinel16(coolingSetptCenti),
-      systemMode:        systemMode == -1 ? null : systemMode,
-      controlSequence:   controlSequence == -1 ? null : controlSequence,
+  // ── copyWith ───────────────────────────────────────────────────────────────
+  //
+  // Nullable fields use [_keep] as a default so callers can distinguish
+  // "don't change this field" from "set this field to null".
+  //
+  //   data.copyWith(isOn: true)      // sets isOn = true, everything else kept
+  //   data.copyWith(isOn: null)      // sets isOn = null
+  //   data.copyWith()                // returns identical copy
+  //
+  DeviceLiveData copyWith({
+    DateTime? updatedAt,
+    bool?     isStale,
+    Object?   isOn             = _keep,
+    Object?   levelRaw         = _keep,
+    Object?   localTempCenti   = _keep,
+    Object?   heatingSetptCenti= _keep,
+    Object?   coolingSetptCenti= _keep,
+    Object?   systemMode       = _keep,
+    Object?   controlSequence  = _keep,
+    Object?   humidityCenti    = _keep,
+    Object?   tempMeasureCenti = _keep,
+    Object?   batPercentRaw    = _keep,
+    Object?   batChargeLevel   = _keep,
+    Object?   occupancy        = _keep,
+    Object?   contactState     = _keep,
+    Object?   airQuality       = _keep,
+    Object?   productName      = _keep,
+    Object?   vendorName       = _keep,
+    Object?   vendorId         = _keep,
+    Object?   productId        = _keep,
+    Object?   hwVersion        = _keep,
+    Object?   serialNumber     = _keep,
+    Object?   softwareVersion  = _keep,
+    Object?   softwareVersionNum = _keep,
+    Object?   manufacturingDate = _keep,
+    Object?   partNumber       = _keep,
+    Object?   productUrl       = _keep,
+    Object?   uniqueId         = _keep,
+    Object?   otaSupported     = _keep,
+    Object?   otaEndpoint      = _keep,
+  }) {
+    // Helper: return existing value if caller passed _keep, otherwise cast.
+    T? v<T>(Object? arg, T? existing) => identical(arg, _keep) ? existing : arg as T?;
+    return DeviceLiveData(
+      updatedAt:         updatedAt          ?? this.updatedAt,
+      isStale:           isStale            ?? this.isStale,
+      isOn:              v(isOn,              this.isOn),
+      levelRaw:          v(levelRaw,          this.levelRaw),
+      localTempCenti:    v(localTempCenti,    this.localTempCenti),
+      heatingSetptCenti: v(heatingSetptCenti, this.heatingSetptCenti),
+      coolingSetptCenti: v(coolingSetptCenti, this.coolingSetptCenti),
+      systemMode:        v(systemMode,        this.systemMode),
+      controlSequence:   v(controlSequence,   this.controlSequence),
+      humidityCenti:     v(humidityCenti,     this.humidityCenti),
+      tempMeasureCenti:  v(tempMeasureCenti,  this.tempMeasureCenti),
+      batPercentRaw:     v(batPercentRaw,     this.batPercentRaw),
+      batChargeLevel:    v(batChargeLevel,    this.batChargeLevel),
+      occupancy:         v(occupancy,         this.occupancy),
+      contactState:      v(contactState,      this.contactState),
+      airQuality:        v(airQuality,        this.airQuality),
+      productName:       v(productName,       this.productName),
+      vendorName:        v(vendorName,        this.vendorName),
+      vendorId:          v(vendorId,          this.vendorId),
+      productId:         v(productId,         this.productId),
+      hwVersion:         v(hwVersion,         this.hwVersion),
+      serialNumber:      v(serialNumber,      this.serialNumber),
+      softwareVersion:   v(softwareVersion,   this.softwareVersion),
+      softwareVersionNum:v(softwareVersionNum,this.softwareVersionNum),
+      manufacturingDate: v(manufacturingDate, this.manufacturingDate),
+      partNumber:        v(partNumber,        this.partNumber),
+      productUrl:        v(productUrl,        this.productUrl),
+      uniqueId:          v(uniqueId,          this.uniqueId),
+      otaSupported:      v(otaSupported,      this.otaSupported),
+      otaEndpoint:       v(otaEndpoint,       this.otaEndpoint),
     );
   }
 
-  /// Battery percent 0–100 derived from raw (0–200) value.
-  int? get batPercent =>
-      batPercentRaw != null ? (batPercentRaw! ~/ 2) : null;
+  // ── Targeted update helpers (all delegate to copyWith) ────────────────────
 
-  /// Convenience: build a [BatteryInfo] if any battery attribute is present.
-  BatteryInfo? get batteryInfo {
-    if (batPercent == null && batChargeLevel == null) return null;
-    return BatteryInfo(percent: batPercent, chargeLevel: batChargeLevel);
-  }
+  DeviceLiveData markStale() => copyWith(isStale: true);
 
-  static int? _nullSentinel16(int? v) =>
-      (v == null || v == -32768 || v == 0x8000) ? null : v;
+  DeviceLiveData withOtaSupported(bool value, int endpoint) => copyWith(
+    otaSupported: value,
+    otaEndpoint:  value ? endpoint : null,
+  );
+
+  DeviceLiveData withBasicInfo(
+    String? serial,
+    String? swVersion,
+    String? product, {
+    String? vendorName,
+    String? vendorId,
+    String? productId,
+    String? hwVersion,
+    String? manufacturingDate,
+    String? partNumber,
+    String? productUrl,
+    String? uniqueId,
+    int?    swVersionNum,
+  }) =>
+      copyWith(
+        serialNumber:      serial,
+        softwareVersion:   swVersion,
+        softwareVersionNum:swVersionNum ?? this.softwareVersionNum,
+        productName:       product,
+        vendorName:        vendorName       ?? this.vendorName,
+        vendorId:          vendorId         ?? this.vendorId,
+        productId:         productId        ?? this.productId,
+        hwVersion:         hwVersion        ?? this.hwVersion,
+        manufacturingDate: manufacturingDate ?? this.manufacturingDate,
+        partNumber:        partNumber       ?? this.partNumber,
+        productUrl:        productUrl       ?? this.productUrl,
+        uniqueId:          uniqueId         ?? this.uniqueId,
+      );
 
   // ── Merge incoming subscription map ───────────────────────────────────────
 
-  /// Returns a new [DeviceLiveData] with [update] values merged in.
-  /// Fields not present in [update] retain their current values.
+  /// Returns a new [DeviceLiveData] with subscription [update] values merged in.
+  /// Keys absent from [update] retain their current values; basic-info fields
+  /// (productName, vendorId, etc.) are always preserved.
   DeviceLiveData merge(Map<String, dynamic> update) {
-    T? pick<T>(String key, T? fallback) {
-      if (update.containsKey(key)) return update[key] as T?;
-      return fallback;
-    }
-    return DeviceLiveData(
-      updatedAt:        DateTime.now(),
-      isStale:          false,
-      isOn:             pick('onOff',            isOn),
-      levelRaw:         pick('level',            levelRaw),
-      localTempCenti:   pick('localTempCenti',   localTempCenti),
-      heatingSetptCenti:pick('heatingSetptCenti',heatingSetptCenti),
-      coolingSetptCenti:pick('coolingSetptCenti',coolingSetptCenti),
-      systemMode:       pick('systemMode',       systemMode),
-      controlSequence:  pick('controlSequence',  controlSequence),
-      humidityCenti:    pick('humidityCenti',    humidityCenti),
-      tempMeasureCenti: pick('tempMeasureCenti', tempMeasureCenti),
-      batPercentRaw:    pick('batPercentRaw',    batPercentRaw),
-      batChargeLevel:   pick('batChargeLevel',   batChargeLevel),
-      occupancy:        pick('occupancy',        occupancy),
-      contactState:     pick('contactState',     contactState),
-      airQuality:       pick('airQuality',       airQuality),
-      // basic info passthrough
-      productName: productName, vendorName: vendorName, vendorId: vendorId,
-      productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
-      softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
-      manufacturingDate: manufacturingDate,
-      partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-      otaSupported: otaSupported,
-      otaEndpoint: otaEndpoint,
-    );
-  }
-
-  DeviceLiveData markStale() => DeviceLiveData(
-    updatedAt: updatedAt, isStale: true,
-    isOn: isOn, levelRaw: levelRaw,
-    localTempCenti: localTempCenti, heatingSetptCenti: heatingSetptCenti,
-    coolingSetptCenti: coolingSetptCenti, systemMode: systemMode,
-    controlSequence: controlSequence, humidityCenti: humidityCenti,
-    tempMeasureCenti: tempMeasureCenti, batPercentRaw: batPercentRaw,
-    batChargeLevel: batChargeLevel, occupancy: occupancy,
-    contactState: contactState, airQuality: airQuality,
-    productName: productName, vendorName: vendorName, vendorId: vendorId,
-    productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
-    softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
-    manufacturingDate: manufacturingDate,
-    partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-    otaSupported: otaSupported,
-    otaEndpoint: otaEndpoint,
-  );
-
-  DeviceLiveData withBasicInfo(String? serial, String? swVersion, String? product,
-      {String? vendorName, String? vendorId, String? productId,
-       String? hwVersion, String? manufacturingDate, String? partNumber,
-       String? productUrl, String? uniqueId, int? swVersionNum}) =>
-    DeviceLiveData(
-      updatedAt: updatedAt, isStale: isStale,
-      isOn: isOn, levelRaw: levelRaw,
-      localTempCenti: localTempCenti, heatingSetptCenti: heatingSetptCenti,
-      coolingSetptCenti: coolingSetptCenti, systemMode: systemMode,
-      controlSequence: controlSequence, humidityCenti: humidityCenti,
-      tempMeasureCenti: tempMeasureCenti, batPercentRaw: batPercentRaw,
-      batChargeLevel: batChargeLevel, occupancy: occupancy,
-      contactState: contactState, airQuality: airQuality,
-      serialNumber: serial, softwareVersion: swVersion,
-      softwareVersionNum: swVersionNum ?? this.softwareVersionNum,
-      productName: product,
-      vendorName: vendorName ?? this.vendorName,
-      vendorId: vendorId ?? this.vendorId,
-      productId: productId ?? this.productId,
-      hwVersion: hwVersion ?? this.hwVersion,
-      manufacturingDate: manufacturingDate ?? this.manufacturingDate,
-      partNumber: partNumber ?? this.partNumber,
-      productUrl: productUrl ?? this.productUrl,
-      uniqueId: uniqueId ?? this.uniqueId,
-      otaSupported: otaSupported,
-      otaEndpoint: otaEndpoint,
-    );
-
-  DeviceLiveData withOtaSupported(bool value, int endpoint) => DeviceLiveData(
-    updatedAt: updatedAt, isStale: isStale,
-    isOn: isOn, levelRaw: levelRaw,
-    localTempCenti: localTempCenti, heatingSetptCenti: heatingSetptCenti,
-    coolingSetptCenti: coolingSetptCenti, systemMode: systemMode,
-    controlSequence: controlSequence, humidityCenti: humidityCenti,
-    tempMeasureCenti: tempMeasureCenti, batPercentRaw: batPercentRaw,
-    batChargeLevel: batChargeLevel, occupancy: occupancy,
-    contactState: contactState, airQuality: airQuality,
-    productName: productName, vendorName: vendorName, vendorId: vendorId,
-    productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
-    softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
-    manufacturingDate: manufacturingDate,
-    partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-    otaSupported: value,
-    otaEndpoint: value ? endpoint : null,
-  );
-
-  factory DeviceLiveData.fromUpdate(Map<String, dynamic> update) {
-    T? pick<T>(String key) =>
-        update.containsKey(key) ? update[key] as T? : null;
-    return DeviceLiveData(
+    // Returns _keep when the key is absent so copyWith leaves the field alone.
+    Object? pick(String key) =>
+        update.containsKey(key) ? update[key] : _keep;
+    return copyWith(
       updatedAt:        DateTime.now(),
       isStale:          false,
       isOn:             pick('onOff'),
@@ -235,6 +229,37 @@ class DeviceLiveData {
       occupancy:        pick('occupancy'),
       contactState:     pick('contactState'),
       airQuality:       pick('airQuality'),
+      // Basic-info fields are never overwritten by subscription events.
     );
   }
+
+  /// Creates a fresh [DeviceLiveData] seeded only from a subscription update map.
+  factory DeviceLiveData.fromUpdate(Map<String, dynamic> update) =>
+      DeviceLiveData(updatedAt: DateTime.now(), isStale: false)
+          .merge(update);
+
+  // ── Derived helpers ────────────────────────────────────────────────────────
+
+  ThermostatState? get thermoState {
+    if (localTempCenti == null && heatingSetptCenti == null) return null;
+    return ThermostatState(
+      localTempCenti:    _noSentinel(localTempCenti),
+      heatingSetptCenti: _noSentinel(heatingSetptCenti),
+      coolingSetptCenti: _noSentinel(coolingSetptCenti),
+      systemMode:        systemMode == -1 ? null : systemMode,
+      controlSequence:   controlSequence == -1 ? null : controlSequence,
+    );
+  }
+
+  int? get batPercent =>
+      batPercentRaw != null ? (batPercentRaw! ~/ 2) : null;
+
+  BatteryInfo? get batteryInfo {
+    if (batPercent == null && batChargeLevel == null) return null;
+    return BatteryInfo(percent: batPercent, chargeLevel: batChargeLevel);
+  }
+
+  /// Converts Matter's signed-16-bit null sentinel (0x8000 = −32768) to Dart null.
+  static int? _noSentinel(int? v) =>
+      (v == null || v == -32768) ? null : v;
 }
