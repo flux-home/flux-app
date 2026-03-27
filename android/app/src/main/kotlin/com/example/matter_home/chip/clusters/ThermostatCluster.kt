@@ -17,7 +17,7 @@ internal object ThermostatCluster {
      * Reads LocalTemperature, OccupiedHeatingSetpoint, OccupiedCoolingSetpoint,
      * SystemMode and ControlSequenceOfOperation from the Thermostat cluster.
      * All temperatures are in centidegrees (0.01 °C).
-     * 0x8000 (Matter nullable int16 null sentinel per spec §4.3.9.3) → mapped to null.
+     * 0x8000 (Matter nullable int16 null sentinel, spec §4.3.9.3) is mapped to null.
      */
     suspend fun readThermostat(context: Context, nodeId: Long, endpoint: Int = 1): Map<String, Int?> =
         readAttributes(context, nodeId, paths(endpoint), emptyMap(), TAG) { state ->
@@ -39,9 +39,8 @@ internal object ThermostatCluster {
      * Example: pass 2100 to set 21.00 °C.
      */
     suspend fun writeHeatingSetpoint(context: Context, nodeId: Long, centidegrees: Int, endpoint: Int = 1) {
-        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
         val tlv = TlvWriter().put(AnonymousTag, centidegrees.toShort()).getEncoded()
-        writeAttribute(ptr, AttributeWriteRequest.newInstance(
+        writeAttribute(context, nodeId, AttributeWriteRequest.newInstance(
             endpoint, Thermostat.ID, Thermostat.Attribute.OccupiedHeatingSetpoint.id, tlv,
         ), TAG)
         Log.d(TAG, "writeHeatingSetpoint ${centidegrees / 100.0}°C → nodeId=$nodeId ep=$endpoint")
@@ -52,9 +51,8 @@ internal object ThermostatCluster {
      * Values: 0=Off 1=Auto 3=Cool 4=Heat 5=EmergencyHeat 7=FanOnly
      */
     suspend fun writeSystemMode(context: Context, nodeId: Long, mode: Int, endpoint: Int = 1) {
-        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
         val tlv = TlvWriter().putUnsigned(AnonymousTag, mode).getEncoded()
-        writeAttribute(ptr, AttributeWriteRequest.newInstance(
+        writeAttribute(context, nodeId, AttributeWriteRequest.newInstance(
             endpoint, Thermostat.ID, Thermostat.Attribute.SystemMode.id, tlv,
         ), TAG)
         Log.d(TAG, "writeSystemMode mode=$mode → nodeId=$nodeId ep=$endpoint")

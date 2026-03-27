@@ -5,10 +5,10 @@ import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.ThreadNetworkDiagnostics
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.ChipPathId
-import com.example.matter_home.chip.ChipClient
 import matter.tlv.AnonymousTag
 import matter.tlv.ContextSpecificTag
 import matter.tlv.TlvReader
+import com.example.matter_home.chip.ChipClient
 
 private const val TAG = "ThreadDiagCluster"
 

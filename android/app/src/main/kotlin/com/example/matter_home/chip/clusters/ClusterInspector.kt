@@ -6,7 +6,6 @@ import chip.devicecontroller.ClusterIDMapping.Descriptor
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.ChipPathId
 import com.example.matter_home.chip.ChipClient
-
 private const val TAG = "ClusterInspector"
 
 internal object ClusterInspector {

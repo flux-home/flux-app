@@ -1,7 +1,5 @@
 package com.example.matter_home.chip.clusters
 
-import com.example.matter_home.chip.ChipClient
-
 import android.content.Context
 import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.AirQuality
@@ -19,6 +17,7 @@ import chip.devicecontroller.SubscriptionEstablishedCallback
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.ChipPathId
 import chip.devicecontroller.model.NodeState
+import com.example.matter_home.chip.ChipClient
 
 private const val TAG = "SubscriptionManager"
 

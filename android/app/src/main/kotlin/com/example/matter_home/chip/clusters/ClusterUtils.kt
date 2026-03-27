@@ -14,16 +14,17 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-// ── Attribute read ────────────────────────────────────────────────────────────
+// ── Attribute read — returns fallback on error ────────────────────────────────
 
 /**
  * Suspending Matter attribute read.
  *
  * Establishes a CASE session, sends a read interaction for [paths], accumulates
- * reports across multiple [onReport] calls, then passes the final [NodeState]
- * to [process] in [onDone].
+ * partial reports, then passes the final [NodeState] to [process] in [onDone].
  *
  * Returns [fallback] on any error; never throws.
+ *
+ * Use [readAttributeOrThrow] when the caller needs to detect connection failures.
  */
 internal suspend fun <T> readAttributes(
     context:  Context,
@@ -46,12 +47,8 @@ internal suspend fun <T> readAttributes(
                     Log.w(tag, "readAttributes failed: ${ex.message}")
                     if (cont.isActive) cont.resume(fallback)
                 }
-                override fun onReport(state: NodeState?) {
-                    if (state != null) accumulated = state
-                }
-                override fun onDone() {
-                    if (cont.isActive) cont.resume(process(accumulated))
-                }
+                override fun onReport(state: NodeState?) { if (state != null) accumulated = state }
+                override fun onDone()                    { if (cont.isActive) cont.resume(process(accumulated)) }
             },
             ptr, paths, null, false, 0,
         )
@@ -68,14 +65,48 @@ internal suspend fun <T> readAttributes(
     process:  (NodeState?) -> T,
 ) = readAttributes(context, nodeId, listOf(path), fallback, tag, process)
 
+// ── Attribute read — throws on error ─────────────────────────────────────────
+
+/**
+ * Like [readAttributes] but propagates connection errors as exceptions instead
+ * of returning a fallback.  Use this when the caller distinguishes between
+ * "offline" (throws) and "online but attribute = false" (returns false).
+ */
+internal suspend fun <T> readAttributeOrThrow(
+    context: Context,
+    nodeId:  Long,
+    path:    ChipAttributePath,
+    tag:     String,
+    process: (NodeState?) -> T,
+): T {
+    val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
+    return suspendCancellableCoroutine { cont ->
+        var accumulated: NodeState? = null
+        ChipClient.getController().readPath(
+            object : ReportCallback {
+                override fun onError(
+                    a: chip.devicecontroller.model.ChipAttributePath?,
+                    e: chip.devicecontroller.model.ChipEventPath?,
+                    ex: Exception,
+                ) {
+                    Log.w(tag, "readAttributeOrThrow failed: ${ex.message}")
+                    if (cont.isActive) cont.resumeWithException(ex)
+                }
+                override fun onReport(state: NodeState?) { if (state != null) accumulated = state }
+                override fun onDone()                    { if (cont.isActive) cont.resume(process(accumulated)) }
+            },
+            ptr, listOf(path), null, false, 0,
+        )
+    }
+}
+
 // ── Attribute write ───────────────────────────────────────────────────────────
 
 /**
- * Suspending Matter attribute write.
+ * Suspending Matter attribute write (low-level, device pointer variant).
  *
  * The optional [validateResponse] lambda is called for each [onResponse] event.
- * If it throws, the continuation is failed with that exception, which is useful
- * for checking IM status codes (e.g. OTA DefaultOTAProviders write).
+ * If it throws, the continuation is failed — use this to check IM status codes.
  */
 internal suspend fun writeAttribute(
     devicePointer:    Long,
@@ -106,14 +137,22 @@ internal suspend fun writeAttribute(
     )
 }
 
+/** Convenience overload: resolves the device pointer from [context] + [nodeId]. */
+internal suspend fun writeAttribute(
+    context:          Context,
+    nodeId:           Long,
+    req:              AttributeWriteRequest,
+    tag:              String,
+    validateResponse: ((status: chip.devicecontroller.model.Status?) -> Unit)? = null,
+) = writeAttribute(ChipClient.getConnectedDevicePointer(context, nodeId), req, tag, validateResponse)
+
 // ── Cluster invoke ────────────────────────────────────────────────────────────
 
 /**
- * Suspending wrapper around [chip.devicecontroller.ChipDeviceController.invoke].
- * Resumes normally on success, or throws on error.
+ * Suspending wrapper around [chip.devicecontroller.ChipDeviceController.invoke]
+ * (low-level, device pointer variant).
  */
 internal suspend fun invoke(
-    @Suppress("UNUSED_PARAMETER") context: Context,
     devicePointer: Long,
     element: InvokeElement,
 ) = suspendCancellableCoroutine<Unit> { cont ->
@@ -121,21 +160,20 @@ internal suspend fun invoke(
         object : InvokeCallback {
             override fun onError(ex: Exception?) {
                 Log.e("ClusterUtils", "invoke error", ex)
-                if (cont.isActive) cont.resumeWithException(
-                    ex ?: Exception("invoke failed")
-                )
+                if (cont.isActive) cont.resumeWithException(ex ?: Exception("invoke failed"))
             }
             override fun onResponse(el: InvokeElement?, code: Long) {
                 Log.d("ClusterUtils", "invoke success code=$code")
                 if (cont.isActive) cont.resume(Unit)
             }
         },
-        devicePointer,
-        element,
-        0,
-        0,
+        devicePointer, element, 0, 0,
     )
 }
+
+/** Convenience overload: resolves the device pointer from [context] + [nodeId]. */
+internal suspend fun invoke(context: Context, nodeId: Long, element: InvokeElement) =
+    invoke(ChipClient.getConnectedDevicePointer(context, nodeId), element)
 
 // ── JSON escaping ─────────────────────────────────────────────────────────────
 

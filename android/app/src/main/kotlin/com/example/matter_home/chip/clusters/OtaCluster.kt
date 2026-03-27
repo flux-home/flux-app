@@ -34,7 +34,6 @@ internal object OtaCluster {
         vendorId:          Int,
         requestorEndpoint: Int = 0,
     ) {
-        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
         val tlv = TlvWriter()
             .startStructure(AnonymousTag)
             .put(ContextSpecificTag(0), providerNodeId.toULong()) // ProviderNodeID — uint64
@@ -44,7 +43,7 @@ internal object OtaCluster {
             .put(ContextSpecificTag(4), 0.toUShort())             // Endpoint on provider — uint16
             .endStructure()
             .getEncoded()
-        invoke(context, ptr, InvokeElement.newInstance(
+        invoke(context, nodeId, InvokeElement.newInstance(
             requestorEndpoint,
             OtaSoftwareUpdateRequestor.ID,
             OtaSoftwareUpdateRequestor.Command.AnnounceOTAProvider.id,
@@ -58,7 +57,7 @@ internal object OtaCluster {
      * (EP0), registering [providerNodeId] as the sole provider.
      *
      * Used as a fallback when [announceOtaProvider] returns UNSUPPORTED_COMMAND.
-     * The device's background OTA polling will contact our provider on next cycle.
+     * The device's background OTA polling will then contact our provider.
      *
      * ProviderLocationStruct TLV fields:
      *   0   providerNodeID — uint64
@@ -66,7 +65,6 @@ internal object OtaCluster {
      *   254 fabricIndex    — omitted; device fills from request fabric
      */
     suspend fun writeDefaultOtaProviders(context: Context, nodeId: Long, providerNodeId: Long) {
-        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
         val tlv = TlvWriter()
             .startArray(AnonymousTag)
             .startStructure(AnonymousTag)
@@ -76,7 +74,7 @@ internal object OtaCluster {
             .endArray()
             .getEncoded()
         writeAttribute(
-            ptr,
+            context, nodeId,
             AttributeWriteRequest.newInstance(
                 0,
                 OtaSoftwareUpdateRequestor.ID,
