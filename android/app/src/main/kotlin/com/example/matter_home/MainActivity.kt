@@ -98,6 +98,17 @@ class MainActivity : FlutterActivity() {
                         bridge.readBasicInfo(nodeId, result)
                     }
 
+                    "readServerClusterList" -> {
+                        val nodeId   = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val endpoint = call.argument<Int>("endpoint") ?: 0
+                        bridge.readServerClusterList(nodeId, endpoint, result)
+                    }
+
+                    "readPartsList" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.readPartsList(nodeId, result)
+                    }
+
                     "readThermostat" -> {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
                         bridge.readThermostat(nodeId, result)
@@ -139,6 +150,19 @@ class MainActivity : FlutterActivity() {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
                         bridge.readDeviceType(nodeId, result)
                     }
+
+                    "downloadAndFlash" -> {
+                        val nodeId              = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val otaUrl              = call.argument<String>("otaUrl") ?: ""
+                        val targetVersion       = call.argument<String>("targetVersion")
+                                                    ?.toLongOrNull() ?: 0L
+                        val targetVersionString = call.argument<String>("targetVersionString") ?: ""
+                        val dryRun              = call.argument<Boolean>("dryRun") ?: false
+                        val endpoint            = call.argument<Int>("endpoint") ?: 0
+                        bridge.downloadAndFlash(nodeId, otaUrl, targetVersion, targetVersionString, dryRun, endpoint, result)
+                    }
+
+                    "cancelOta" -> bridge.cancelOta(result)
 
                     "identify" -> {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L

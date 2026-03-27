@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -104,7 +105,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
     }
 
     // Auto-select commissioning method from discoveryCapabilities.
-    final method = result.prefersBle
+    // Manual pairing codes carry no capability flags — default to BLE since
+    // most unboxed devices are first commissioned over Bluetooth.
+    final method = (result.prefersBle || result.capabilitiesUnknown)
         ? _CommissionMethod.ble
         : _CommissionMethod.ip;
 
@@ -116,6 +119,18 @@ class _CommissionScreenState extends State<CommissionScreen> {
     final netType = result.hasOnNetwork
         ? 2 // None — device is already on the network
         : 1; // Wi-Fi — safer default; Thread users can switch
+
+    // Pre-fill discriminator + PIN so IP commissioning works without the user
+    // having to re-type them.  Manual pairing codes only carry the upper 4 bits
+    // of the discriminator (hasShortDiscriminator = true); that value cannot be
+    // used as a full 12-bit discriminator for IP/mDNS commissioning, so we
+    // leave the field empty in that case and let the user fill it in.
+    if (!result.hasShortDiscriminator && result.discriminator > 0) {
+      _discCtrl.text = result.discriminator.toString();
+    } else {
+      _discCtrl.clear();
+    }
+    if (result.setupPinCode > 0) _pinCtrl.text = result.setupPinCode.toString();
 
     setState(() {
       _parsed   = result;
@@ -412,9 +427,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
                     : null,
               ),
 
-              // ── Method toggle (only when device supports both) ─────────
+              // ── Method toggle (shown when both methods are available) ──────
               if (_parsed != null &&
-                  _parsed!.hasBle && _parsed!.hasOnNetwork) ...[
+                  _parsed!.canUseBle && _parsed!.canUseIp) ...[
                 const SizedBox(height: 16),
                 SegmentedButton<_CommissionMethod>(
                   segments: const [
@@ -472,7 +487,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
                     controller: _discCtrl,
                     decoration: InputDecoration(
                       labelText: 'Discriminator',
-                      hintText: '${_parsed?.discriminator ?? 3840}',
+                      hintText: _parsed?.hasShortDiscriminator == true
+                          ? 'Unknown — manual codes only carry 4 bits'
+                          : '${_parsed?.discriminator ?? 3840}',
                       border: const OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
@@ -511,8 +528,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Payload entry widget  (scan button + manual field + parsed summary)
+// Payload entry widget  (QR scan tab  +  manual pairing-code tab)
 // ─────────────────────────────────────────────────────────────────────────────
+
+enum _EntryMode { qr, manual }
 
 class _PayloadEntry extends StatefulWidget {
   final VoidCallback          onScan;
@@ -538,43 +557,103 @@ class _PayloadEntry extends StatefulWidget {
 }
 
 class _PayloadEntryState extends State<_PayloadEntry> {
-  final _ctrl = TextEditingController();
+  _EntryMode _mode = _EntryMode.qr;
+
+  // QR tab: free-text field for pasting MT:… payloads
+  final _qrCtrl     = TextEditingController();
+  // Manual tab: numeric code (auto-formatted as XXXXX-XXXXXX)
+  final _manualCtrl = TextEditingController();
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _qrCtrl.dispose();
+    _manualCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /// Strips any non-digit characters from a formatted manual code.
+  static String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+
+  void _submitManual() {
+    final d = _digits(_manualCtrl.text);
+    if (d.length == 11) widget.onCodeEntered(d);
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final scanned = widget.parsed != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Mode selector ────────────────────────────────────────────────
+        SegmentedButton<_EntryMode>(
+          segments: const [
+            ButtonSegment(
+              value: _EntryMode.qr,
+              icon:  Icon(Icons.qr_code_scanner, size: 16),
+              label: Text('QR Code'),
+            ),
+            ButtonSegment(
+              value: _EntryMode.manual,
+              icon:  Icon(Icons.dialpad_outlined, size: 16),
+              label: Text('Manual Code'),
+            ),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (s) => setState(() => _mode = s.first),
+        ),
+        const SizedBox(height: 16),
+
+        // ── QR tab ───────────────────────────────────────────────────────
+        if (_mode == _EntryMode.qr) _buildQrTab(context, cs),
+
+        // ── Manual tab ───────────────────────────────────────────────────
+        if (_mode == _EntryMode.manual) _buildManualTab(context, cs),
+      ],
+    );
+  }
+
+  // ── QR tab ────────────────────────────────────────────────────────────────
+
+  Widget _buildQrTab(BuildContext context, ColorScheme cs) {
+    final scanned   = widget.parsed != null;
     final scanColor = scanned ? const Color(0xFF34A853) : Colors.white;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Scan button ──────────────────────────────────────────────────
+        // Scan button
         OutlinedButton.icon(
           onPressed: widget.onScan,
           icon: widget.parsing
-              ? SizedBox(width: 18, height: 18,
+              ? SizedBox(
+                  width: 18, height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : Icon(scanned ? Icons.check_circle_outline : Icons.qr_code_scanner,
+              : Icon(
+                  scanned
+                      ? Icons.check_circle_outline
+                      : Icons.qr_code_scanner,
                   color: scanColor),
           label: Text(scanned ? 'QR scanned ✓' : 'Scan QR code',
               style: TextStyle(color: scanColor)),
           style: OutlinedButton.styleFrom(
-            side: BorderSide(color: scanned ? const Color(0xFF34A853) : Colors.white54),
+            side: BorderSide(
+                color: scanned ? const Color(0xFF34A853) : Colors.white54),
           ),
         ),
 
-        // ── QR thumbnail + details link ──────────────────────────────────
+        // QR thumbnail + details link
         if (scanned && widget.rawPayload != null) ...[
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // QR image on white background
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -594,64 +673,184 @@ class _PayloadEntryState extends State<_PayloadEntry> {
                 ),
               ),
               const SizedBox(width: 14),
-              // Details button
               if (widget.onViewDetails != null)
                 OutlinedButton.icon(
                   onPressed: widget.onViewDetails,
                   icon: const Icon(Icons.info_outline, size: 18),
                   label: const Text('View details'),
                   style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
+                      visualDensity: VisualDensity.compact),
                 ),
             ],
           ),
         ],
 
-        // ── Divider ──────────────────────────────────────────────────────
+        // "or paste" divider
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 10),
           child: Row(children: [
             Expanded(child: Divider()),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 10),
-              child: Text('or enter manually', style: TextStyle(fontSize: 12)),
+              child: Text('or paste payload', style: TextStyle(fontSize: 12)),
             ),
             Expanded(child: Divider()),
           ]),
         ),
 
-        // ── Manual code field ────────────────────────────────────────────
+        // MT:… paste field
         TextField(
-          controller: _ctrl,
+          controller: _qrCtrl,
           decoration: InputDecoration(
-            labelText: 'Setup payload / pairing code',
+            labelText: 'Setup payload string',
             hintText:  'MT:Y.K9042C00KA0648G00',
-            prefixIcon: const Icon(Icons.pin_outlined),
+            prefixIcon: const Icon(Icons.content_paste_outlined),
             border: const OutlineInputBorder(),
             errorText: widget.parseError,
-            suffixIcon: _ctrl.text.isNotEmpty
+            suffixIcon: _qrCtrl.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
-                    onPressed: () { _ctrl.clear(); setState(() {}); })
+                    onPressed: () {
+                      _qrCtrl.clear();
+                      setState(() {});
+                    })
                 : null,
           ),
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          onSubmitted: (v) { if (v.trim().isNotEmpty) widget.onCodeEntered(v.trim()); },
+          onSubmitted: (v) {
+            if (v.trim().isNotEmpty) widget.onCodeEntered(v.trim());
+          },
           onChanged: (v) => setState(() {}),
         ),
-        if (_ctrl.text.trim().isNotEmpty && widget.parsed == null && !widget.parsing)
+        if (_qrCtrl.text.trim().isNotEmpty &&
+            widget.parsed == null &&
+            !widget.parsing)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: FilledButton.tonal(
-              onPressed: () => widget.onCodeEntered(_ctrl.text.trim()),
-              child: const Text('Parse code'),
+              onPressed: () => widget.onCodeEntered(_qrCtrl.text.trim()),
+              child: const Text('Parse payload'),
             ),
           ),
       ],
     );
   }
+
+  // ── Manual code tab ───────────────────────────────────────────────────────
+
+  Widget _buildManualTab(BuildContext context, ColorScheme cs) {
+    final digits = _digits(_manualCtrl.text);
+    final ready  = digits.length == 11;
+    final hasError = widget.parseError != null && !widget.parsing;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Description
+        Text(
+          'Enter the 11-digit code printed on the device or its packaging.',
+          style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 16),
+
+        // Numeric input
+        TextField(
+          controller: _manualCtrl,
+          decoration: InputDecoration(
+            labelText: 'Pairing code',
+            hintText:  '12345-678901',
+            prefixIcon: const Icon(Icons.dialpad_outlined),
+            border: const OutlineInputBorder(),
+            errorText: hasError ? widget.parseError : null,
+            counterText: '${digits.length}/11',
+            suffixIcon: _manualCtrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _manualCtrl.clear();
+                      setState(() {});
+                    })
+                : null,
+          ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [_ManualCodeFormatter()],
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 4,
+          ),
+          textAlign: TextAlign.center,
+          onChanged: (v) {
+            setState(() {});
+            // Auto-submit when all 11 digits are filled.
+            if (_digits(v).length == 11) _submitManual();
+          },
+          onSubmitted: (_) => _submitManual(),
+        ),
+        const SizedBox(height: 12),
+
+        // Parse / status row
+        if (widget.parsing)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ),
+          )
+        else if (widget.parsed != null) ...[
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  size: 18, color: const Color(0xFF34A853)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Code recognised — '
+                  '${widget.parsed!.suggestedName}',
+                  style: const TextStyle(
+                      fontSize: 13, color: Color(0xFF34A853)),
+                ),
+              ),
+            ],
+          ),
+        ] else if (ready && !widget.parsing) ...[
+          FilledButton.tonal(
+            onPressed: _submitManual,
+            child: const Text('Verify code'),
+          ),
+        ],
+      ],
+    );
+  }
 }
+
+// ── TextInputFormatter for XXXXX-XXXXXX manual codes ─────────────────────────
+
+class _ManualCodeFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    // Keep only digits, cap at 11.
+    final digits = newValue.text
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .substring(0, newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length
+            .clamp(0, 11));
+    if (digits.isEmpty) return TextEditingValue.empty;
+    // Insert dash after 5th digit.
+    final formatted = digits.length > 5
+        ? '${digits.substring(0, 5)}-${digits.substring(5)}'
+        : digits;
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Network credentials section
@@ -707,6 +906,25 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
   Future<void> _loadNetworks() async {
     if (_loadingNetworks) return;
+
+    // Android requires ACCESS_FINE_LOCATION at runtime to read Wi-Fi scan results.
+    final locStatus = await Permission.locationWhenInUse.request();
+    if (!locStatus.isGranted) {
+      if (mounted) {
+        final permanent = locStatus.isPermanentlyDenied;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(permanent
+              ? 'Location permission permanently denied — open Settings to enable Wi-Fi scanning.'
+              : 'Location permission is required to scan for Wi-Fi networks.'),
+          action: permanent
+              ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
+              : null,
+        ));
+      }
+      setState(() => _loadingNetworks = false);
+      return;
+    }
+
     setState(() => _loadingNetworks = true);
     final nets = await context.read<MatterChannel>().scanWifiNetworks();
     if (!mounted) return;

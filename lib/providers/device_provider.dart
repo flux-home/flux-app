@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/device_live_data.dart';
 import '../models/device_type.dart';
 import '../models/matter_device.dart';
+import '../models/ota_progress.dart';
 import '../services/device_store.dart';
 import '../models/commission_models.dart';
 import '../services/matter_channel.dart';
@@ -24,6 +25,7 @@ class DeviceProvider extends ChangeNotifier {
   // ── Live cache (in-memory, not persisted) ──────────────────────────────────
   final Map<String, DeviceLiveData> _liveCache    = {};
   final Map<String, String>         _clusterCache = {}; // deviceId → clusters JSON
+  final Map<String, OtaProgressState> _otaProgress = {}; // deviceId → OTA state
 
   /// Subscription node IDs that are currently active.
   final Set<int> _subscribedNodeIds = {};
@@ -66,6 +68,13 @@ class DeviceProvider extends ChangeNotifier {
 
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
 
+  OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
+
+  void clearOtaProgress(String deviceId) {
+    _otaProgress.remove(deviceId);
+    notifyListeners();
+  }
+
   void cacheClusterJson(String deviceId, String json) {
     _clusterCache[deviceId] = json;
     // No notifyListeners needed — detail screen reads this directly.
@@ -74,19 +83,21 @@ class DeviceProvider extends ChangeNotifier {
   void updateBasicInfo(String deviceId, String? productName, String? serial, String? swVersion,
       {String? vendorName, String? vendorId, String? productId,
        String? hwVersion, String? manufacturingDate, String? partNumber,
-       String? productUrl, String? uniqueId}) {
+       String? productUrl, String? uniqueId, int? swVersionNum}) {
     final existing = _liveCache[deviceId];
     if (existing != null) {
       _liveCache[deviceId] = existing.withBasicInfo(serial, swVersion, productName,
           vendorName: vendorName, vendorId: vendorId, productId: productId,
           hwVersion: hwVersion, manufacturingDate: manufacturingDate,
-          partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId);
+          partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
+          swVersionNum: swVersionNum);
     } else {
       _liveCache[deviceId] = DeviceLiveData(
         updatedAt: DateTime.now(), isStale: false,
         productName: productName, vendorName: vendorName, vendorId: vendorId,
         productId: productId, hwVersion: hwVersion, serialNumber: serial,
-        softwareVersion: swVersion, manufacturingDate: manufacturingDate,
+        softwareVersion: swVersion, softwareVersionNum: swVersionNum,
+        manufacturingDate: manufacturingDate,
         partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
       );
     }
@@ -96,6 +107,19 @@ class DeviceProvider extends ChangeNotifier {
         _devices[idx] = _devices[idx].copyWith(productName: productName);
         _persist();
       }
+    }
+    notifyListeners();
+  }
+
+  /// Updates the OTA Requestor cluster presence flag in the live cache.
+  void updateOtaSupport(String deviceId, bool supported, {int endpoint = 0}) {
+    final existing = _liveCache[deviceId];
+    if (existing != null) {
+      _liveCache[deviceId] = existing.withOtaSupported(supported, endpoint);
+    } else {
+      _liveCache[deviceId] = DeviceLiveData(
+        updatedAt: DateTime.now(), isStale: false,
+        otaSupported: supported, otaEndpoint: supported ? endpoint : null);
     }
     notifyListeners();
   }
@@ -112,6 +136,14 @@ class DeviceProvider extends ChangeNotifier {
     final device = candidates.first;
 
     switch (type) {
+      case 'otaProgress':
+        _otaProgress[device.id] = OtaProgressState(
+          phase:    event['phase']    as String? ?? 'error',
+          progress: event['progress'] as int?,
+          message:  event['message']  as String?,
+        );
+        notifyListeners();
+
       case 'error':
       case 'resubscribing':
         // Mark cache stale but don't discard it — UI keeps showing last value.
@@ -203,13 +235,19 @@ class DeviceProvider extends ChangeNotifier {
     state = DeviceProviderState.loading;
     notifyListeners();
 
+    final networkType = threadDatasetHex != null && threadDatasetHex.isNotEmpty
+        ? NetworkType.thread
+        : wifiSsid != null && wifiSsid.isNotEmpty
+            ? NetworkType.wifi
+            : NetworkType.ethernet;
+
     final result = await _channel.commissionDevice(
       payload,
       wifiSsid:         wifiSsid,
       wifiPassword:     wifiPassword,
       threadDatasetHex: threadDatasetHex,
     );
-    return _handleCommissionResult(result, deviceName, room);
+    return _handleCommissionResult(result, deviceName, room, networkType: networkType);
   }
 
   Future<MatterDevice?> commissionViaIp({
@@ -229,14 +267,15 @@ class DeviceProvider extends ChangeNotifier {
       discriminator: discriminator,
       setupPinCode:  setupPinCode,
     );
-    return _handleCommissionResult(result, deviceName, room);
+    return _handleCommissionResult(result, deviceName, room, networkType: NetworkType.ethernet);
   }
 
   Future<MatterDevice?> _handleCommissionResult(
     CommissionResult result,
     String name,
-    String room,
-  ) async {
+    String room, {
+    NetworkType networkType = NetworkType.unknown,
+  }) async {
     if (!result.success) {
       state        = DeviceProviderState.error;
       errorMessage = result.error ?? 'Commissioning failed';
@@ -257,6 +296,7 @@ class DeviceProvider extends ChangeNotifier {
       isOnline:       true,
       isOn:           false,
       commissionedAt: DateTime.now(),
+      networkType:    networkType,
     );
 
     _devices.add(device);
@@ -280,15 +320,22 @@ class DeviceProvider extends ChangeNotifier {
     final device = _devices[idx];
     if (!device.deviceType.hasOnOff) return;
 
-    final newOn = !device.isOn;
-    _devices[idx] = device.copyWith(isOn: newOn);
-    notifyListeners();
+    // Use live-subscription state as the source of truth so the toggle
+    // direction is always correct even if the persisted value hasn't caught up.
+    final currentOn = _liveCache[deviceId]?.isOn ?? device.isOn;
+    final newOn     = !currentOn;
 
     final ok = await _channel.toggleDevice(device.nodeId, on: newOn);
-    if (!ok) {
-      _devices[idx] = device;
-      notifyListeners();
-    } else {
+    if (ok) {
+      _devices[idx] = device.copyWith(isOn: newOn);
+      // Mirror the new state into the live cache so the UI stays in sync
+      // even when the subscription is stale or dead (e.g. after a power cycle).
+      // The next subscription update will overwrite this with the confirmed
+      // device state, which is fine — it will be the same value.
+      final existing = _liveCache[deviceId];
+      if (existing != null) {
+        _liveCache[deviceId] = existing.merge({'onOff': newOn});
+      }
       await _persist();
     }
   }

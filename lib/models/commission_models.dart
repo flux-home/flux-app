@@ -29,6 +29,14 @@ class ParsedPayload {
   bool get hasOnNetwork => discoveryCapabilities.contains(DiscoveryCapability.onNetwork);
   bool get prefersBle   => hasBle;
 
+  /// True when the payload did not encode any discovery capabilities
+  /// (e.g. 11-digit manual pairing codes).  In that case both BLE and IP
+  /// commissioning are potentially available and the user should choose.
+  bool get capabilitiesUnknown => discoveryCapabilities.isEmpty;
+
+  bool get canUseBle => hasBle || capabilitiesUnknown;
+  bool get canUseIp  => hasOnNetwork || capabilitiesUnknown;
+
   /// Suggested device name derived from the vendor ID (CSA registry lookup).
   String get suggestedName => kMatterVendors[vendorId] ?? 'Unknown';
 }

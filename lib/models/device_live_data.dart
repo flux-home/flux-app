@@ -40,11 +40,19 @@ class DeviceLiveData {
   final String? productId;
   final String? hwVersion;
   final String? serialNumber;
-  final String? softwareVersion;
+  final String? softwareVersion;       // human-readable string, e.g. "1.2.0-s1"
+  final int?    softwareVersionNum;    // uint32 from BasicInformation (for DCL comparison)
   final String? manufacturingDate;
   final String? partNumber;
   final String? productUrl;
   final String? uniqueId;
+
+  // ── Optional-cluster flags (checked once after commissioning) ──────────────
+  /// null = not yet checked, true = OTA Requestor cluster present on EP0
+  final bool?   otaSupported;
+  /// The endpoint on which the OTA Requestor cluster was found. Null when
+  /// [otaSupported] is null or false.
+  final int?    otaEndpoint;
 
   const DeviceLiveData({
     required this.updatedAt,
@@ -70,10 +78,13 @@ class DeviceLiveData {
     this.hwVersion,
     this.serialNumber,
     this.softwareVersion,
+    this.softwareVersionNum,
     this.manufacturingDate,
     this.partNumber,
     this.productUrl,
     this.uniqueId,
+    this.otaSupported,
+    this.otaEndpoint,
   });
 
   // ── Derived helpers ────────────────────────────────────────────────────────
@@ -132,8 +143,11 @@ class DeviceLiveData {
       // basic info passthrough
       productName: productName, vendorName: vendorName, vendorId: vendorId,
       productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
-      softwareVersion: softwareVersion, manufacturingDate: manufacturingDate,
+      softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
+      manufacturingDate: manufacturingDate,
       partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
+      otaSupported: otaSupported,
+      otaEndpoint: otaEndpoint,
     );
   }
 
@@ -148,14 +162,17 @@ class DeviceLiveData {
     contactState: contactState, airQuality: airQuality,
     productName: productName, vendorName: vendorName, vendorId: vendorId,
     productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
-    softwareVersion: softwareVersion, manufacturingDate: manufacturingDate,
+    softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
+    manufacturingDate: manufacturingDate,
     partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
+    otaSupported: otaSupported,
+    otaEndpoint: otaEndpoint,
   );
 
   DeviceLiveData withBasicInfo(String? serial, String? swVersion, String? product,
       {String? vendorName, String? vendorId, String? productId,
        String? hwVersion, String? manufacturingDate, String? partNumber,
-       String? productUrl, String? uniqueId}) =>
+       String? productUrl, String? uniqueId, int? swVersionNum}) =>
     DeviceLiveData(
       updatedAt: updatedAt, isStale: isStale,
       isOn: isOn, levelRaw: levelRaw,
@@ -165,7 +182,9 @@ class DeviceLiveData {
       tempMeasureCenti: tempMeasureCenti, batPercentRaw: batPercentRaw,
       batChargeLevel: batChargeLevel, occupancy: occupancy,
       contactState: contactState, airQuality: airQuality,
-      serialNumber: serial, softwareVersion: swVersion, productName: product,
+      serialNumber: serial, softwareVersion: swVersion,
+      softwareVersionNum: swVersionNum ?? this.softwareVersionNum,
+      productName: product,
       vendorName: vendorName ?? this.vendorName,
       vendorId: vendorId ?? this.vendorId,
       productId: productId ?? this.productId,
@@ -174,7 +193,27 @@ class DeviceLiveData {
       partNumber: partNumber ?? this.partNumber,
       productUrl: productUrl ?? this.productUrl,
       uniqueId: uniqueId ?? this.uniqueId,
+      otaSupported: otaSupported,
+      otaEndpoint: otaEndpoint,
     );
+
+  DeviceLiveData withOtaSupported(bool value, int endpoint) => DeviceLiveData(
+    updatedAt: updatedAt, isStale: isStale,
+    isOn: isOn, levelRaw: levelRaw,
+    localTempCenti: localTempCenti, heatingSetptCenti: heatingSetptCenti,
+    coolingSetptCenti: coolingSetptCenti, systemMode: systemMode,
+    controlSequence: controlSequence, humidityCenti: humidityCenti,
+    tempMeasureCenti: tempMeasureCenti, batPercentRaw: batPercentRaw,
+    batChargeLevel: batChargeLevel, occupancy: occupancy,
+    contactState: contactState, airQuality: airQuality,
+    productName: productName, vendorName: vendorName, vendorId: vendorId,
+    productId: productId, hwVersion: hwVersion, serialNumber: serialNumber,
+    softwareVersion: softwareVersion, softwareVersionNum: softwareVersionNum,
+    manufacturingDate: manufacturingDate,
+    partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
+    otaSupported: value,
+    otaEndpoint: value ? endpoint : null,
+  );
 
   factory DeviceLiveData.fromUpdate(Map<String, dynamic> update) {
     T? pick<T>(String key) =>

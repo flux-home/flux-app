@@ -173,6 +173,43 @@ const _kGlobalAttrs = <int, String>{
   0xFFFD: 'ClusterRevision',
 };
 
+// ── Command names per cluster ─────────────────────────────────────────────
+const _kCommandNames = <int, Map<int, String>>{
+  0x0003: {0: 'Identify', 1: 'TriggerEffect'},
+  0x0004: {0: 'AddGroup', 1: 'ViewGroup', 2: 'GetGroupMembership', 3: 'RemoveGroup', 4: 'RemoveAllGroups', 5: 'AddGroupIfIdentifying'},
+  0x0006: {0: 'Off', 1: 'On', 2: 'Toggle', 64: 'OffWithEffect', 65: 'OnWithRecallGlobalScene', 66: 'OnWithTimedOff'},
+  0x0008: {0: 'MoveToLevel', 1: 'Move', 2: 'Step', 3: 'Stop', 4: 'MoveToLevelWithOnOff', 5: 'MoveWithOnOff', 6: 'StepWithOnOff', 7: 'StopWithOnOff'},
+  0x001E: {0: 'Bind', 1: 'Unbind'},
+  0x0028: {0: 'MfgSpecificPing'},
+  0x002A: {0: 'AnnounceOTAProvider'},    // OTA Requestor — the key one
+  0x0029: {0: 'QueryImage', 1: 'ApplyUpdateRequest', 2: 'NotifyUpdateApplied'},  // OTA Provider
+  0x0030: {0: 'ArmFailSafe', 2: 'SetRegulatoryConfig', 4: 'CommissioningComplete'},
+  0x0031: {0: 'ScanNetworks', 2: 'AddOrUpdateWiFiNetwork', 4: 'AddOrUpdateThreadNetwork', 6: 'RemoveNetwork', 8: 'ConnectNetwork', 10: 'ReorderNetwork'},
+  0x003C: {0: 'OpenCommissioningWindow', 1: 'OpenBasicCommissioningWindow', 2: 'RevokeCommissioning'},
+  0x003E: {0: 'AttestationRequest', 2: 'CertificateChainRequest', 4: 'CSRRequest', 6: 'AddNOC', 7: 'UpdateNOC', 9: 'UpdateFabricLabel', 10: 'RemoveFabric', 11: 'AddTrustedRootCertificate'},
+  0x003F: {0: 'KeySetWrite', 1: 'KeySetRead', 3: 'KeySetRemove', 4: 'KeySetReadAllIndices'},
+  0x0046: {0: 'RegisterClient', 2: 'UnregisterClient', 3: 'StayActiveRequest', 4: 'GetOperatingInfo'},
+  0x0050: {0: 'ChangeToMode'},
+  0x0101: {0: 'LockDoor', 1: 'UnlockDoor', 3: 'UnlockWithTimeout'},
+  0x0102: {0: 'UpOrOpen', 1: 'DownOrClose', 2: 'StopMotion', 4: 'GoToLiftValue', 5: 'GoToLiftPercentage', 7: 'GoToTiltValue', 8: 'GoToTiltPercentage'},
+  0x0201: {0: 'SetpointRaiseLower', 1: 'SetWeeklySchedule', 2: 'GetWeeklySchedule', 3: 'ClearWeeklySchedule'},
+  0x0300: {0: 'MoveToHue', 1: 'MoveHue', 2: 'StepHue', 3: 'MoveToSaturation', 4: 'MoveSaturation', 5: 'StepSaturation', 6: 'MoveToHueAndSaturation', 7: 'MoveToColor', 8: 'MoveColor', 9: 'StepColor', 10: 'MoveToColorTemperature'},
+};
+
+// ── Feature-map bit names per cluster ────────────────────────────────────
+const _kFeatureMapBits = <int, Map<int, String>>{
+  0x0006: {0: 'Lighting', 2: 'DeadFrontBehavior', 3: 'OffOnly'},
+  0x0008: {0: 'OnOff', 1: 'Lighting', 2: 'Frequency'},
+  0x002A: {0: 'UpdateToken'},   // OTA Requestor
+  0x0031: {0: 'WiFi', 1: 'Thread', 2: 'Ethernet'},
+  0x003B: {0: 'LatchingSwitch', 1: 'MomentarySwitch', 2: 'MSRelease', 3: 'MSLongPress', 4: 'MSMultiPress'},
+  0x0046: {0: 'CheckInProtocol', 1: 'UserActiveModeTrigger', 2: 'LongIdleTime', 3: 'MaximumCheckInBackOff'},
+  0x0050: {0: 'OnOff'},
+  0x0101: {0: 'PINCredential', 1: 'RFIDCredential', 2: 'FingerCredential', 7: 'Logging', 8: 'WeekDayAccess', 9: 'YearDayAccess', 10: 'HolidaySchedules', 11: 'Unbolting'},
+  0x0201: {0: 'Heating', 1: 'Cooling', 2: 'Occupancy', 3: 'ScheduleConfiguration', 4: 'Setback', 5: 'AutoMode', 6: 'LocalTemperatureNotExposed'},
+  0x0300: {0: 'HueSaturation', 1: 'EnhancedHue', 2: 'ColorLoop', 3: 'XY', 4: 'ColorTemperature'},
+};
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
@@ -556,7 +593,8 @@ class _ClusterCardState extends State<_ClusterCard> {
           if (_expanded) ...[
             const Divider(height: 1),
             ...appAttrs.map((a) => _AttrRow(
-                attr: a, name: data.attrName(a.id), highlight: true)),
+                attr: a, name: data.attrName(a.id),
+                highlight: true, clusterId: data.clusterId)),
             if (globalAttrs.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
@@ -565,7 +603,8 @@ class _ClusterCardState extends State<_ClusterCard> {
                         color: cs.onSurfaceVariant)),
               ),
               ...globalAttrs.map((a) => _AttrRow(
-                  attr: a, name: data.attrName(a.id), highlight: false)),
+                  attr: a, name: data.attrName(a.id),
+                  highlight: false, clusterId: data.clusterId)),
             ],
           ],
         ],
@@ -576,16 +615,57 @@ class _ClusterCardState extends State<_ClusterCard> {
 
 class _AttrRow extends StatelessWidget {
   final _AttrData attr;
-  final String name;
-  final bool highlight;
-  const _AttrRow(
-      {required this.attr, required this.name, required this.highlight});
+  final String    name;
+  final bool      highlight;
+  final int       clusterId;
+
+  const _AttrRow({
+    required this.attr,
+    required this.name,
+    required this.highlight,
+    required this.clusterId,
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// Parse a Java list toString like "[0, 1, 4]" into integers.
+  static List<int> _parseIntList(String raw) {
+    return RegExp(r'\d+')
+        .allMatches(raw)
+        .map((m) => int.parse(m.group(0)!))
+        .toList();
+  }
+
+  /// True when this attribute should get the command-chip rendering.
+  bool get _isCommandList =>
+      attr.id == 0xFFF8 || attr.id == 0xFFF9;   // Generated / Accepted
+
+  bool get _isFeatureMap => attr.id == 0xFFFC;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final hexAttr =
         '0x${attr.id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+
+    Widget valueWidget;
+
+    if (_isCommandList) {
+      valueWidget = _buildCommandChips(context, cs);
+    } else if (_isFeatureMap) {
+      valueWidget = _buildFeatureMapChips(context, cs);
+    } else {
+      valueWidget = Text(
+        attr.value,
+        textAlign: TextAlign.right,
+        style: TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: highlight ? cs.primary : cs.onSurfaceVariant,
+        ),
+      );
+    }
 
     return InkWell(
       onLongPress: () {
@@ -598,42 +678,123 @@ class _AttrRow extends StatelessWidget {
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 60,
-              child: Text(
-                hexAttr,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  color: cs.onSurfaceVariant,
+        child: (_isCommandList || _isFeatureMap)
+            // Command lists / FeatureMap span full width below the label row
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    SizedBox(
+                      width: 60,
+                      child: Text(hexAttr,
+                          style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: cs.onSurfaceVariant)),
+                    ),
+                    Text(name,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: highlight ? cs.onSurface : cs.onSurfaceVariant)),
+                  ]),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 60),
+                    child: valueWidget,
+                  ),
+                ],
+              )
+            // Plain attributes stay on one row
+            : Row(children: [
+                SizedBox(
+                  width: 60,
+                  child: Text(hexAttr,
+                      style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: cs.onSurfaceVariant)),
                 ),
-              ),
-            ),
-            Expanded(
-              child: Text(name,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: highlight ? cs.onSurface : cs.onSurfaceVariant,
-                  )),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                attr.value,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: highlight ? cs.primary : cs.onSurfaceVariant,
+                Expanded(
+                  child: Text(name,
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: highlight ? cs.onSurface : cs.onSurfaceVariant)),
                 ),
-              ),
-            ),
-          ],
-        ),
+                const SizedBox(width: 8),
+                Flexible(child: valueWidget),
+              ]),
       ),
     );
+  }
+
+  Widget _buildCommandChips(BuildContext context, ColorScheme cs) {
+    final ids   = _parseIntList(attr.value);
+    final names = _kCommandNames[clusterId];
+    if (ids.isEmpty) {
+      return Text('(none)', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant));
+    }
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: ids.map((id) {
+        final label = names?[id]
+            ?? '0x${id.toRadixString(16).toUpperCase().padLeft(2, '0')}';
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: cs.secondaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSecondaryContainer)),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildFeatureMapChips(BuildContext context, ColorScheme cs) {
+    final raw  = int.tryParse(attr.value) ?? 0;
+    final bits = _kFeatureMapBits[clusterId];
+    if (raw == 0) {
+      return Text('0x00000000 (none)',
+          style: TextStyle(
+              fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant));
+    }
+    final chips = <Widget>[];
+    // Show hex value first
+    chips.add(Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Text(
+        '0x${raw.toRadixString(16).toUpperCase().padLeft(8, '0')}',
+        style: TextStyle(
+            fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+      ),
+    ));
+    // Then one chip per set bit
+    for (int b = 0; b < 32; b++) {
+      if ((raw >> b) & 1 == 0) continue;
+      final label = bits?[b] ?? 'bit$b';
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: cs.primaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: cs.onPrimaryContainer)),
+      ));
+    }
+    return Wrap(spacing: 6, runSpacing: 4, children: chips);
   }
 }

@@ -55,14 +55,16 @@ List<_Reading> _extractReadings(
   final out = <_Reading>[];
   for (final ep in endpoints) {
     for (final cluster in ep.clusters) {
-      final r = _readingFromCluster(cluster, deviceType);
+      final r = _readingFromCluster(cluster, deviceType, ep.semanticTags);
       if (r != null) out.add(r);
     }
   }
   return out;
 }
 
-_Reading? _readingFromCluster(_LiveCluster cluster, DeviceType deviceType) {
+_Reading? _readingFromCluster(
+    _LiveCluster cluster, DeviceType deviceType,
+    [List<_SemanticTag> tags = const []]) {
   String? raw(int attrId) => cluster.attrs
       .where((a) => a.id == attrId)
       .map((a) => a.raw)
@@ -269,23 +271,66 @@ _Reading? _readingFromCluster(_LiveCluster cluster, DeviceType deviceType) {
 
     // ── Switch 0x003B ────────────────────────────────────────────────────────
     case 0x003B: {
-      final positions = int.tryParse(raw(0x0000) ?? '');
-      final current   = int.tryParse(raw(0x0001) ?? '');
+      final current = int.tryParse(raw(0x0001) ?? '');
       if (current == null) return null;
-      final label = (positions != null && positions > 2)
-          ? 'Position $current'
-          : current == 0 ? 'Released' : 'Pressed';
+      final active  = current > 0;
+
+      // ── Derive label and icon from SemanticTags ────────────────────────────
+      //
+      // Namespace 8  tag 6  label=N  → group / ring index N
+      // Namespace 67 tag 1           → Down
+      // Namespace 67 tag 2           → Up
+      // Namespace 67 tag 3           → Clockwise
+      // Namespace 67 tag 4           → CounterClockwise
+      // Namespace 67 tag 8  label=t  → control kind ("rotary" or "button")
+
+      final groupLabel = tags
+          .where((t) => t.namespaceId == 8 && t.tag == 6)
+          .map((t) => t.label)
+          .firstOrNull ?? '${cluster.endpoint}';
+
+      final isButton  = tags.any((t) => t.namespaceId == 67 && t.tag == 8 && t.label == 'button');
+      final isCW      = tags.any((t) => t.namespaceId == 67 && t.tag == 3);
+      final isCCW     = tags.any((t) => t.namespaceId == 67 && t.tag == 4);
+      final isUp      = tags.any((t) => t.namespaceId == 67 && t.tag == 2);
+      final isDown    = tags.any((t) => t.namespaceId == 67 && t.tag == 1);
+
+      final IconData  icon;
+      final String    label;
+
+      if (isCW) {
+        icon  = Icons.rotate_right;
+        label = 'Ring $groupLabel →';
+      } else if (isCCW) {
+        icon  = Icons.rotate_left;
+        label = 'Ring $groupLabel ←';
+      } else if (isButton) {
+        icon  = active ? Icons.radio_button_checked : Icons.radio_button_unchecked;
+        label = 'Button $groupLabel';
+      } else if (isUp) {
+        icon  = Icons.swipe_up_outlined;
+        label = 'Switch $groupLabel ↑';
+      } else if (isDown) {
+        icon  = Icons.swipe_down_outlined;
+        label = 'Switch $groupLabel ↓';
+      } else {
+        icon  = Icons.smart_button_outlined;
+        label = tags.isEmpty ? 'Switch' : 'Switch $groupLabel';
+      }
+
       return _Reading(
-        icon: Icons.smart_button_outlined,
-        iconColor: current == 0 ? Colors.grey.shade500 : Colors.green.shade400,
-        label: 'Switch',
-        displayValue: label,
-        unit: '',
+        icon:         icon,
+        iconColor:    active ? Colors.green.shade400 : Colors.grey.shade500,
+        label:        label,
+        // Numeric string → _ReadingCard renders it through DotMatrixPainter
+        displayValue: '$current',
+        unit:         '',
       );
     }
 
-    // ── On/Off 0x0006 ───────────────────────────────────────────────────────
-    case 0x0006: {
+    // ── On/Off 0x0006 — handled by dedicated _OnOffCard; skip from grid ───────
+    case 0x0006:
+      if (deviceType.hasOnOff) return null;
       final v = raw(0x0000);
       if (v == null) return null;
       final isOn = v == 'true';
@@ -296,10 +341,10 @@ _Reading? _readingFromCluster(_LiveCluster cluster, DeviceType deviceType) {
         displayValue: isOn ? 'On' : 'Off',
         unit: '',
       );
-    }
 
-    // ── Level Control 0x0008 ─────────────────────────────────────────────────
-    case 0x0008: {
+    // ── Level Control 0x0008 — handled by _BrightnessCard; skip from grid ────
+    case 0x0008:
+      if (deviceType.hasBrightness) return null;
       final v = int.tryParse(raw(0x0000) ?? '');
       if (v == null) return null;
       final pct = (v / 254.0 * 100).round();
@@ -310,7 +355,6 @@ _Reading? _readingFromCluster(_LiveCluster cluster, DeviceType deviceType) {
         displayValue: pct.toString(),
         unit: '%',
       );
-    }
 
     // ── Air Quality 0x005B ──────────────────────────────────────────────────
     case 0x005B:
@@ -354,12 +398,27 @@ class _LiveCluster {
                       required this.attrs, this.deviceTypeIds});
 }
 
+/// A parsed SemanticTag entry from the Descriptor cluster's TagList (attr 0x0004).
+class _SemanticTag {
+  final int     namespaceId;
+  final int     tag;
+  final String? label;   // null when the TLV Optional was absent ("Optional.empty")
+  const _SemanticTag(this.namespaceId, this.tag, this.label);
+}
+
 class _LiveEndpoint {
-  final int            endpoint;
-  final List<int>      deviceTypeIds;
+  final int                endpoint;
+  final List<int>          deviceTypeIds;
   final List<_LiveCluster> clusters;
-  const _LiveEndpoint({required this.endpoint,
-                       required this.deviceTypeIds, required this.clusters});
+  /// SemanticTags from the Descriptor cluster's TagList attribute, parsed once
+  /// during [_parseClusters]. Empty list when none are present.
+  final List<_SemanticTag> semanticTags;
+  const _LiveEndpoint({
+    required this.endpoint,
+    required this.deviceTypeIds,
+    required this.clusters,
+    this.semanticTags = const [],
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -452,7 +511,45 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             partNumber:        info.partNumber.isNotEmpty        ? info.partNumber        : null,
             productUrl:        info.productUrl.isNotEmpty        ? info.productUrl        : null,
             uniqueId:          info.uniqueId.isNotEmpty          ? info.uniqueId          : null,
+            swVersionNum:      info.softwareVersionNum,
         );
+        // Check OTA cluster presence once basic info is confirmed (device is
+        // reachable). Skip if we already know from a previous visit.
+        if (_provider.liveDataFor(widget.deviceId)?.otaSupported == null) {
+          // Search EP0 first (standard location), then any endpoint listed in
+          // EP0's PartsList — so devices that put the OTA Requestor on a
+          // non-root endpoint are handled correctly.
+          const otaRequestorId = 0x002A;
+          int? foundEndpoint;
+
+          final ep0Clusters = await context
+              .read<MatterChannel>()
+              .readServerClusterList(device.nodeId, endpoint: 0);
+          if (ep0Clusters.contains(otaRequestorId)) {
+            foundEndpoint = 0;
+          } else {
+            // Read EP0 PartsList to discover non-root endpoints
+            final partsList = await context
+                .read<MatterChannel>()
+                .readPartsList(device.nodeId);
+            for (final ep in partsList) {
+              final clusters = await context
+                  .read<MatterChannel>()
+                  .readServerClusterList(device.nodeId, endpoint: ep);
+              if (clusters.contains(otaRequestorId)) {
+                foundEndpoint = ep;
+                break;
+              }
+            }
+          }
+          if (mounted) {
+            _provider.updateOtaSupport(
+              widget.deviceId,
+              foundEndpoint != null,
+              endpoint: foundEndpoint ?? 0,
+            );
+          }
+        }
       }
     }
 
@@ -535,8 +632,45 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           deviceTypeIds: byEpCluster[ep]![0x001D]?.deviceTypeIds ?? [],
           clusters:      (byEpCluster[ep]!.values.toList()
               ..sort((a, b) => a.clusterId.compareTo(b.clusterId))),
+          semanticTags:  _parseSemanticTagsForEp(byEpCluster[ep]![0x001D]),
         ),
     ];
+  }
+
+  /// Parses the TagList attribute (0x0004) from a Descriptor cluster entry.
+  List<_SemanticTag> _parseSemanticTagsForEp(_LiveCluster? descriptor) {
+    if (descriptor == null) return const [];
+    final tagListAttr = descriptor.attrs.where((a) => a.id == 0x0004).firstOrNull;
+    if (tagListAttr == null || tagListAttr.raw == 'null' || tagListAttr.raw == '[]') {
+      return const [];
+    }
+    return _parseSemanticTags(tagListAttr.raw);
+  }
+
+  /// Parses the Java toString() representation of a List<DescriptorClusterSemanticTagStruct>
+  /// that `buildClustersJson` serialises as a plain string attribute value.
+  ///
+  /// Each struct looks like (with real newline/tab characters):
+  ///   DescriptorClusterSemanticTagStruct {
+  ///     mfgCode: null
+  ///     namespaceID: 8
+  ///     tag: 6
+  ///     label: Optional[1]    ← or Optional.empty
+  ///   }
+  static List<_SemanticTag> _parseSemanticTags(String raw) {
+    final result = <_SemanticTag>[];
+    // Match each struct's namespaceID / tag / label in sequence.
+    // \s+ covers the actual \n\t characters between fields.
+    final re = RegExp(
+      r'namespaceID:\s*(\d+)\s+tag:\s*(\d+)\s+label:\s*Optional(?:\[([^\]]*)\]|\.empty)',
+    );
+    for (final m in re.allMatches(raw)) {
+      final ns    = int.tryParse(m.group(1) ?? '');
+      final tag   = int.tryParse(m.group(2) ?? '');
+      final label = m.group(3); // null when "Optional.empty"
+      if (ns != null && tag != null) result.add(_SemanticTag(ns, tag, label));
+    }
+    return result;
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -610,6 +744,11 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             children: [
               const SizedBox(height: 12),
 
+              if (device.deviceType.hasOnOff && device.isOnline) ...[
+                _OnOffCard(device: device),
+                const SizedBox(height: 12),
+              ],
+
               if (device.deviceType.hasBrightness && device.isOnline) ...[
                 _BrightnessCard(
                   brightness: device.brightness,
@@ -640,6 +779,76 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// On/Off card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OnOffCard extends StatelessWidget {
+  final MatterDevice device;
+  const _OnOffCard({required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final provider = context.watch<DeviceProvider>();
+    final live     = provider.liveDataFor(device.id);
+    final isStale  = live?.isStale ?? false;
+    final isOn     = live?.isOn ?? device.isOn;
+
+    final label    = isStale ? '--' : (isOn ? 'ON' : 'OFF');
+    final litColor = isStale
+        ? Colors.white24
+        : isOn
+            ? Colors.white
+            : Colors.white38;
+
+    return Card(
+      color: cs.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header row ─────────────────────────────────────────────
+            Row(children: [
+              Icon(Icons.power_settings_new_outlined,
+                  size: 18,
+                  color: isStale
+                      ? cs.onSurfaceVariant.withAlpha(80)
+                      : isOn
+                          ? cs.onSurface
+                          : cs.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text('Power',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Switch(
+                value:     isOn,
+                onChanged: isStale ? null : (_) => provider.toggle(device.id),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            // ── Dot-matrix reading ─────────────────────────────────────
+            SizedBox(
+              height: 52,
+              child: CustomPaint(
+                painter: DotMatrixPainter(
+                  text:     label,
+                  litColor: litColor,
+                  dimColor: Colors.white12,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

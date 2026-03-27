@@ -3,7 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/matter_device.dart';
+import '../../models/ota_progress.dart';
+import '../widgets/dot_matrix_painter.dart';
 import '../../providers/device_provider.dart';
+import '../../services/dcl_service.dart';
 import '../../services/matter_channel.dart';
 import '../widgets/info_row.dart';
 import '../widgets/section_label.dart';
@@ -148,6 +151,37 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
 
               const SizedBox(height: 20),
 
+              // ── Software updates ─────────────────────────────────────────
+              _OtaSection(device: d),
+
+              // ── Network type ──────────────────────────────────────────────
+              if (d.networkType != NetworkType.unknown) ...[
+                const SectionLabel('Network'),
+                Card(
+                  color: cs.surface,
+                  child: ListTile(
+                    leading: Icon(
+                      switch (d.networkType) {
+                        NetworkType.wifi     => Icons.wifi,
+                        NetworkType.thread   => Icons.memory_outlined,
+                        NetworkType.ethernet => Icons.settings_ethernet,
+                        NetworkType.unknown  => Icons.device_unknown_outlined,
+                      },
+                      color: cs.primary,
+                    ),
+                    title: Text(d.networkType.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(switch (d.networkType) {
+                      NetworkType.wifi     => 'IEEE 802.11 Wi-Fi',
+                      NetworkType.thread   => 'IEEE 802.15.4 Thread mesh',
+                      NetworkType.ethernet => 'Ethernet / IP',
+                      NetworkType.unknown  => '',
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
               // ── Tools ────────────────────────────────────────────────────
               const SectionLabel('Tools'),
               Card(
@@ -235,6 +269,319 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OTA update section
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _OtaCheckState { idle, checking, upToDate, updateAvailable, noOtaUrl, missingInfo, error }
+
+class _OtaSection extends StatefulWidget {
+  final MatterDevice device;
+  const _OtaSection({required this.device});
+
+  @override
+  State<_OtaSection> createState() => _OtaSectionState();
+}
+
+class _OtaSectionState extends State<_OtaSection> {
+  _OtaCheckState   _check        = _OtaCheckState.idle;
+  DclUpdateResult? _result;
+  String           _errorMessage = '';
+  bool             _flashing     = false;
+  bool             _dryRun       = true;   // safe default
+
+  @override
+  void initState() {
+    super.initState();
+    // Restore in-progress OTA if we navigated away mid-update.
+    final progress = context.read<DeviceProvider>().otaProgressFor(widget.device.id);
+    if (progress != null) {
+      _flashing = true;
+    } else {
+      // Auto-check DCL as soon as the widget is live.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _runCheck();
+      });
+    }
+  }
+
+  static int? _parseHexId(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final s = (raw.startsWith('0x') || raw.startsWith('0X')) ? raw.substring(2) : raw;
+    return int.tryParse(s, radix: 16);
+  }
+
+  Future<void> _runCheck() async {
+    final live = context.read<DeviceProvider>().liveDataFor(widget.device.id);
+    final vid  = _parseHexId(live?.vendorId);
+    final pid  = _parseHexId(live?.productId);
+    final cur  = live?.softwareVersionNum;
+    if (vid == null || pid == null || cur == null) {
+      setState(() => _check = _OtaCheckState.missingInfo);
+      return;
+    }
+    setState(() { _check = _OtaCheckState.checking; _result = null; _errorMessage = ''; });
+    try {
+      final r = await DclService().checkForUpdate(vid: vid, pid: pid, currentVersion: cur);
+      if (!mounted) return;
+      setState(() {
+        _result = r;
+        if (!r.isUpdateAvailable)    _check = _OtaCheckState.upToDate;
+        else if (r.otaUrl.isEmpty)   _check = _OtaCheckState.noOtaUrl;
+        else                         _check = _OtaCheckState.updateAvailable;
+      });
+    } on DclNotFoundError {
+      if (mounted) setState(() { _check = _OtaCheckState.error; _errorMessage = 'Device not found in DCL'; });
+    } on DclNetworkError catch (e) {
+      if (mounted) setState(() { _check = _OtaCheckState.error; _errorMessage = e.message; });
+    } catch (e) {
+      if (mounted) setState(() { _check = _OtaCheckState.error; _errorMessage = e.toString(); });
+    }
+  }
+
+  Future<void> _startFlash() async {
+    final r = _result;
+    if (r == null || r.otaUrl.isEmpty) return;
+    context.read<DeviceProvider>().clearOtaProgress(widget.device.id);
+    setState(() => _flashing = true);
+    final ok = await context.read<MatterChannel>().downloadAndFlash(
+      nodeId:              widget.device.nodeId,
+      otaUrl:              r.otaUrl,
+      targetVersion:       r.latestVersion ?? 0,
+      targetVersionString: r.latestVersionString ?? '',
+      dryRun:              _dryRun,
+      endpoint:            context.read<DeviceProvider>()
+                               .liveDataFor(widget.device.id)?.otaEndpoint ?? 0,
+    );
+    if (!ok && mounted) setState(() => _flashing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<DeviceProvider>();
+    final live     = provider.liveDataFor(widget.device.id);
+    if (live?.otaSupported != true) return const SizedBox.shrink();
+
+    final otaProgress = _flashing ? provider.otaProgressFor(widget.device.id) : null;
+
+    // Clear terminal state once shown so it doesn't reappear on next visit.
+    if (_flashing && otaProgress?.isTerminal == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          provider.clearOtaProgress(widget.device.id);
+          setState(() => _flashing = false);
+        }
+      });
+    }
+
+    final cs             = Theme.of(context).colorScheme;
+    final currentVersion = live?.softwareVersion ?? '';
+    final newVersion     = _result?.latestVersionString ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionLabel('Software Version'),
+        Card(
+          color: cs.surface,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Version header ──────────────────────────────────────────
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Current version',
+                              style: TextStyle(
+                                  fontSize: 12, color: cs.onSurfaceVariant)),
+                          const SizedBox(height: 3),
+                          Text(
+                            currentVersion.isNotEmpty ? currentVersion : '—',
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Right-side status indicator
+                    if (_check == _OtaCheckState.checking)
+                      SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: cs.primary),
+                      )
+                    else if (_check == _OtaCheckState.upToDate)
+                      Icon(Icons.check_circle_outline,
+                          size: 18, color: Colors.green.shade400)
+                    else if (_check == _OtaCheckState.error)
+                      GestureDetector(
+                        onTap: _runCheck,
+                        child: Icon(Icons.warning_amber_outlined,
+                            size: 18, color: Colors.orange.shade400),
+                      )
+                    else if (!_flashing &&
+                        (_check == _OtaCheckState.upToDate ||
+                         _check == _OtaCheckState.noOtaUrl))
+                      GestureDetector(
+                        onTap: _runCheck,
+                        child: Icon(Icons.refresh,
+                            size: 18, color: cs.onSurfaceVariant),
+                      ),
+                  ],
+                ),
+
+                // ── Error message (below version) ───────────────────────────
+                if (_check == _OtaCheckState.error) ...[
+                  const SizedBox(height: 4),
+                  Text(_errorMessage,
+                      style: TextStyle(
+                          fontSize: 12, color: cs.onSurfaceVariant),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+
+                // ── Missing info ────────────────────────────────────────────
+                if (_check == _OtaCheckState.missingInfo) ...[
+                  const SizedBox(height: 4),
+                  Text('Open the device screen first to load version info',
+                      style: TextStyle(
+                          fontSize: 12, color: cs.onSurfaceVariant)),
+                ],
+
+                // ── No OTA URL ──────────────────────────────────────────────
+                if (!_flashing && _check == _OtaCheckState.noOtaUrl) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    newVersion.isNotEmpty
+                        ? '$newVersion available — no download URL in DCL'
+                        : 'Update available — no download URL in DCL',
+                    style: TextStyle(
+                        fontSize: 12, color: cs.onSurfaceVariant),
+                  ),
+                ],
+
+                // ── Upgrade button or in-progress display ───────────────────
+                if (_flashing) ...[
+                  const SizedBox(height: 16),
+                  _buildProgress(context, cs, otaProgress),
+                ] else if (_check == _OtaCheckState.updateAvailable) ...[
+                  const SizedBox(height: 14),
+                  // Dry-run toggle
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Dry run',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: cs.onSurfaceVariant)),
+                      ),
+                      Switch.adaptive(
+                          value: _dryRun,
+                          onChanged: (v) => setState(() => _dryRun = v)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: _startFlash,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      newVersion.isNotEmpty
+                          ? 'Upgrade to $newVersion'
+                          : 'Upgrade',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildProgress(BuildContext context, ColorScheme cs, OtaProgressState? p) {
+    final phase    = p?.phase ?? 'download';
+    final progress = p?.progress;
+
+    final glyphText = progress != null ? '$progress%' : '--';
+
+    final litColor = switch (phase) {
+      'complete' => Colors.green.shade400,
+      'dryrun'   => Colors.blue.shade400,
+      'error'    => Colors.orange.shade400,
+      _          => Colors.white,
+    };
+
+    final (String title, String subtitle) = switch (phase) {
+      'download'   => ('Downloading',      'Fetching firmware from DCL'),
+      'querying'   => ('Waiting',          'Device is querying the provider'),
+      'installing' => ('Installing',       'Transferring firmware to device'),
+      'applying'   => ('Applying',         'Device is installing the image'),
+      'dryrun'     => ('Dry run complete', 'Transfer succeeded — apply skipped'),
+      'complete'   => ('Update complete',  'Device will reboot shortly'),
+      'error'      => ('Update failed',    p?.message ?? 'Unknown error'),
+      _            => ('Updating',         ''),
+    };
+
+    final showCancel = phase != 'complete' && phase != 'dryrun' && phase != 'error';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Dot-matrix percentage / status
+        SizedBox(
+          height: 56,
+          child: CustomPaint(
+            painter: DotMatrixPainter(
+              text:     glyphText,
+              litColor: litColor,
+              dimColor: Colors.white12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(subtitle,
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
+        if (showCancel) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: () async {
+              await context.read<MatterChannel>().cancelOta();
+              if (mounted) setState(() => _flashing = false);
+            },
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(40),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Device info sub-screen
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -270,6 +617,8 @@ class DeviceInfoScreen extends StatelessWidget {
 
     // ── Device type / node ─────────────────────────────────────────────
     add('Type',       device.deviceType.displayName);
+    add('Network',    device.networkType == NetworkType.unknown
+        ? null : device.networkType.label);
     add('Node ID',
         '0x${device.nodeId.toRadixString(16).padLeft(16, '0').toUpperCase()}',
         mono: true);

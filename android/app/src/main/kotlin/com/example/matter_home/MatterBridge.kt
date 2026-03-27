@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import com.example.matter_home.chip.ChipClient
 import com.example.matter_home.chip.ClusterClient
+import com.example.matter_home.chip.OtaManager
 import com.example.matter_home.chip.MatterCommissioner
 import com.example.matter_home.chip.NetworkDiagnosticsRunner
 import com.example.matter_home.chip.SetupPayloadHelper
@@ -19,10 +20,12 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 class MatterBridge(private val context: Context) {
@@ -70,6 +73,11 @@ class MatterBridge(private val context: Context) {
     // ── Subscription start / stop ─────────────────────────────────────────────
 
     fun startSubscription(nodeId: Long, result: MethodChannel.Result) = requireChip(result) {
+        startSubscriptionForNode(nodeId)
+        main.post { result.success(true) }
+    }
+
+    private fun startSubscriptionForNode(nodeId: Long) {
         cancelledNodeIds.remove(nodeId)
         ClusterClient.subscribeDeviceState(
             context = context,
@@ -89,9 +97,22 @@ class MatterBridge(private val context: Context) {
                     emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "established"))
             },
             onResubscribing = { nid, nextMs ->
-                if (nid !in cancelledNodeIds)
+                if (nid !in cancelledNodeIds) {
                     emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "resubscribing",
                                          "nextMs" to nextMs))
+                    // SDK exponential backoff can grow to minutes — if it exceeds 30 s,
+                    // the UDP socket is likely permanently broken.  Restart cleanly.
+                    if (nextMs > 30_000L) {
+                        Log.w(TAG, "Resubscription backoff too large (${nextMs}ms) for " +
+                                   "nodeId=$nid — forcing restart")
+                        scope.launch {
+                            delay(2_000L)   // brief pause before restarting
+                            if (nid !in cancelledNodeIds) {
+                                startSubscriptionForNode(nid)
+                            }
+                        }
+                    }
+                }
             },
             onError = { nid, err ->
                 if (nid !in cancelledNodeIds)
@@ -99,7 +120,6 @@ class MatterBridge(private val context: Context) {
                                          "message" to (err.message ?: "unknown")))
             },
         )
-        main.post { result.success(true) }
     }
 
     fun stopSubscription(nodeId: Long, result: MethodChannel.Result) {
@@ -313,6 +333,191 @@ class MatterBridge(private val context: Context) {
         return networks
     }
 
+    // ── OTA update ────────────────────────────────────────────────────────────
+
+    private val otaManager        = OtaManager()
+    @Volatile private var queryWatchdogJob: Job? = null
+
+    /**
+     * Downloads the OTA image from [otaUrl] to the app cache directory, then
+     * registers this controller as an OTA Provider on the fabric and sends
+     * AnnounceOTAProvider to [nodeId].
+     *
+     * Progress is emitted on the device-state event channel as maps with:
+     *   type     = "otaProgress"
+     *   nodeId   = Int
+     *   phase    = "download" | "querying" | "installing" | "applying" | "complete" | "error"
+     *   progress = Int (0-100, omitted for non-progress phases)
+     *   message  = String (error description, omitted otherwise)
+     */
+    fun downloadAndFlash(
+        nodeId:              Long,
+        otaUrl:              String,
+        targetVersion:       Long,
+        targetVersionString: String,
+        dryRun:              Boolean,
+        otaEndpoint:         Int,
+        result:              MethodChannel.Result,
+    ) = requireChip(result) {
+
+        // ── Teardown any previous attempt ─────────────────────────────────────
+        queryWatchdogJob?.cancel()
+        queryWatchdogJob = null
+        try { ChipClient.getController().finishOTAProvider() } catch (_: Exception) {}
+        otaManager.reset()
+
+        val destPath = "${context.cacheDir.absolutePath}/ota_${nodeId}.bin"
+
+        // ── Download ──────────────────────────────────────────────────────────
+        emitOtaProgress(nodeId, "download", 0, null)
+        try {
+            downloadOtaFile(otaUrl, destPath) { pct ->
+                emitOtaProgress(nodeId, "download", pct, null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "OTA download failed: ${e.message}")
+            emitOtaProgress(nodeId, "error", null, "Download failed: ${e.message}")
+            main.post { result.error("OTA_DOWNLOAD_ERROR", e.message, null) }
+            cleanupOtaFile(destPath)
+            return@requireChip
+        }
+
+        // ── Configure OTA manager callbacks ───────────────────────────────────
+        otaManager.configure(destPath, targetVersion, targetVersionString, dryRun)
+
+        otaManager.onBdxProgress = { nid, pct ->
+            queryWatchdogJob?.cancel()   // BDX started — watchdog no longer needed
+            emitOtaProgress(nid, "installing", pct, null)
+        }
+        otaManager.onApplyUpdate = { nid ->
+            if (dryRun) {
+                emitOtaProgress(nid, "dryrun", null, null)
+                ChipClient.getController().finishOTAProvider()
+                otaManager.reset()
+                cleanupOtaFile(destPath)
+            } else {
+                emitOtaProgress(nid, "applying", null, null)
+            }
+        }
+        otaManager.onUpdateApplied = { nid ->
+            queryWatchdogJob?.cancel()
+            emitOtaProgress(nid, "complete", 100, null)
+            ChipClient.getController().finishOTAProvider()
+            otaManager.reset()
+            cleanupOtaFile(destPath)
+        }
+        otaManager.onTransferComplete = { nid, success ->
+            queryWatchdogJob?.cancel()
+            if (!success) {
+                emitOtaProgress(nid, "error", null, "BDX transfer failed")
+                ChipClient.getController().finishOTAProvider()
+                otaManager.reset()
+                cleanupOtaFile(destPath)
+            }
+        }
+
+        // ── Start OTA provider & announce ─────────────────────────────────────
+        ChipClient.getController().startOTAProvider(otaManager)
+        val providerNodeId = ChipClient.getController().getControllerNodeId()
+
+        try {
+            ClusterClient.announceOtaProvider(context, nodeId, providerNodeId, ChipClient.VENDOR_ID, otaEndpoint)
+            emitOtaProgress(nodeId, "querying", null, null)
+        } catch (e: Exception) {
+            // AnnounceOTAProvider is optional — some devices don't support it
+            // (returns UNSUPPORTED_COMMAND).  Try writing DefaultOTAProviders
+            // so the device's background polling picks up our provider instead.
+            Log.w(TAG, "AnnounceOTAProvider failed (${e.message}), trying DefaultOTAProviders")
+            try {
+                ClusterClient.writeDefaultOtaProviders(context, nodeId, providerNodeId)
+                emitOtaProgress(nodeId, "querying", null, null)
+            } catch (e2: Exception) {
+                Log.e(TAG, "DefaultOTAProviders write also failed: ${e2.message}")
+                ChipClient.getController().finishOTAProvider()
+                otaManager.reset()
+                cleanupOtaFile(destPath)
+                emitOtaProgress(nodeId, "error", null,
+                    "Could not reach OTA Requestor: ${e2.message}")
+            }
+        }
+
+        // Watchdog: if the device hasn't started a BDX session within 90 s,
+        // clean up and report a timeout rather than hanging indefinitely.
+        queryWatchdogJob = scope.launch {
+            delay(90_000L)
+            Log.w(TAG, "OTA query watchdog expired for nodeId=$nodeId")
+            ChipClient.getController().finishOTAProvider()
+            otaManager.reset()
+            cleanupOtaFile(destPath)
+            emitOtaProgress(nodeId, "error", null,
+                "Device did not initiate an OTA session within 90 s")
+        }
+
+        main.post { result.success(true) }
+    }
+
+    fun cancelOta(result: MethodChannel.Result) = requireChip(result) {
+        queryWatchdogJob?.cancel()
+        queryWatchdogJob = null
+        // Graceful cancel: mark NotAvailable so the device gets a clean
+        // "no update" response rather than a network error — this lets it
+        // reset its backoff state immediately so a new attempt works right away.
+        otaManager.markNotAvailable()
+        delay(3_000L)   // give the device a moment to query and get NotAvailable
+        ChipClient.getController().finishOTAProvider()
+        otaManager.reset()
+        main.post { result.success(true) }
+    }
+
+    private fun emitOtaProgress(nodeId: Long, phase: String, progress: Int?, message: String?) {
+        val map = mutableMapOf<String, Any?>(
+            "type"   to "otaProgress",
+            "nodeId" to nodeId.toInt(),
+            "phase"  to phase,
+        )
+        if (progress != null) map["progress"] = progress
+        if (message  != null) map["message"]  = message
+        emitDeviceState(map)
+    }
+
+    private suspend fun downloadOtaFile(
+        url:        String,
+        destPath:   String,
+        onProgress: (Int) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        try {
+            conn.instanceFollowRedirects = true
+            conn.connect()
+            if (conn.responseCode !in 200..299) {
+                throw Exception("HTTP ${conn.responseCode}")
+            }
+            val total   = conn.contentLengthLong   // -1 if unknown
+            var received = 0L
+            java.io.FileOutputStream(destPath).use { out ->
+                conn.inputStream.use { input ->
+                    val buf = ByteArray(32 * 1024)
+                    var n: Int
+                    while (input.read(buf).also { n = it } != -1) {
+                        out.write(buf, 0, n)
+                        received += n
+                        if (total > 0L) {
+                            onProgress(((received.toDouble() / total) * 100).toInt().coerceIn(0, 99))
+                        }
+                    }
+                }
+            }
+            onProgress(100)
+            Log.d(TAG, "OTA download complete: $received bytes → $destPath")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun cleanupOtaFile(path: String) {
+        try { java.io.File(path).delete() } catch (_: Exception) {}
+    }
+
     companion object {
         private const val TAG = "MatterBridge"
         /** Minimum RSSI to include a network — filters out ghost/stale entries. */
@@ -493,19 +698,32 @@ class MatterBridge(private val context: Context) {
             val info = ClusterClient.readBasicInfo(context, nodeId)
             main.post {
                 result.success(mapOf(
-                    "productName"      to (info.productName      ?: ""),
-                    "vendorName"       to (info.vendorName       ?: ""),
-                    "vendorId"         to (info.vendorId         ?: ""),
-                    "productId"        to (info.productId        ?: ""),
-                    "hwVersion"        to (info.hwVersion        ?: ""),
-                    "softwareVersion"  to (info.swVersion        ?: ""),
+                    "productName"       to (info.productName      ?: ""),
+                    "vendorName"        to (info.vendorName       ?: ""),
+                    "vendorId"          to (info.vendorId         ?: ""),
+                    "productId"         to (info.productId        ?: ""),
+                    "hwVersion"         to (info.hwVersion        ?: ""),
+                    "softwareVersion"   to (info.swVersion        ?: ""),
+                    "softwareVersionNum" to (info.swVersionNum    ?: -1),
                     "manufacturingDate" to (info.manufacturingDate ?: ""),
-                    "partNumber"       to (info.partNumber       ?: ""),
-                    "productUrl"       to (info.productUrl       ?: ""),
-                    "serialNumber"     to (info.serialNumber     ?: ""),
-                    "uniqueId"         to (info.uniqueId         ?: ""),
+                    "partNumber"        to (info.partNumber       ?: ""),
+                    "productUrl"        to (info.productUrl       ?: ""),
+                    "serialNumber"      to (info.serialNumber     ?: ""),
+                    "uniqueId"          to (info.uniqueId         ?: ""),
                 ))
             }
+        }
+
+    fun readServerClusterList(nodeId: Long, endpoint: Int, result: MethodChannel.Result) =
+        requireChip(result) {
+            val ids = ClusterClient.readServerClusterList(context, nodeId, endpoint = endpoint)
+            main.post { result.success(ids.map { it.toInt() }) }
+        }
+
+    fun readPartsList(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) {
+            val ids = ClusterClient.readPartsList(context, nodeId)
+            main.post { result.success(ids) }
         }
 
     // ── Thermostat ────────────────────────────────────────────────────────────

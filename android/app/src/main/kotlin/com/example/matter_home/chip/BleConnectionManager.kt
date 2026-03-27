@@ -140,7 +140,7 @@ class BleConnectionManager : BleCallback {
                 val serviceUuid = ParcelUuid(UUID.fromString(MATTER_BLE_UUID))
                 val filter = ScanFilter.Builder()
                     .setServiceData(serviceUuid,
-                        matterServiceData(discriminator),
+                        matterServiceData(discriminator, isShortDiscriminator),
                         matterServiceDataMask(isShortDiscriminator))
                     .build()
                 val settings = ScanSettings.Builder()
@@ -253,15 +253,32 @@ class BleConnectionManager : BleCallback {
     }
 
     // ── BLE service-data encoding ─────────────────────────────────────────────
+    //
+    // Matter CHIPoBLE service-data layout (3 bytes, UUID 0xFFF6):
+    //   Byte 0: opcode / additional-data flags  (varies by device — not matched)
+    //   Byte 1: disc[7:0]   — lower 8 bits of the 12-bit discriminator
+    //   Byte 2: (version[3:0] << 4) | disc[11:8]   — upper nibble = version (0),
+    //           lower nibble = upper 4 bits of discriminator
+    //
+    // A SHORT discriminator (from a manual pairing code) is exactly those upper
+    // 4 bits, i.e. disc[11:8].  It must therefore go into the lower nibble of
+    // Byte 2, not into Byte 1 (which holds the lower bits).
+    //
+    // Old (wrong) code put shortDisc=6 into vDisc[7:0] → Byte1=0x06, Byte2=0x00
+    // but the device advertises                         → Byte1=??,   Byte2=0x06
+    // ─────────────────────────────────────────────────────────────────────────
 
-    private fun matterServiceData(discriminator: Int): ByteArray {
-        val version = 0
-        val vDisc   = ((version and 0xf) shl 12) or (discriminator and 0xfff)
-        return byteArrayOf(0, (vDisc and 0xff).toByte(), (vDisc shr 8).toByte())
+    private fun matterServiceData(discriminator: Int, isShort: Boolean): ByteArray {
+        val version  = 0
+        // Short discriminator occupies disc[11:8]; full discriminator uses all 12 bits.
+        val discBits = if (isShort) (discriminator and 0xf) shl 8 else discriminator and 0xfff
+        val vDisc    = ((version and 0xf) shl 12) or discBits
+        return byteArrayOf(0x00, (vDisc and 0xff).toByte(), (vDisc shr 8).toByte())
     }
 
-    private fun matterServiceDataMask(isShort: Boolean): ByteArray {
-        val discMask = if (isShort) 0x00.toByte() else 0xff.toByte()
-        return byteArrayOf(0xff.toByte(), discMask, 0xff.toByte())
-    }
+    private fun matterServiceDataMask(isShort: Boolean): ByteArray = byteArrayOf(
+        0xFF.toByte(),                                     // Byte 0: OpCode MUST be 0x00 (Commissionable)
+        (if (isShort) 0x00 else 0xFF).toByte(),            // Byte 1: disc[7:0] — unknown for short disc
+        0x0F.toByte(),                                     // Byte 2: lower nibble = disc[11:8]; upper = version (ignore)
+    )
 }

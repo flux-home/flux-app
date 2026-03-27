@@ -15,6 +15,7 @@ import chip.devicecontroller.ClusterIDMapping.PowerSource
 import chip.devicecontroller.ClusterIDMapping.RelativeHumidityMeasurement
 import chip.devicecontroller.ClusterIDMapping.TemperatureMeasurement
 import chip.devicecontroller.ClusterIDMapping.Thermostat
+import chip.devicecontroller.ClusterIDMapping.OtaSoftwareUpdateRequestor
 import chip.devicecontroller.ClusterIDMapping.ThreadNetworkDiagnostics
 import chip.devicecontroller.InvokeCallback
 import chip.devicecontroller.ReportCallback
@@ -50,9 +51,12 @@ object ClusterClient {
 
     /** Sends an OnOff cluster On or Off command to [nodeId]. */
     suspend fun setOnOff(context: Context, nodeId: Long, on: Boolean, endpoint: Int = ENDPOINT_1) {
-        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
+        val ptr   = ChipClient.getConnectedDevicePointer(context, nodeId)
         val cmdId = if (on) OnOff.Command.On.id else OnOff.Command.Off.id
-        val element = InvokeElement.newInstance(endpoint, OnOff.ID, cmdId, null, null)
+        // On/Off commands carry no fields but the SDK requires a non-null TLV body —
+        // pass an empty struct instead of null to avoid CHIP_ERROR_INVALID_ARGUMENT.
+        val emptyStruct = TlvWriter().startStructure(AnonymousTag).endStructure().getEncoded()
+        val element = InvokeElement.newInstance(endpoint, OnOff.ID, cmdId, emptyStruct, null)
         invoke(context, ptr, element)
         Log.d(TAG, "OnOff ${if (on) "On" else "Off"} → nodeId=$nodeId ep=$endpoint")
     }
@@ -315,6 +319,7 @@ object ClusterClient {
         val productId:        String?,   // pre-formatted "0xXXXX"
         val hwVersion:        String?,
         val swVersion:        String?,
+        val swVersionNum:     Int?,      // SoftwareVersion uint32 (for DCL comparison)
         val manufacturingDate:String?,
         val partNumber:       String?,
         val productUrl:       String?,
@@ -330,6 +335,7 @@ object ClusterClient {
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.ProductName.id),
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.ProductID.id),
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.HardwareVersionString.id),
+            ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.SoftwareVersion.id),
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.SoftwareVersionString.id),
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.ManufacturingDate.id),
             ChipAttributePath.newInstance(0, BasicInformation.ID, BasicInformation.Attribute.PartNumber.id),
@@ -343,7 +349,7 @@ object ClusterClient {
                 object : ReportCallback {
                     override fun onError(a: chip.devicecontroller.model.ChipAttributePath?, e: chip.devicecontroller.model.ChipEventPath?, ex: Exception) {
                         Log.e(TAG, "readBasicInfo error", ex)
-                        if (cont.isActive) cont.resume(BasicInfo(null,null,null,null,null,null,null,null,null,null,null))
+                        if (cont.isActive) cont.resume(BasicInfo(null,null,null,null,null,null,null,null,null,null,null,null))
                     }
                     override fun onReport(state: NodeState?) { if (state != null) lastState = state }
                     override fun onDone() {
@@ -358,6 +364,7 @@ object ClusterClient {
                             productId         = fmtId(num(BasicInformation.Attribute.ProductID.id)),
                             hwVersion         = str(BasicInformation.Attribute.HardwareVersionString.id),
                             swVersion         = str(BasicInformation.Attribute.SoftwareVersionString.id),
+                            swVersionNum      = num(BasicInformation.Attribute.SoftwareVersion.id),
                             manufacturingDate = str(BasicInformation.Attribute.ManufacturingDate.id),
                             partNumber        = str(BasicInformation.Attribute.PartNumber.id),
                             productUrl        = str(BasicInformation.Attribute.ProductURL.id),
@@ -369,6 +376,112 @@ object ClusterClient {
                     }
                 },
                 ptr, paths, null, false, 0,
+            )
+        }
+    }
+
+    // ── Descriptor — server cluster list ─────────────────────────────────────
+
+    /**
+     * Reads the ServerList attribute (0x0001) from the Descriptor cluster
+     * (0x001D) on [endpoint] and returns the list of server-side cluster IDs
+     * present on that endpoint.
+     */
+    suspend fun readServerClusterList(
+        context:  Context,
+        nodeId:   Long,
+        endpoint: Int = 0,
+    ): List<Long> {
+        val ptr  = ChipClient.getConnectedDevicePointer(context, nodeId)
+        val path = ChipAttributePath.newInstance(
+            endpoint,
+            Descriptor.ID,
+            Descriptor.Attribute.ServerList.id,
+        )
+        return suspendCancellableCoroutine { cont ->
+            ChipClient.getController().readPath(
+                object : ReportCallback {
+                    override fun onError(
+                        a: chip.devicecontroller.model.ChipAttributePath?,
+                        e: chip.devicecontroller.model.ChipEventPath?,
+                        ex: Exception,
+                    ) {
+                        Log.w(TAG, "readServerClusterList error: ${ex.message}")
+                        if (cont.isActive) cont.resume(emptyList())
+                    }
+
+                    override fun onReport(state: NodeState?) {
+                        val tlv = state
+                            ?.getEndpointState(endpoint)
+                            ?.getClusterState(Descriptor.ID)
+                            ?.getAttributeState(Descriptor.Attribute.ServerList.id)
+                            ?.tlv
+                        if (tlv == null) {
+                            if (cont.isActive) cont.resume(emptyList())
+                            return
+                        }
+                        val ids = mutableListOf<Long>()
+                        try {
+                            val r = TlvReader(tlv)
+                            r.enterArray(AnonymousTag)
+                            while (!r.isEndOfContainer()) {
+                                ids.add(r.getULong(AnonymousTag).toLong())
+                            }
+                            r.exitContainer()
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "readServerClusterList parse error: ${ex.message}")
+                        }
+                        Log.d(TAG, "ServerList ep=$endpoint: $ids")
+                        if (cont.isActive) cont.resume(ids)
+                    }
+                },
+                ptr,
+                listOf(path),
+                null,
+                false,
+                0,
+            )
+        }
+    }
+
+    /**
+     * Reads the PartsList attribute (0x0003) from the Descriptor cluster on
+     * EP0 and returns the list of non-root endpoint numbers the device exposes.
+     */
+    suspend fun readPartsList(context: Context, nodeId: Long): List<Int> {
+        val ptr  = ChipClient.getConnectedDevicePointer(context, nodeId)
+        val path = ChipAttributePath.newInstance(0, Descriptor.ID, Descriptor.Attribute.PartsList.id)
+        return suspendCancellableCoroutine { cont ->
+            ChipClient.getController().readPath(
+                object : ReportCallback {
+                    override fun onError(
+                        a: chip.devicecontroller.model.ChipAttributePath?,
+                        e: chip.devicecontroller.model.ChipEventPath?,
+                        ex: Exception,
+                    ) {
+                        Log.w(TAG, "readPartsList error: ${ex.message}")
+                        if (cont.isActive) cont.resume(emptyList())
+                    }
+                    override fun onReport(state: NodeState?) {
+                        val tlv = state?.getEndpointState(0)
+                            ?.getClusterState(Descriptor.ID)
+                            ?.getAttributeState(Descriptor.Attribute.PartsList.id)
+                            ?.tlv
+                        if (tlv == null) { if (cont.isActive) cont.resume(emptyList()); return }
+                        val eps = mutableListOf<Int>()
+                        try {
+                            val r = TlvReader(tlv)
+                            r.enterArray(AnonymousTag)
+                            while (!r.isEndOfContainer()) eps.add(r.getUInt(AnonymousTag).toInt())
+                            r.exitContainer()
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "readPartsList parse error: ${ex.message}")
+                        }
+                        Log.d(TAG, "PartsList: $eps (nodeId=$nodeId)")
+                        if (cont.isActive) cont.resume(eps)
+                    }
+                },
+                ptr, listOf(path), null, false, 0,
             )
         }
     }
@@ -987,6 +1100,106 @@ object ClusterClient {
         }
         sb.append("]}")
         return sb.toString()
+    }
+
+    // ── OTA: AnnounceOTAProvider ─────────────────────────────────────────────
+
+    /**
+     * Sends the AnnounceOTAProvider command (cluster 0x002A, command 0x00) to
+     * endpoint 0 of [nodeId], telling the device to query [providerNodeId] for
+     * a firmware update.
+     *
+     * AnnouncementReason 1 = UpdateAvailable (highest priority).
+     */
+    suspend fun announceOtaProvider(
+        context:          Context,
+        nodeId:           Long,
+        providerNodeId:   Long,
+        vendorId:         Int,
+        requestorEndpoint: Int = 0,   // endpoint on the DEVICE where OTA Requestor lives
+    ) {
+        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
+        val tlv = TlvWriter()
+            .startStructure(AnonymousTag)
+            .put(ContextSpecificTag(0), providerNodeId.toULong()) // ProviderNodeID — must be ULong (uint64 node-id)
+            .put(ContextSpecificTag(1), vendorId.toUShort())      // VendorID        — uint16
+            .put(ContextSpecificTag(2), 1.toUByte())              // AnnouncementReason — enum8 = uint8
+            // Field 3 (MetadataForNode) omitted — optional
+            .put(ContextSpecificTag(4), 0.toUShort())             // Endpoint on PROVIDER — uint16
+            .endStructure()
+            .getEncoded()
+        val element = InvokeElement.newInstance(
+            requestorEndpoint,                                   // endpoint on DEVICE
+            OtaSoftwareUpdateRequestor.ID,
+            OtaSoftwareUpdateRequestor.Command.AnnounceOTAProvider.id,
+            tlv, null,
+        )
+        invoke(context, ptr, element)
+        Log.d(TAG, "AnnounceOTAProvider → nodeId=$nodeId ep=$requestorEndpoint providerNodeId=$providerNodeId")
+    }
+
+    /**
+     * Writes the DefaultOTAProviders attribute (0x0000) on the OTA Requestor
+     * cluster (0x002A, EP0), adding [providerNodeId] as the sole provider entry.
+     *
+     * Used as a fallback when [announceOtaProvider] returns UNSUPPORTED_COMMAND.
+     * The device's background OTA polling will then contact our provider.
+     *
+     * ProviderLocationStruct TLV fields:
+     *   0  providerNodeID  uint64
+     *   1  endpoint        uint16  (0 = OTA Provider lives on EP0 of controller)
+     *   254 fabricIndex    uint8   (0 = filled in by device from request fabric)
+     */
+    suspend fun writeDefaultOtaProviders(
+        context:        Context,
+        nodeId:         Long,
+        providerNodeId: Long,
+    ) {
+        val ptr = ChipClient.getConnectedDevicePointer(context, nodeId)
+
+        val tlv = TlvWriter()
+            .startArray(AnonymousTag)
+            .startStructure(AnonymousTag)
+            .put(ContextSpecificTag(0), providerNodeId)   // providerNodeID  (field 0)
+            .put(ContextSpecificTag(1), 0.toUInt())       // endpoint        (field 1)
+            // fabricIndex (0xFE) omitted — device fills it in
+            .endStructure()
+            .endArray()
+            .getEncoded()
+
+        val req = AttributeWriteRequest.newInstance(
+            0,
+            OtaSoftwareUpdateRequestor.ID,
+            OtaSoftwareUpdateRequestor.Attribute.DefaultOTAProviders.id,
+            tlv,
+        )
+
+        suspendCancellableCoroutine<Unit> { cont ->
+            ChipClient.getController().write(
+                object : WriteAttributesCallback {
+                    override fun onError(path: chip.devicecontroller.model.ChipAttributePath?, ex: Exception) {
+                        Log.e(TAG, "writeDefaultOtaProviders onError", ex)
+                        if (cont.isActive) cont.resumeWithException(ex)
+                    }
+                    override fun onResponse(
+                        path: chip.devicecontroller.model.ChipAttributePath?,
+                        status: chip.devicecontroller.model.Status?,
+                    ) {
+                        // Non-success IM status = device rejected the write
+                        val ok = status == null ||
+                                 status.toString().contains("Success", ignoreCase = true)
+                        if (!ok && cont.isActive) {
+                            cont.resumeWithException(Exception("Write rejected: $status"))
+                        }
+                    }
+                    override fun onDone() {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+                },
+                ptr, listOf(req), 0, 0,
+            )
+        }
+        Log.d(TAG, "DefaultOTAProviders written → nodeId=$nodeId providerNodeId=$providerNodeId")
     }
 
     // ── Live subscriptions ────────────────────────────────────────────────────

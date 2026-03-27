@@ -1,5 +1,29 @@
 import 'device_type.dart';
 
+// ── Network transport type ────────────────────────────────────────────────────
+
+enum NetworkType {
+  wifi,
+  thread,
+  ethernet,
+  unknown;
+
+  String get label => switch (this) {
+    NetworkType.wifi     => 'Wi-Fi',
+    NetworkType.thread   => 'Thread',
+    NetworkType.ethernet => 'Ethernet',
+    NetworkType.unknown  => 'Unknown',
+  };
+
+  /// Icon codepoint from MaterialIcons — used in the settings label.
+  String get icon => switch (this) {
+    NetworkType.wifi     => 'wifi',
+    NetworkType.thread   => 'memory',     // Thread = mesh radio, closest icon
+    NetworkType.ethernet => 'settings_ethernet',
+    NetworkType.unknown  => 'device_unknown',
+  };
+}
+
 /// Represents a commissioned Matter device held in our local fabric.
 class MatterDevice {
   final String id;
@@ -17,6 +41,8 @@ class MatterDevice {
   final int? localTempCenti;
   /// Product name from BasicInformation cluster (cached across sessions).
   final String? productName;
+  /// Transport technology the device was commissioned over.
+  final NetworkType networkType;
 
   const MatterDevice({
     required this.id,
@@ -31,6 +57,7 @@ class MatterDevice {
     required this.commissionedAt,
     this.localTempCenti,
     this.productName,
+    this.networkType = NetworkType.unknown,
   });
 
   MatterDevice copyWith({
@@ -48,6 +75,7 @@ class MatterDevice {
     bool clearLocalTemp = false,
     String? productName,
     bool clearProductName = false,
+    NetworkType? networkType,
   }) {
     return MatterDevice(
       id: id ?? this.id,
@@ -62,6 +90,7 @@ class MatterDevice {
       commissionedAt: commissionedAt ?? this.commissionedAt,
       localTempCenti: clearLocalTemp ? null : (localTempCenti ?? this.localTempCenti),
       productName: clearProductName ? null : (productName ?? this.productName),
+      networkType: networkType ?? this.networkType,
     );
   }
 
@@ -78,6 +107,7 @@ class MatterDevice {
         'commissionedAt': commissionedAt.toIso8601String(),
         if (localTempCenti != null) 'localTempCenti': localTempCenti,
         if (productName    != null) 'productName':    productName,
+        'networkType': networkType.name,
       };
 
   factory MatterDevice.fromJson(Map<String, dynamic> json) {
@@ -97,6 +127,10 @@ class MatterDevice {
       commissionedAt: DateTime.parse(json['commissionedAt'] as String),
       localTempCenti: json['localTempCenti'] as int?,
       productName:    json['productName']    as String?,
+      networkType: NetworkType.values.firstWhere(
+        (e) => e.name == (json['networkType'] as String?),
+        orElse: () => NetworkType.unknown,
+      ),
     );
   }
 

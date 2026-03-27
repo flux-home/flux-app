@@ -178,6 +178,7 @@ class MatterChannel {
     String productId,
     String hwVersion,
     String softwareVersion,
+    int?   softwareVersionNum,
     String manufacturingDate,
     String partNumber,
     String productUrl,
@@ -186,24 +187,54 @@ class MatterChannel {
   })?> readBasicInfo(int nodeId) async {
     try {
       final map = await _method
-          .invokeMapMethod<String, String>('readBasicInfo', {'nodeId': nodeId});
+          .invokeMapMethod<String, dynamic>('readBasicInfo', {'nodeId': nodeId});
       if (map == null) return null;
+      String s(String k) => (map[k] as String?) ?? '';
+      final rawNum = map['softwareVersionNum'];
+      final swNum  = rawNum is int && rawNum >= 0 ? rawNum : null;
       return (
-        productName:       map['productName']       ?? '',
-        vendorName:        map['vendorName']        ?? '',
-        vendorId:          map['vendorId']          ?? '',
-        productId:         map['productId']         ?? '',
-        hwVersion:         map['hwVersion']         ?? '',
-        softwareVersion:   map['softwareVersion']   ?? '',
-        manufacturingDate: map['manufacturingDate'] ?? '',
-        partNumber:        map['partNumber']        ?? '',
-        productUrl:        map['productUrl']        ?? '',
-        serialNumber:      map['serialNumber']      ?? '',
-        uniqueId:          map['uniqueId']          ?? '',
+        productName:        s('productName'),
+        vendorName:         s('vendorName'),
+        vendorId:           s('vendorId'),
+        productId:          s('productId'),
+        hwVersion:          s('hwVersion'),
+        softwareVersion:    s('softwareVersion'),
+        softwareVersionNum: swNum,
+        manufacturingDate:  s('manufacturingDate'),
+        partNumber:         s('partNumber'),
+        productUrl:         s('productUrl'),
+        serialNumber:       s('serialNumber'),
+        uniqueId:           s('uniqueId'),
       );
     } on PlatformException catch (e) {
       debugPrint('readBasicInfo error: ${e.message}');
       return null;
+    }
+  }
+
+  /// Reads the Descriptor cluster's ServerList attribute from [endpoint] and returns
+  /// the list of server cluster IDs present on that endpoint.
+  Future<List<int>> readServerClusterList(int nodeId, {int endpoint = 0}) async {
+    try {
+      final raw = await _method.invokeMethod<List<dynamic>>(
+          'readServerClusterList', {'nodeId': nodeId, 'endpoint': endpoint});
+      return raw?.map((e) => (e as int)).toList() ?? [];
+    } on PlatformException catch (e) {
+      debugPrint('readServerClusterList error: ${e.message}');
+      return [];
+    }
+  }
+
+  /// Reads EP0's Descriptor PartsList (attribute 0x0003) and returns the list
+  /// of non-root endpoint numbers the device exposes.
+  Future<List<int>> readPartsList(int nodeId) async {
+    try {
+      final raw = await _method.invokeMethod<List<dynamic>>(
+          'readPartsList', {'nodeId': nodeId});
+      return raw?.map((e) => (e as int)).toList() ?? [];
+    } on PlatformException catch (e) {
+      debugPrint('readPartsList error: ${e.message}');
+      return [];
     }
   }
 
@@ -331,6 +362,44 @@ class MatterChannel {
       );
     } on PlatformException {
       return const DeviceStateResult(isOnline: false);
+    }
+  }
+
+  // ── OTA update ─────────────────────────────────────────────────────────────
+
+  /// Downloads the OTA image from [otaUrl] to device cache and initiates the
+  /// Matter BDX transfer to [nodeId]. Progress events arrive on the
+  /// [deviceStateUpdates] stream as `{type:"otaProgress", phase:..., ...}`.
+  ///
+  /// [targetVersion] is passed as a String to avoid 32/64-bit channel issues.
+  Future<bool> downloadAndFlash({
+    required int    nodeId,
+    required String otaUrl,
+    required int    targetVersion,
+    required String targetVersionString,
+    bool            dryRun   = false,
+    int             endpoint = 0,
+  }) async {
+    try {
+      return await _method.invokeMethod<bool>('downloadAndFlash', {
+        'nodeId':              nodeId,
+        'otaUrl':              otaUrl,
+        'targetVersion':       targetVersion.toString(),
+        'targetVersionString': targetVersionString,
+        'dryRun':              dryRun,
+        'endpoint':            endpoint,
+      }) ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('downloadAndFlash error: ${e.message}');
+      return false;
+    }
+  }
+
+  Future<bool> cancelOta() async {
+    try {
+      return await _method.invokeMethod<bool>('cancelOta') ?? false;
+    } on PlatformException {
+      return false;
     }
   }
 
