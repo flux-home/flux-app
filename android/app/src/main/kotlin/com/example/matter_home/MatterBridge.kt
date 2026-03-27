@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.example.matter_home.chip.ChipClient
-import com.example.matter_home.chip.ClusterClient
+import com.example.matter_home.chip.clusters.ClusterClient
 import com.example.matter_home.chip.OtaManager
 import com.example.matter_home.chip.MatterCommissioner
 import com.example.matter_home.chip.NetworkDiagnosticsRunner

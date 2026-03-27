@@ -1,4 +1,6 @@
-package com.example.matter_home.chip
+package com.example.matter_home.chip.clusters
+
+import com.example.matter_home.chip.ChipClient
 
 import android.content.Context
 
