@@ -7,7 +7,7 @@ import '../../models/ota_progress.dart';
 import '../widgets/dot_matrix_painter.dart';
 import '../../providers/device_provider.dart';
 import '../../services/dcl_service.dart';
-import '../../services/matter_channel.dart';
+import '../../services/matter_port.dart';
 import '../widgets/info_row.dart';
 import '../widgets/section_label.dart';
 import 'cluster_inspector_screen.dart';
@@ -31,7 +31,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   Future<void> _identify(MatterDevice d) async {
     if (_identifying) return;
     setState(() => _identifying = true);
-    await context.read<MatterChannel>().identify(d.nodeId);
+    await context.read<MatterClusterPort>().identify(d.nodeId);
     await Future.delayed(const Duration(seconds: 15));
     if (mounted) setState(() => _identifying = false);
   }
@@ -343,7 +343,7 @@ class _OtaSectionState extends State<_OtaSection> {
     if (r == null || r.otaUrl.isEmpty) return;
     context.read<DeviceProvider>().clearOtaProgress(widget.device.id);
     setState(() => _flashing = true);
-    final ok = await context.read<MatterChannel>().downloadAndFlash(
+    final ok = await context.read<MatterFabricPort>().downloadAndFlash(
       nodeId:              widget.device.nodeId,
       otaUrl:              r.otaUrl,
       targetVersion:       r.latestVersion ?? 0,
@@ -564,7 +564,7 @@ class _OtaSectionState extends State<_OtaSection> {
           const SizedBox(height: 12),
           OutlinedButton(
             onPressed: () async {
-              await context.read<MatterChannel>().cancelOta();
+              await context.read<MatterFabricPort>().cancelOta();
               if (mounted) setState(() => _flashing = false);
             },
             style: OutlinedButton.styleFrom(

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../providers/device_provider.dart';
-import '../../../services/matter_channel.dart';
+import '../../../services/matter_port.dart';
 import '../../widgets/section_label.dart';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final ch = context.read<MatterChannel>();
+    final ch = context.read<MatterFabricPort>();
     ch.getFabricId().then((id) {
       if (mounted) setState(() => _fabricId = id ?? 'N/A');
     });

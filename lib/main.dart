@@ -6,6 +6,7 @@ import 'providers/device_provider.dart';
 import 'router.dart';
 import 'services/device_store.dart';
 import 'services/matter_channel.dart';
+import 'services/matter_port.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -22,7 +23,11 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        Provider<MatterChannel>(create: (_) => channel),
+        // Sub-interface registrations — each screen depends only on what it uses.
+        Provider<MatterSubscriptionPort>.value(value: channel),
+        Provider<MatterCommissionPort>.value(value: channel),
+        Provider<MatterClusterPort>.value(value: channel),
+        Provider<MatterFabricPort>.value(value: channel),
         ChangeNotifierProvider(create: (_) => DeviceProvider(store, channel)),
       ],
       child: const MatterHomeApp(),

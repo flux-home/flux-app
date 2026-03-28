@@ -3,11 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../models/thread_models.dart';
-import '../../../services/matter_channel.dart';
+import '../../../services/matter_port.dart';
 import '../../../services/thread_settings_service.dart';
 import '../../widgets/info_row.dart';
 import '../../widgets/section_label.dart';
-import '../network_check_screen.dart';
 
 
 /// locally-configured dataset that matches this PAN.
@@ -69,7 +68,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
     try {
       final results = await Future.wait([
         ThreadSettingsService.load(),
-        context.read<MatterChannel>().discoverThreadNetworks(),
+        context.read<MatterFabricPort>().discoverThreadNetworks(),
       ]);
       final savedHex = results[0] as String;
       final routers  = results[1] as List<ThreadBorderRouter>;
@@ -304,7 +303,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
     setState(() { _reading = true; _readError = null; _androidCreds = []; _hasRead = false; });
     try {
       final hex = await context
-          .read<MatterChannel>()
+          .read<MatterFabricPort>()
           .readAndroidThreadCredentials();
 
       if (hex == null) {

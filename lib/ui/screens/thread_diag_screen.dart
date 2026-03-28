@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/matter_device.dart';
 import '../../models/thread_models.dart';
-import '../../services/matter_channel.dart';
+import '../../services/matter_port.dart';
 import '../widgets/info_row.dart';
 import '../widgets/section_label.dart';
 
@@ -94,7 +94,7 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
     setState(() { _state = _LoadState.loading; _error = null; });
     try {
       final data = await context
-          .read<MatterChannel>()
+          .read<MatterFabricPort>()
           .readThreadNetworkDiagnostics(widget.device.nodeId);
       if (!mounted) return;
       if (data == null) {
@@ -226,9 +226,7 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
 
     final d = _data!;
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
+    return ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
 
@@ -237,7 +235,7 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                'Read at ${_timeStr(_fetchedAt!)}  ·  pull to refresh',
+                'Read at ${_timeStr(_fetchedAt!)}',
                 style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
                 textAlign: TextAlign.center,
               ),
@@ -324,7 +322,6 @@ class _ThreadDiagScreenState extends State<ThreadDiagScreen> {
               ),
             ),
         ],
-      ),
     );
   }
 

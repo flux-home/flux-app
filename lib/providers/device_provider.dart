@@ -9,13 +9,13 @@ import '../models/matter_device.dart';
 import '../models/ota_progress.dart';
 import '../services/device_store.dart';
 import '../models/commission_models.dart';
-import '../services/matter_channel.dart';
+import '../services/matter_port.dart';
 
 enum DeviceProviderState { idle, loading, error }
 
 class DeviceProvider extends ChangeNotifier {
   final DeviceStore   _store;
-  final MatterChannel _channel;
+  final MatterPort    _channel;
   final _uuid = const Uuid();
 
   DeviceProviderState state = DeviceProviderState.idle;
@@ -169,6 +169,24 @@ class DeviceProvider extends ChangeNotifier {
             ? existing.merge(event)
             : DeviceLiveData.fromUpdate(event);
 
+        // Infer device type from subscription attributes when the stored type
+        // is unknown or is a stale commissioning fallback.  Battery-powered
+        // ICDs (e.g. contact sensors) are often asleep during the post-
+        // commissioning descriptor read, so the type defaults to onOffLight.
+        // The first subscription event tells us the truth.
+        final storedType = device.deviceType;
+        if (storedType == DeviceType.unknown ||
+            storedType == DeviceType.onOffLight) {
+          final inferred = _inferTypeFromEvent(event);
+          if (inferred != null) {
+            final idx2 = _indexById(device.id);
+            if (idx2 != -1) {
+              _devices[idx2] = _devices[idx2].copyWith(deviceType: inferred);
+              unawaited(_persist());
+            }
+          }
+        }
+
         // Mirror on/off + brightness + temp into the persisted MatterDevice
         // so the home screen tiles stay accurate.
         final idx = _indexById(device.id);
@@ -203,6 +221,19 @@ class DeviceProvider extends ChangeNotifier {
         _resolveUnknownDeviceType(device);
       }
     }
+  }
+
+  /// Infers a device type from the attribute keys present in a subscription
+  /// event.  Returns null if the event gives no clue (e.g. only onOff/level).
+  DeviceType? _inferTypeFromEvent(Map<String, dynamic> event) {
+    if (event.containsKey('contactState'))  return DeviceType.contactSensor;
+    if (event.containsKey('occupancy'))     return DeviceType.occupancySensor;
+    if (event.containsKey('airQuality'))    return DeviceType.airQualitySensor;
+    if (event.containsKey('humidityCenti') &&
+        !event.containsKey('onOff'))        return DeviceType.humiditySensor;
+    if (event.containsKey('tempMeasureCenti') &&
+        !event.containsKey('onOff'))        return DeviceType.temperatureSensor;
+    return null;
   }
 
   Future<void> _resolveUnknownDeviceType(MatterDevice device) async {

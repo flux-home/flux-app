@@ -9,13 +9,18 @@ import '../models/network_diagnostics.dart';
 import '../models/thermostat_models.dart';
 import '../models/thread_models.dart';
 import '../models/wifi_network.dart';
+import 'matter_port.dart';
 
 /// Flutter ↔ Android MethodChannel bridge.
 ///
 /// Every public method maps 1-to-1 to a handler in [MainActivity] / [MatterBridge].
 /// All channel calls are funnelled through [_invoke] which handles the
 /// [PlatformException] → fallback value pattern in one place.
-class MatterChannel {
+///
+/// Implements [MatterPort] so callers can depend on the narrower sub-interfaces
+/// ([MatterSubscriptionPort], [MatterCommissionPort], [MatterClusterPort],
+/// [MatterFabricPort]) and be tested with fakes.
+class MatterChannel implements MatterPort {
   static const _method       = MethodChannel('com.example.matter_home/matter');
   static const _events       = EventChannel('com.example.matter_home/commission_events');
   static const _deviceEvents = EventChannel('com.example.matter_home/device_state');
@@ -42,6 +47,7 @@ class MatterChannel {
   // ── Streams ────────────────────────────────────────────────────────────────
 
   /// Emits plain-text progress lines from the Android commissioning flow.
+  @override
   Stream<String> get commissionEvents =>
       _events.receiveBroadcastStream().map((e) => e as String);
 
@@ -53,9 +59,11 @@ class MatterChannel {
 
   // ── Subscription control ───────────────────────────────────────────────────
 
+  @override
   Future<bool> startSubscription(int nodeId) =>
       _invoke('startSubscription', false, args: {'nodeId': nodeId});
 
+  @override
   Future<void> stopSubscription(int nodeId) =>
       _invoke('stopSubscription', null, args: {'nodeId': nodeId});
 
@@ -63,6 +71,7 @@ class MatterChannel {
 
   /// Parses a QR code or 11-digit manual pairing code.
   /// Returns null if the payload is invalid or the SDK is unavailable.
+  @override
   Future<ParsedPayload?> parsePayload(String payload) =>
       _invoke<ParsedPayload?>('parsePayload', null, args: {'payload': payload},
           decode: (raw) {
@@ -89,6 +98,7 @@ class MatterChannel {
 
   // ── Commission via BLE ─────────────────────────────────────────────────────
 
+  @override
   Future<CommissionResult> commissionDevice(
     String payload, {
     String? wifiSsid,
@@ -115,6 +125,7 @@ class MatterChannel {
     }
   }
 
+  @override
   Future<CommissionResult> commissionViaIp({
     required String ipAddress,
     int port = 5540,
@@ -143,9 +154,11 @@ class MatterChannel {
 
   // ── Device control ─────────────────────────────────────────────────────────
 
+  @override
   Future<bool> toggleDevice(int nodeId, {required bool on}) =>
       _invoke('toggleDevice', false, args: {'nodeId': nodeId, 'on': on});
 
+  @override
   Future<bool> setLevel(int nodeId, int level) =>
       _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
 
@@ -153,6 +166,7 @@ class MatterChannel {
 
   /// Reads the BasicInformation cluster (0x0028) from EP0.
   /// Returns null if the device is unreachable.
+  @override
   Future<BasicInfo?> readBasicInfo(int nodeId) =>
       _invoke<BasicInfo?>('readBasicInfo', null, args: {'nodeId': nodeId},
           decode: (raw) {
@@ -190,6 +204,7 @@ class MatterChannel {
 
   // ── Thermostat ─────────────────────────────────────────────────────────────
 
+  @override
   Future<ThermostatState?> readThermostat(int nodeId) =>
       _invoke<ThermostatState?>('readThermostat', null, args: {'nodeId': nodeId},
           decode: (raw) {
@@ -205,15 +220,18 @@ class MatterChannel {
             );
           });
 
+  @override
   Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) =>
       _invoke('writeHeatingSetpoint', false,
           args: {'nodeId': nodeId, 'centidegrees': centidegrees});
 
+  @override
   Future<bool> writeSystemMode(int nodeId, int mode) =>
       _invoke('writeSystemMode', false, args: {'nodeId': nodeId, 'mode': mode});
 
   // ── Sensors / Battery / Humidity ───────────────────────────────────────────
 
+  @override
   Future<String?> readAndroidThreadCredentials() =>
       _invoke<String?>('readAndroidThreadCredentials', null);
 
@@ -226,6 +244,7 @@ class MatterChannel {
                 ThreadBorderRouter.fromJson(e as Map<String, dynamic>)).toList();
           });
 
+  @override
   Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) =>
       _invoke<ThreadNetworkDiagnostics?>('readThreadNetworkDiagnostics', null,
           args: {'nodeId': nodeId},
@@ -235,15 +254,19 @@ class MatterChannel {
                 json.decode(raw as String) as Map<String, dynamic>);
           });
 
+  @override
   Future<String?> readClusters(int nodeId) =>
       _invoke<String?>('readClusters', null, args: {'nodeId': nodeId});
 
+  @override
   Future<int?> readDeviceTypeId(int nodeId) =>
       _invoke<int?>('readDeviceType', null, args: {'nodeId': nodeId});
 
-  Future<void> identify(int nodeId) =>
-      _invoke('identify', null, args: {'nodeId': nodeId});
+  @override
+  Future<void> identify(int nodeId, {int seconds = 15}) =>
+      _invoke('identify', null, args: {'nodeId': nodeId, 'seconds': seconds});
 
+  @override
   Future<DeviceStateResult> readDeviceState(int nodeId) =>
       _invoke('readDeviceState', const DeviceStateResult(isOnline: false),
           args: {'nodeId': nodeId},
@@ -262,6 +285,7 @@ class MatterChannel {
   /// Downloads the OTA image from [otaUrl] and initiates the Matter BDX transfer.
   /// Progress events arrive on [deviceStateUpdates] as `{type:"otaProgress", ...}`.
   /// [targetVersion] is passed as a String to avoid 32/64-bit channel issues.
+  @override
   Future<bool> downloadAndFlash({
     required int    nodeId,
     required String otaUrl,
@@ -279,6 +303,7 @@ class MatterChannel {
         'endpoint':            endpoint,
       });
 
+  @override
   Future<bool> cancelOta() => _invoke('cancelOta', false);
 
   // ── Share / remove / fabric ────────────────────────────────────────────────
@@ -289,12 +314,15 @@ class MatterChannel {
                   ?.map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>))
                   .toList() ?? []);
 
+  @override
   Future<bool> shareDevice(int nodeId) =>
       _invoke('shareDevice', false, args: {'nodeId': nodeId});
 
+  @override
   Future<bool> removeDevice(int nodeId) =>
       _invoke('removeDevice', false, args: {'nodeId': nodeId});
 
+  @override
   Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() =>
       _invoke<NetworkDiagnosticsReport?>('runNetworkDiagnostics', null,
           decode: (raw) {
@@ -303,7 +331,9 @@ class MatterChannel {
                 json.decode(raw as String) as Map<String, dynamic>);
           });
 
+  @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
 
+  @override
   Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);
 }

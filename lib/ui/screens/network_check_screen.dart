@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/network_diagnostics.dart';
-import '../../services/matter_channel.dart';
+import '../../services/matter_port.dart';
 import '../../services/thread_settings_service.dart';
 import '../widgets/info_row.dart';
 import '../widgets/section_label.dart';
@@ -514,7 +514,7 @@ class _NetworkCheckScreenState extends State<NetworkCheckScreen> {
 
   Future<void> _runCheck() async {
     setState(() { _state = _ScreenState.running; _error = null; });
-    final report = await context.read<MatterChannel>().runNetworkDiagnostics();
+    final report = await context.read<MatterFabricPort>().runNetworkDiagnostics();
     if (!mounted) return;
     if (report == null) {
       setState(() {

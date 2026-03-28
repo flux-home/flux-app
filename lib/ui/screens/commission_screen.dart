@@ -11,9 +11,10 @@ import '../../models/commission_models.dart';
 import '../../models/matter_device.dart';
 import '../../models/wifi_network.dart';
 import '../../providers/device_provider.dart';
-import '../../services/matter_channel.dart';
+import '../../services/matter_port.dart';
 import '../../services/qr_payload_service.dart';
 import '../../services/thread_settings_service.dart';
+import '../widgets/dot_matrix_painter.dart';
 import '../widgets/section_label.dart';
 import 'qr_payload_detail_screen.dart';
 import 'qr_scanner_screen.dart';
@@ -29,6 +30,9 @@ class CommissionScreen extends StatefulWidget {
 }
 
 class _CommissionScreenState extends State<CommissionScreen> {
+  // ── Mode ──────────────────────────────────────────────────────────────────
+  bool _expertMode = false;
+
   // ── Form state ────────────────────────────────────────────────────────────
   final _threadCtrl  = TextEditingController();
   final _ssidCtrl    = TextEditingController();
@@ -58,6 +62,13 @@ class _CommissionScreenState extends State<CommissionScreen> {
   bool _commissionDone   = false;
   bool _commissionFailed = false;
 
+  // ── Simple-mode commissioning timer ───────────────────────────────────────
+  Timer?  _elapsedTimer;
+  double  _elapsed = 0.0;
+
+  // ── Simple-mode WiFi auto-detect ──────────────────────────────────────────
+  // (removed — simple mode auto-commissions immediately after scan)
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +77,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     });
     // Restore the last scanned payload so the user doesn't have to re-scan.
     QrPayloadService.load().then((saved) {
-      if (saved != null && mounted) _setPayload(saved);
+      if (saved != null && mounted) _setPayload(saved, autoCommission: false);
     });
   }
 
@@ -80,12 +91,13 @@ class _CommissionScreenState extends State<CommissionScreen> {
     _pinCtrl.dispose();
     _logScrollCtrl.dispose();
     _eventSub?.cancel();
+    _elapsedTimer?.cancel();
     super.dispose();
   }
 
   // ── Payload handling ──────────────────────────────────────────────────────
 
-  Future<void> _setPayload(String raw) async {
+  Future<void> _setPayload(String raw, {bool autoCommission = true}) async {
     setState(() {
       _rawPayload  = raw;
       _parsed      = null;
@@ -93,7 +105,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _parsing     = true;
     });
 
-    final result = await context.read<MatterChannel>().parsePayload(raw);
+    final result = await context.read<MatterCommissionPort>().parsePayload(raw);
 
     if (!mounted) return;
     if (result == null) {
@@ -113,12 +125,13 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
     // Auto-select network type:
     // ON_NETWORK devices are already on the network — no credentials needed.
-    // BLE devices that aren't known Thread products default to Wi-Fi
-    // (smart plugs, lights, etc. are almost always Wi-Fi).
-    // Users can always override manually.
+    // In simple mode prefer Thread when a dataset is stored; otherwise Wi-Fi.
+    // In expert mode default to Wi-Fi so the user can see and change it.
     final netType = result.hasOnNetwork
         ? 2 // None — device is already on the network
-        : 1; // Wi-Fi — safer default; Thread users can switch
+        : (!_expertMode && _threadCtrl.text.trim().isNotEmpty)
+            ? 0 // Thread — simple mode, dataset available
+            : 1; // Wi-Fi
 
     // Pre-fill discriminator + PIN so IP commissioning works without the user
     // having to re-type them.  Manual pairing codes only carry the upper 4 bits
@@ -138,6 +151,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _method   = method;
       _netType  = netType;
     });
+
+    // In simple mode: start commissioning immediately after a successful parse.
+    if (autoCommission && !_expertMode && _parsed != null) _commission();
 
     // Persist so the screen restores after an app restart.
     await QrPayloadService.save(raw);
@@ -203,6 +219,39 @@ class _CommissionScreenState extends State<CommissionScreen> {
     return '$base ${DateTime.now().millisecondsSinceEpoch}';
   }
 
+  // ── Elapsed timer (simple mode) ───────────────────────────────────────────
+
+  void _startElapsedTimer() {
+    _elapsed = 0.0;
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() => _elapsed += 0.1);
+    });
+  }
+
+  void _stopElapsedTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+  }
+
+  // ── Simple-mode reset and re-scan ────────────────────────────────────────
+
+  Future<void> _resetAndScan() async {
+    _eventSub?.cancel();
+    _eventSub = null;
+    _stopElapsedTimer();
+    setState(() {
+      _commissioning    = false;
+      _commissionDone   = false;
+      _commissionFailed = false;
+      _rawPayload       = null;
+      _parsed           = null;
+      _parseError       = null;
+      _log.clear();
+    });
+    await _scanQr();
+  }
+
   // ── Commission ────────────────────────────────────────────────────────────
 
   Future<void> _commission() async {
@@ -226,7 +275,8 @@ class _CommissionScreenState extends State<CommissionScreen> {
       _commissionDone   = false;
       _commissionFailed = false;
     });
-    _eventSub = context.read<MatterChannel>().commissionEvents.listen(
+    if (!_expertMode) _startElapsedTimer();
+    _eventSub = context.read<MatterCommissionPort>().commissionEvents.listen(
       (event) {
         _LogLevel lvl = _LogLevel.info;
         if (event.startsWith('✓') || event.startsWith('🎉')) lvl = _LogLevel.success;
@@ -268,6 +318,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     await _eventSub?.cancel();
     _eventSub = null;
     if (!mounted) return;
+    if (!_expertMode) _stopElapsedTimer();
 
     if (device != null) {
       setState(() => _commissionDone = true);
@@ -298,13 +349,154 @@ class _CommissionScreenState extends State<CommissionScreen> {
     });
   }
 
+  // ── Mode toggle button ────────────────────────────────────────────────────
+
+  Widget _modeToggleButton() => IconButton(
+    icon: Icon(_expertMode ? Icons.view_compact_outlined : Icons.tune),
+    tooltip: _expertMode ? 'Simple view' : 'Expert view',
+    onPressed: () => setState(() => _expertMode = !_expertMode),
+  );
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) =>
-      _commissioning ? _buildLogScreen(context) : _buildFormScreen(context);
+  Widget build(BuildContext context) {
+    if (_commissioning) {
+      return _expertMode
+          ? _buildLogScreen(context)
+          : _buildSimpleCommissioningScreen(context);
+    }
+    return _expertMode
+        ? _buildExpertFormScreen(context)
+        : _buildSimpleFormScreen(context);
+  }
 
-  // ── Log screen ────────────────────────────────────────────────────────────
+  // ── Simple form screen ────────────────────────────────────────────────────
+
+  Widget _buildSimpleFormScreen(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add Matter Device'),
+        actions: [_modeToggleButton()],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 48),
+          child: OutlinedButton.icon(
+            onPressed: _parsing ? null : _scanQr,
+            icon: _parsing
+                ? const SizedBox(
+                    width: 22, height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.qr_code_scanner, size: 28),
+            label: const Text('Scan QR code', style: TextStyle(fontSize: 16)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Simple commissioning screen ───────────────────────────────────────────
+
+  Widget _buildSimpleCommissioningScreen(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final String statusText = _commissionDone
+        ? 'Done'
+        : _commissionFailed
+            ? (_log.isNotEmpty ? _log.last.message : 'Failed')
+            : (_log.isNotEmpty ? _log.last.message : 'Starting…');
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add Matter Device'),
+        automaticallyImplyLeading: false,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+
+                    // ── Dot-matrix elapsed time / result ──────────────
+                    if (!_commissionDone && !_commissionFailed) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 96,
+                        child: CustomPaint(
+                          painter: DotMatrixPainter(
+                            text: _elapsed.toStringAsFixed(1),
+                            litColor: Colors.white,
+                            dimColor: Colors.white12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                          color: cs.onSurfaceVariant,
+                          letterSpacing: 0.3,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ] else if (_commissionDone) ...[
+                      Icon(Icons.check_circle_outline,
+                          size: 64, color: const Color(0xFF34A853)),
+                    ] else ...[
+                      Icon(Icons.error_outline,
+                          size: 64, color: cs.error),
+                      const SizedBox(height: 16),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                          color: cs.onSurfaceVariant,
+                          letterSpacing: 0.3,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Single restart button (shown on failure) ──────────────────
+          if (_commissionFailed)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: OutlinedButton.icon(
+                onPressed: _resetAndScan,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan QR code'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Log screen (expert commissioning) ────────────────────────────────────
 
   Widget _buildLogScreen(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -397,11 +589,14 @@ class _CommissionScreenState extends State<CommissionScreen> {
     );
   }
 
-  // ── Form screen ───────────────────────────────────────────────────────────
+  // ── Expert form screen ────────────────────────────────────────────────────
 
-  Widget _buildFormScreen(BuildContext context) {
+  Widget _buildExpertFormScreen(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Matter Device')),
+      appBar: AppBar(
+        title: const Text('Add Matter Device'),
+        actions: [_modeToggleButton()],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
@@ -926,7 +1121,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
     }
 
     setState(() => _loadingNetworks = true);
-    final nets = await context.read<MatterChannel>().scanWifiNetworks();
+    final nets = await context.read<MatterCommissionPort>().scanWifiNetworks();
     if (!mounted) return;
     setState(() {
       _networks        = nets;

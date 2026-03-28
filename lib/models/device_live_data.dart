@@ -1,59 +1,139 @@
 import 'thermostat_models.dart';
 
 // Sentinel used by [DeviceLiveData.copyWith] to mean "keep the existing value"
-// rather than "set to null".  Callers must not reference this directly.
+// rather than "set to null".  Only applies to the flat live-measurement fields.
+// Callers must not reference this directly.
 const _keep = Object();
 
-/// In-memory-only live state cache for a commissioned device.
-/// Populated by CHIP SDK subscriptions; never persisted.
-class DeviceLiveData {
-  final DateTime    updatedAt;
-  final bool        isStale;
+// ─────────────────────────────────────────────────────────────────────────────
+// BasicInfoCache — read once per session, never touched by subscription events
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // ── On/Off + Level ─────────────────────────────────────────────────────────
-  final bool? isOn;
-  final int?  levelRaw;        // 0–254
-
-  // ── Thermostat cluster ─────────────────────────────────────────────────────
-  final int? localTempCenti;      // °C × 100; null sentinel −32768
-  final int? heatingSetptCenti;
-  final int? coolingSetptCenti;
-  final int? systemMode;          // 0=Off 1=Auto 3=Cool 4=Heat …
-  final int? controlSequence;     // ControlSequenceOfOperation
-
-  // ── Measurement clusters ───────────────────────────────────────────────────
-  final int? humidityCenti;       // 0.01 % RH; null sentinel 0xFFFF
-  final int? tempMeasureCenti;    // from Temperature Measurement (not Thermostat)
-
-  // ── Power Source / battery ─────────────────────────────────────────────────
-  final int? batPercentRaw;       // 0–200 (divide by 2 for %)
-  final int? batChargeLevel;      // 0=OK 1=Warning 2=Critical
-
-  // ── Binary sensors ─────────────────────────────────────────────────────────
-  final int?  occupancy;          // bitmap8; bit 0 = 1 → occupied
-  final bool? contactState;       // true = contact (closed)
-
-  // ── Air quality ────────────────────────────────────────────────────────────
-  /// AirQualityEnum: 0=Unknown 1=Good 2=Fair 3=Moderate 4=Poor 5=VeryPoor 6=ExtremelyPoor
-  final int? airQuality;
-
-  // ── Basic info (read once, not subscribed) ─────────────────────────────────
+/// Immutable cache of BasicInformation cluster (0x0028) fields.
+/// Populated by a one-shot [MatterClusterPort.readBasicInfo] call; never
+/// overwritten by subscription events.  The structural separation from
+/// [DeviceLiveData]'s live-measurement fields makes that invariant impossible
+/// to violate accidentally.
+class BasicInfoCache {
   final String? productName;
   final String? vendorName;
   final String? vendorId;
   final String? productId;
   final String? hwVersion;
   final String? serialNumber;
-  final String? softwareVersion;    // human-readable string, e.g. "1.2.0-s1"
-  final int?    softwareVersionNum; // uint32 from BasicInformation (for DCL comparison)
+  final String? softwareVersion;
+  final int?    softwareVersionNum;  // uint32 from BasicInformation
   final String? manufacturingDate;
   final String? partNumber;
   final String? productUrl;
   final String? uniqueId;
 
-  // ── Optional-cluster flags (checked once after commissioning) ──────────────
-  final bool?   otaSupported; // null = not yet checked
-  final int?    otaEndpoint;  // endpoint where OTA Requestor was found
+  const BasicInfoCache({
+    this.productName,
+    this.vendorName,
+    this.vendorId,
+    this.productId,
+    this.hwVersion,
+    this.serialNumber,
+    this.softwareVersion,
+    this.softwareVersionNum,
+    this.manufacturingDate,
+    this.partNumber,
+    this.productUrl,
+    this.uniqueId,
+  });
+
+  static const BasicInfoCache empty = BasicInfoCache();
+
+  BasicInfoCache copyWith({
+    String? productName,
+    String? vendorName,
+    String? vendorId,
+    String? productId,
+    String? hwVersion,
+    String? serialNumber,
+    String? softwareVersion,
+    int?    softwareVersionNum,
+    String? manufacturingDate,
+    String? partNumber,
+    String? productUrl,
+    String? uniqueId,
+  }) => BasicInfoCache(
+    productName:       productName       ?? this.productName,
+    vendorName:        vendorName        ?? this.vendorName,
+    vendorId:          vendorId          ?? this.vendorId,
+    productId:         productId         ?? this.productId,
+    hwVersion:         hwVersion         ?? this.hwVersion,
+    serialNumber:      serialNumber      ?? this.serialNumber,
+    softwareVersion:   softwareVersion   ?? this.softwareVersion,
+    softwareVersionNum:softwareVersionNum ?? this.softwareVersionNum,
+    manufacturingDate: manufacturingDate  ?? this.manufacturingDate,
+    partNumber:        partNumber         ?? this.partNumber,
+    productUrl:        productUrl         ?? this.productUrl,
+    uniqueId:          uniqueId           ?? this.uniqueId,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OtaStatus — checked once after commissioning, never touched by subscriptions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Whether the device supports OTA updates and, if so, on which endpoint.
+/// Checked once via [DeviceProvider.detectAndUpdateOtaSupport]; never updated
+/// by subscription events.
+class OtaStatus {
+  /// `null` = not yet checked; `true` / `false` = result of cluster walk.
+  final bool? supported;
+  final int?  endpoint;
+
+  const OtaStatus({this.supported, this.endpoint});
+
+  static const OtaStatus absent = OtaStatus();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DeviceLiveData — in-memory live state cache, never persisted
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// In-memory-only live state cache for a commissioned device.
+/// Populated by CHIP SDK subscriptions; never persisted.
+///
+/// Structured into two distinct zones:
+/// * **Live-measurement fields** (flat, `_keep`-copyWith) — subscription events
+///   may update these at any time via [merge].
+/// * **Typed sub-objects** ([basicInfo], [ota]) — structurally excluded from
+///   [merge]; only updated through dedicated methods ([withBasicInfo],
+///   [withOtaSupported]).  The compiler enforces this — [merge] passes neither
+///   argument to [copyWith], so they are always preserved.
+class DeviceLiveData {
+  final DateTime    updatedAt;
+  final bool        isStale;
+
+  // ── Live-measurement fields (subscription-writable) ────────────────────────
+  final bool? isOn;
+  final int?  levelRaw;        // 0–254
+
+  final int? localTempCenti;      // °C × 100
+  final int? heatingSetptCenti;
+  final int? coolingSetptCenti;
+  final int? systemMode;          // 0=Off 1=Auto 3=Cool 4=Heat …
+  final int? controlSequence;     // ControlSequenceOfOperation
+
+  final int? humidityCenti;       // 0.01 % RH
+  final int? tempMeasureCenti;    // from Temperature Measurement (not Thermostat)
+
+  final int? batPercentRaw;       // 0–200 (÷2 = %)
+  final int? batChargeLevel;      // 0=OK 1=Warning 2=Critical
+
+  final int?  occupancy;          // bitmap8; bit 0 = 1 → occupied
+  final bool? contactState;       // true = contact (closed)
+
+  /// AirQualityEnum: 0=Unknown 1=Good 2=Fair 3=Moderate 4=Poor 5=VeryPoor 6=ExtremelyPoor
+  final int? airQuality;
+
+  // ── Subscription-proof sub-objects ────────────────────────────────────────
+  final BasicInfoCache basicInfo;
+  final OtaStatus      ota;
 
   const DeviceLiveData({
     required this.updatedAt,
@@ -72,30 +152,33 @@ class DeviceLiveData {
     this.occupancy,
     this.contactState,
     this.airQuality,
-    this.productName,
-    this.vendorName,
-    this.vendorId,
-    this.productId,
-    this.hwVersion,
-    this.serialNumber,
-    this.softwareVersion,
-    this.softwareVersionNum,
-    this.manufacturingDate,
-    this.partNumber,
-    this.productUrl,
-    this.uniqueId,
-    this.otaSupported,
-    this.otaEndpoint,
+    this.basicInfo = BasicInfoCache.empty,
+    this.ota       = OtaStatus.absent,
   });
+
+  // ── BasicInfo getters (backward-compatible delegation) ────────────────────
+  String? get productName       => basicInfo.productName;
+  String? get vendorName        => basicInfo.vendorName;
+  String? get vendorId          => basicInfo.vendorId;
+  String? get productId         => basicInfo.productId;
+  String? get hwVersion         => basicInfo.hwVersion;
+  String? get serialNumber      => basicInfo.serialNumber;
+  String? get softwareVersion   => basicInfo.softwareVersion;
+  int?    get softwareVersionNum => basicInfo.softwareVersionNum;
+  String? get manufacturingDate => basicInfo.manufacturingDate;
+  String? get partNumber        => basicInfo.partNumber;
+  String? get productUrl        => basicInfo.productUrl;
+  String? get uniqueId          => basicInfo.uniqueId;
+
+  // ── OTA getters (backward-compatible delegation) ──────────────────────────
+  bool? get otaSupported => ota.supported;
+  int?  get otaEndpoint  => ota.endpoint;
 
   // ── copyWith ───────────────────────────────────────────────────────────────
   //
-  // Nullable fields use [_keep] as a default so callers can distinguish
+  // Live-measurement fields use [_keep] so callers distinguish
   // "don't change this field" from "set this field to null".
-  //
-  //   data.copyWith(isOn: true)      // sets isOn = true, everything else kept
-  //   data.copyWith(isOn: null)      // sets isOn = null
-  //   data.copyWith()                // returns identical copy
+  // Sub-objects use simple nullable params: null = keep existing.
   //
   DeviceLiveData copyWith({
     DateTime? updatedAt,
@@ -114,22 +197,9 @@ class DeviceLiveData {
     Object?   occupancy        = _keep,
     Object?   contactState     = _keep,
     Object?   airQuality       = _keep,
-    Object?   productName      = _keep,
-    Object?   vendorName       = _keep,
-    Object?   vendorId         = _keep,
-    Object?   productId        = _keep,
-    Object?   hwVersion        = _keep,
-    Object?   serialNumber     = _keep,
-    Object?   softwareVersion  = _keep,
-    Object?   softwareVersionNum = _keep,
-    Object?   manufacturingDate = _keep,
-    Object?   partNumber       = _keep,
-    Object?   productUrl       = _keep,
-    Object?   uniqueId         = _keep,
-    Object?   otaSupported     = _keep,
-    Object?   otaEndpoint      = _keep,
+    BasicInfoCache? basicInfo,
+    OtaStatus?      ota,
   }) {
-    // Helper: return existing value if caller passed _keep, otherwise cast.
     T? v<T>(Object? arg, T? existing) => identical(arg, _keep) ? existing : arg as T?;
     return DeviceLiveData(
       updatedAt:         updatedAt          ?? this.updatedAt,
@@ -148,32 +218,17 @@ class DeviceLiveData {
       occupancy:         v(occupancy,         this.occupancy),
       contactState:      v(contactState,      this.contactState),
       airQuality:        v(airQuality,        this.airQuality),
-      productName:       v(productName,       this.productName),
-      vendorName:        v(vendorName,        this.vendorName),
-      vendorId:          v(vendorId,          this.vendorId),
-      productId:         v(productId,         this.productId),
-      hwVersion:         v(hwVersion,         this.hwVersion),
-      serialNumber:      v(serialNumber,      this.serialNumber),
-      softwareVersion:   v(softwareVersion,   this.softwareVersion),
-      softwareVersionNum:v(softwareVersionNum,this.softwareVersionNum),
-      manufacturingDate: v(manufacturingDate, this.manufacturingDate),
-      partNumber:        v(partNumber,        this.partNumber),
-      productUrl:        v(productUrl,        this.productUrl),
-      uniqueId:          v(uniqueId,          this.uniqueId),
-      otaSupported:      v(otaSupported,      this.otaSupported),
-      otaEndpoint:       v(otaEndpoint,       this.otaEndpoint),
+      basicInfo:         basicInfo            ?? this.basicInfo,
+      ota:               ota                  ?? this.ota,
     );
   }
 
-  // ── Targeted update helpers (all delegate to copyWith) ────────────────────
+  // ── Targeted update helpers ────────────────────────────────────────────────
 
   DeviceLiveData markStale() => copyWith(isStale: true);
 
-  DeviceLiveData withOtaSupported(bool value, int endpoint) => copyWith(
-    otaSupported: value,
-    otaEndpoint:  value ? endpoint : null,
-  );
-
+  /// Updates [basicInfo] fields individually, preserving any already-cached
+  /// values for fields not supplied.  Never touches live-measurement fields.
   DeviceLiveData withBasicInfo(
     String? serial,
     String? swVersion,
@@ -187,56 +242,62 @@ class DeviceLiveData {
     String? productUrl,
     String? uniqueId,
     int?    swVersionNum,
-  }) =>
-      copyWith(
-        serialNumber:      serial,
-        softwareVersion:   swVersion,
-        softwareVersionNum:swVersionNum ?? this.softwareVersionNum,
-        productName:       product,
-        vendorName:        vendorName       ?? this.vendorName,
-        vendorId:          vendorId         ?? this.vendorId,
-        productId:         productId        ?? this.productId,
-        hwVersion:         hwVersion        ?? this.hwVersion,
-        manufacturingDate: manufacturingDate ?? this.manufacturingDate,
-        partNumber:        partNumber       ?? this.partNumber,
-        productUrl:        productUrl       ?? this.productUrl,
-        uniqueId:          uniqueId         ?? this.uniqueId,
-      );
+  }) => copyWith(basicInfo: basicInfo.copyWith(
+    serialNumber:      serial,
+    softwareVersion:   swVersion,
+    softwareVersionNum:swVersionNum ?? basicInfo.softwareVersionNum,
+    productName:       product,
+    vendorName:        vendorName        ?? basicInfo.vendorName,
+    vendorId:          vendorId          ?? basicInfo.vendorId,
+    productId:         productId         ?? basicInfo.productId,
+    hwVersion:         hwVersion         ?? basicInfo.hwVersion,
+    manufacturingDate: manufacturingDate  ?? basicInfo.manufacturingDate,
+    partNumber:        partNumber         ?? basicInfo.partNumber,
+    productUrl:        productUrl         ?? basicInfo.productUrl,
+    uniqueId:          uniqueId           ?? basicInfo.uniqueId,
+  ));
+
+  DeviceLiveData withOtaSupported(bool value, int endpoint) => copyWith(
+    ota: OtaStatus(
+      supported: value,
+      endpoint:  value ? endpoint : null,
+    ),
+  );
 
   // ── Merge incoming subscription map ───────────────────────────────────────
 
   /// Returns a new [DeviceLiveData] with subscription [update] values merged in.
-  /// Keys absent from [update] retain their current values; basic-info fields
-  /// (productName, vendorId, etc.) are always preserved.
+  ///
+  /// Keys absent from [update] retain their current values.  [basicInfo] and
+  /// [ota] are structurally excluded — they are never passed to [copyWith] here,
+  /// so the compiler guarantees they cannot be touched.
   DeviceLiveData merge(Map<String, dynamic> update) {
-    // Returns _keep when the key is absent so copyWith leaves the field alone.
     Object? pick(String key) =>
         update.containsKey(key) ? update[key] : _keep;
     return copyWith(
-      updatedAt:        DateTime.now(),
-      isStale:          false,
-      isOn:             pick('onOff'),
-      levelRaw:         pick('level'),
-      localTempCenti:   pick('localTempCenti'),
-      heatingSetptCenti:pick('heatingSetptCenti'),
-      coolingSetptCenti:pick('coolingSetptCenti'),
-      systemMode:       pick('systemMode'),
-      controlSequence:  pick('controlSequence'),
-      humidityCenti:    pick('humidityCenti'),
-      tempMeasureCenti: pick('tempMeasureCenti'),
-      batPercentRaw:    pick('batPercentRaw'),
-      batChargeLevel:   pick('batChargeLevel'),
-      occupancy:        pick('occupancy'),
-      contactState:     pick('contactState'),
-      airQuality:       pick('airQuality'),
-      // Basic-info fields are never overwritten by subscription events.
+      updatedAt:         DateTime.now(),
+      isStale:           false,
+      isOn:              pick('onOff'),
+      levelRaw:          pick('level'),
+      localTempCenti:    pick('localTempCenti'),
+      heatingSetptCenti: pick('heatingSetptCenti'),
+      coolingSetptCenti: pick('coolingSetptCenti'),
+      systemMode:        pick('systemMode'),
+      controlSequence:   pick('controlSequence'),
+      humidityCenti:     pick('humidityCenti'),
+      tempMeasureCenti:  pick('tempMeasureCenti'),
+      batPercentRaw:     pick('batPercentRaw'),
+      batChargeLevel:    pick('batChargeLevel'),
+      occupancy:         pick('occupancy'),
+      contactState:      pick('contactState'),
+      airQuality:        pick('airQuality'),
+      // basicInfo and ota deliberately omitted → preserved unchanged
     );
   }
 
   /// Creates a fresh [DeviceLiveData] seeded only from a subscription update map.
   factory DeviceLiveData.fromUpdate(Map<String, dynamic> update) =>
-      DeviceLiveData(updatedAt: DateTime.now(), isStale: false)
-          .merge(update);
+      DeviceLiveData(updatedAt: DateTime.now(), isStale: false).merge(update);
 
   // ── Derived helpers ────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/matter_device.dart';
-import '../../services/matter_channel.dart';
+import '../../services/matter_port.dart';
 
 // ---------------------------------------------------------------------------
 // Well-known Matter device type names (spec §7 + Node types §2)
@@ -232,7 +232,7 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
   }
 
   Future<List<Object>> _load() async {
-    final channel = context.read<MatterChannel>();
+    final channel = context.read<MatterClusterPort>();
     final jsonStr = await channel.readClusters(widget.device.nodeId);
     if (jsonStr == null || jsonStr == '[]') return [];
 

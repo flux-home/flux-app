@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,12 +8,12 @@ import '../../models/device_type.dart';
 import '../../models/matter_device.dart';
 import '../../models/thermostat_models.dart';
 import '../../providers/device_provider.dart';
-import '../../services/matter_channel.dart';
+import '../../services/cluster_parser.dart';
+import '../../services/matter_port.dart';
 import '../widgets/dot_matrix_painter.dart';
 import '../widgets/info_row.dart';
 import 'device_settings_screen.dart';
 
-part 'device_detail/cluster_readings.dart';
 part 'device_detail/device_cards.dart';
 part 'device_detail/thermostat_card.dart';
 
@@ -39,8 +38,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   bool _basicInfoLoaded = false;
 
   // ── Cluster-based readings (cached) ───────────────────────────────────────
-  List<_Reading>? _readings;
-  bool            _readingsLoading = false;
+  List<ClusterReading>? _readings;
+  bool                  _readingsLoading = false;
 
   // ── Cached provider ref (safe to use in dispose) ──────────────────────────
   late final DeviceProvider _provider;
@@ -70,7 +69,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (cached != null && _readings == null) {
       final device = _device;
       if (device != null) setState(() =>
-          _readings = _extractReadings(_parseClusters(cached), device.deviceType));
+          _readings = extractReadings(parseClusters(cached), device.deviceType));
     }
     setState(() {});
   }
@@ -80,7 +79,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (cached == null) return;
     final device = _device; if (device == null) return;
     setState(() =>
-        _readings = _extractReadings(_parseClusters(cached), device.deviceType));
+        _readings = extractReadings(parseClusters(cached), device.deviceType));
   }
 
   Future<void> _maybeLoadMissing() async {
@@ -89,7 +88,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     if (!_basicInfoLoaded) {
       _basicInfoLoaded = true;
-      final info = await context.read<MatterChannel>().readBasicInfo(device.nodeId);
+      final info = await context.read<MatterClusterPort>().readBasicInfo(device.nodeId);
       if (mounted && info != null) {
         _provider.updateBasicInfo(
           widget.deviceId,
@@ -107,8 +106,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           swVersionNum:      info.softwareVersionNum,
         );
         await _provider.detectAndUpdateOtaSupport(widget.deviceId);
-      }
-    }
+      }    }
 
     if (_provider.clusterCacheFor(widget.deviceId) == null) {
       await _loadReadings();
@@ -119,7 +117,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final nodeId = _device?.nodeId; if (nodeId == null) return;
     final centi  = (tempC * 100).round().clamp(500, 3500);
     setState(() => _pendingSetpt = centi);
-    await context.read<MatterChannel>().writeHeatingSetpoint(nodeId, centi);
+    await context.read<MatterClusterPort>().writeHeatingSetpoint(nodeId, centi);
     await Future.delayed(const Duration(seconds: 3));
     if (mounted) setState(() => _pendingSetpt = null);
   }
@@ -127,7 +125,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _setMode(int mode) async {
     final nodeId = _device?.nodeId; if (nodeId == null) return;
     setState(() => _pendingMode = mode);
-    await context.read<MatterChannel>().writeSystemMode(nodeId, mode);
+    await context.read<MatterClusterPort>().writeSystemMode(nodeId, mode);
     await Future.delayed(const Duration(seconds: 3));
     if (mounted) setState(() => _pendingMode = null);
   }
@@ -137,18 +135,18 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final cached = _provider.clusterCacheFor(widget.deviceId);
     if (cached != null) {
       setState(() {
-        _readings = _extractReadings(_parseClusters(cached), device.deviceType);
+        _readings = extractReadings(parseClusters(cached), device.deviceType);
         _readingsLoading = false;
       });
       return;
     }
     setState(() => _readingsLoading = true);
     try {
-      final jsonStr = await context.read<MatterChannel>().readClusters(device.nodeId);
+      final jsonStr = await context.read<MatterClusterPort>().readClusters(device.nodeId);
       if (!mounted) return;
       if (jsonStr != null) _provider.cacheClusterJson(widget.deviceId, jsonStr);
       setState(() {
-        _readings = _extractReadings(_parseClusters(jsonStr), device.deviceType);
+        _readings = extractReadings(parseClusters(jsonStr), device.deviceType);
         _readingsLoading = false;
       });
     } catch (_) {
@@ -204,13 +202,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await provider.refreshDevice(widget.deviceId);
-          await _loadReadings();
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
+      body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,14 +233,19 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
+              if (device.deviceType == DeviceType.contactSensor) ...[
+                _ContactStateCard(
+                  contactState: liveData?.contactState,
+                  isStale:      liveData?.isStale ?? false,
+                ),
+                const SizedBox(height: 12),
+              ],
               _ReadingsSection(
                 readings:  _readings,
                 loading:   _readingsLoading,
-                onRefresh: _loadReadings,
               ),
             ],
           ),
-        ),
       ),
     );
   }

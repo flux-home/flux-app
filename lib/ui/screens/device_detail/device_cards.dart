@@ -71,6 +71,74 @@ class _OnOffCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Contact-state card  (BooleanState cluster — door/window sensors)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ContactStateCard extends StatelessWidget {
+  /// `true`  = contact detected (closed)
+  /// `false` = no contact      (open)
+  /// `null`  = unknown / stale
+  final bool? contactState;
+  final bool  isStale;
+
+  const _ContactStateCard({this.contactState, required this.isStale});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final bool? state  = isStale ? null : contactState;
+    final bool closed  = state == true;
+    final bool unknown = state == null;
+
+    final Color color = unknown
+        ? cs.onSurfaceVariant.withAlpha(100)
+        : closed
+            ? const Color(0xFF34A853)   // green — closed/secure
+            : const Color(0xFFF29900);  // amber — open/alert
+
+    final IconData icon = closed
+        ? Icons.sensor_door
+        : Icons.sensor_door_outlined;
+
+    final String label = unknown ? '—' : closed ? 'Closed' : 'Open';
+
+    return Card(
+      color: cs.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header ─────────────────────────────────────────────────
+            Row(children: [
+              Icon(icon, size: 18,
+                  color: unknown ? cs.onSurfaceVariant : color),
+              const SizedBox(width: 8),
+              Text('Contact',
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+            ]),
+            const SizedBox(height: 16),
+            // ── State label ────────────────────────────────────────────
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize:   40,
+                fontWeight: FontWeight.w700,
+                color:      color,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Brightness card
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -108,14 +176,12 @@ class _BrightnessCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ReadingsSection extends StatelessWidget {
-  final List<_Reading>? readings;
+  final List<ClusterReading>? readings;
   final bool loading;
-  final VoidCallback onRefresh;
 
   const _ReadingsSection({
     required this.readings,
     required this.loading,
-    required this.onRefresh,
   });
 
   @override
@@ -142,7 +208,7 @@ class _ReadingsSection extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ReadingCard extends StatelessWidget {
-  final _Reading reading;
+  final ClusterReading reading;
   const _ReadingCard({required this.reading});
 
   /// True when the displayValue is a plain number (usable as dot-matrix input).
@@ -179,7 +245,7 @@ class _ReadingCard extends StatelessWidget {
                 Container(
                   width: 7, height: 7,
                   decoration: BoxDecoration(
-                    color: _qualityColor(reading.quality!),
+                    color: qualityColor(reading.quality!),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -225,7 +291,7 @@ class _ReadingCard extends StatelessWidget {
                       : reading.unit,
                   style: TextStyle(
                     color: reading.quality != null
-                        ? _qualityColor(reading.quality!)
+                        ? qualityColor(reading.quality!)
                         : Colors.white54,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
