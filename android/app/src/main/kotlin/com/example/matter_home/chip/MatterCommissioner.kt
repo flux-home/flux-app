@@ -29,7 +29,8 @@ fun chipErrorDescription(code: Long): String = when (code) {
     0L   -> "Success"
     1L   -> "Send failed"
     2L   -> "Bad request data"
-    3L   -> "Incorrect state — unexpected call order in the SDK state machine"
+    3L   -> "Incorrect state — use IP commissioning for devices already on the network " +
+            "(Ethernet/on-network devices cannot be commissioned over BLE without WiFi/Thread credentials)"
     4L   -> "Message too long"
     11L  -> "Connection closed unexpectedly (0x0B)"
     17L  -> "Wrong node ID (0x11)"
@@ -58,11 +59,16 @@ fun chipErrorLabel(code: Long): String =
 
 /**
  * Orchestrates the full Matter commissioning flow and emits plain-text progress
- * events via [onEvent] at every meaningful step:
- *   • BLE scanning / GATT connect / MTU negotiation
- *   • Every CHIP SDK stage callback (ArmFailSafe, WifiNetworkEnable, …)
- *   • Device info (VID / PID) once read from the device
- *   • Final success / failure
+ * events via [onEvent] at every meaningful step.
+ *
+ * Two commissioning paths:
+ *  - [commission]      — BLE transport. Requires Wi-Fi or Thread credentials.
+ *                        The CHIP SDK always enables network-setup mode for BLE,
+ *                        so devices without a NetworkCommissioning cluster
+ *                        (Ethernet / already-on-network) cannot use this path.
+ *  - [commissionViaIp] — UDP/IP transport. For devices already on the network.
+ *                        Does not require network credentials; sends
+ *                        CommissioningComplete over CASE after AddNOC.
  */
 object MatterCommissioner {
 
@@ -124,8 +130,12 @@ object MatterCommissioner {
         onEvent("✓ BLE connected (MTU negotiated)")
 
         // 3 ── Network credentials ─────────────────────────────────────────────
+        //     BLE commissioning requires network credentials (Wi-Fi or Thread)
+        //     because the CHIP SDK always sets mNeedsNetworkSetup=true for BLE
+        //     transport. Devices already on the network (Ethernet/on-network)
+        //     must be commissioned via commissionViaIp() instead.
         val safeSsid = wifiSsid?.trim()?.takeIf { it.isNotEmpty() }
-        val networkCreds: NetworkCredentials? = when {
+        val networkCreds: NetworkCredentials = when {
             safeSsid != null -> {
                 onEvent("📶 Using Wi-Fi SSID: $safeSsid")
                 NetworkCredentials.forWiFi(
@@ -138,10 +148,11 @@ object MatterCommissioner {
                     NetworkCredentials.ThreadCredentials(threadDatasetTlv)
                 )
             }
-            else -> {
-                onEvent("🌐 No network credentials – Ethernet device")
-                null
-            }
+            else -> throw CommissioningException(
+                -3,
+                "BLE commissioning requires Wi-Fi or Thread credentials. " +
+                "Use commissionViaIp() for devices already on the network."
+            )
         }
 
         // 4 ── CHIP pairing ────────────────────────────────────────────────────
@@ -232,7 +243,7 @@ object MatterCommissioner {
         connId: Int,
         nodeId: Long,
         pinCode: Long,
-        network: NetworkCredentials?,
+        network: NetworkCredentials,
         onEvent: (String) -> Unit,
     ): Long = suspendCancellableCoroutine { cont ->
         val controller = ChipClient.getController()
