@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/basic_info.dart';
 import '../../models/device_type.dart';
-import '../../models/matter_device.dart';
+import '../../models/device_view.dart';
 import '../../models/thermostat_models.dart';
 import '../../providers/device_provider.dart';
 import '../../services/cluster_parser.dart';
@@ -44,8 +44,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   // ── Cached provider ref (safe to use in dispose) ──────────────────────────
   late final DeviceProvider _provider;
 
-  MatterDevice? get _device => _provider.findById(widget.deviceId);
-
   @override
   void initState() {
     super.initState();
@@ -67,9 +65,11 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (!mounted) return;
     final cached = _provider.clusterCacheFor(widget.deviceId);
     if (cached != null && _readings == null) {
-      final device = _device;
-      if (device != null) setState(() =>
-          _readings = extractReadings(parseClusters(cached), device.deviceType));
+      final view = _provider.viewFor(widget.deviceId);
+      if (view != null) {
+        setState(() =>
+            _readings = extractReadings(parseClusters(cached), view.deviceType));
+      }
     }
     setState(() {});
   }
@@ -77,18 +77,21 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _seedReadingsFromCache() {
     final cached = _provider.clusterCacheFor(widget.deviceId);
     if (cached == null) return;
-    final device = _device; if (device == null) return;
+    final view = _provider.viewFor(widget.deviceId);
+    if (view == null) return;
     setState(() =>
-        _readings = extractReadings(parseClusters(cached), device.deviceType));
+        _readings = extractReadings(parseClusters(cached), view.deviceType));
   }
 
   Future<void> _maybeLoadMissing() async {
-    final device = _device;
-    if (device == null || !device.isOnline) return;
+    final view = _provider.viewFor(widget.deviceId);
+    if (view == null) return;
 
+    // Always attempt; readBasicInfo returns null if the device is unreachable.
     if (!_basicInfoLoaded) {
       _basicInfoLoaded = true;
-      final info = await context.read<MatterClusterPort>().readBasicInfo(device.nodeId);
+      final info =
+          await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
       if (mounted && info != null) {
         _provider.updateBasicInfo(
           widget.deviceId,
@@ -106,7 +109,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           swVersionNum:      info.softwareVersionNum,
         );
         await _provider.detectAndUpdateOtaSupport(widget.deviceId);
-      }    }
+      }
+    }
 
     if (_provider.clusterCacheFor(widget.deviceId) == null) {
       await _loadReadings();
@@ -114,8 +118,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   Future<void> _setSetpointC(double tempC) async {
-    final nodeId = _device?.nodeId; if (nodeId == null) return;
-    final centi  = (tempC * 100).round().clamp(500, 3500);
+    final nodeId = _provider.viewFor(widget.deviceId)?.nodeId;
+    if (nodeId == null) return;
+    final centi = (tempC * 100).round().clamp(500, 3500);
     setState(() => _pendingSetpt = centi);
     await context.read<MatterClusterPort>().writeHeatingSetpoint(nodeId, centi);
     await Future.delayed(const Duration(seconds: 3));
@@ -123,7 +128,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   Future<void> _setMode(int mode) async {
-    final nodeId = _device?.nodeId; if (nodeId == null) return;
+    final nodeId = _provider.viewFor(widget.deviceId)?.nodeId;
+    if (nodeId == null) return;
     setState(() => _pendingMode = mode);
     await context.read<MatterClusterPort>().writeSystemMode(nodeId, mode);
     await Future.delayed(const Duration(seconds: 3));
@@ -131,22 +137,24 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   Future<void> _loadReadings() async {
-    final device = _device; if (device == null) return;
+    final view = _provider.viewFor(widget.deviceId);
+    if (view == null) return;
     final cached = _provider.clusterCacheFor(widget.deviceId);
     if (cached != null) {
       setState(() {
-        _readings = extractReadings(parseClusters(cached), device.deviceType);
+        _readings        = extractReadings(parseClusters(cached), view.deviceType);
         _readingsLoading = false;
       });
       return;
     }
     setState(() => _readingsLoading = true);
     try {
-      final jsonStr = await context.read<MatterClusterPort>().readClusters(device.nodeId);
+      final jsonStr =
+          await context.read<MatterClusterPort>().readClusters(view.nodeId);
       if (!mounted) return;
       if (jsonStr != null) _provider.cacheClusterJson(widget.deviceId, jsonStr);
       setState(() {
-        _readings = extractReadings(parseClusters(jsonStr), device.deviceType);
+        _readings        = extractReadings(parseClusters(jsonStr), view.deviceType);
         _readingsLoading = false;
       });
     } catch (_) {
@@ -158,38 +166,40 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Widget build(BuildContext context) {
     return Consumer<DeviceProvider>(
       builder: (context, provider, _) {
-        final device = provider.findById(widget.deviceId);
-        if (device == null) {
-          return Scaffold(appBar: AppBar(),
+        final view = provider.viewFor(widget.deviceId);
+        if (view == null) {
+          return Scaffold(
+              appBar: AppBar(),
               body: const Center(child: Text('Device not found')));
         }
-        return _buildScaffold(context, device, provider);
+        return _buildScaffold(context, view, provider);
       },
     );
   }
 
-  Widget _buildScaffold(BuildContext context, MatterDevice device, DeviceProvider provider) {
-    final cs        = Theme.of(context).colorScheme;
-    final liveData  = provider.liveDataFor(widget.deviceId);
-    final isStale   = liveData?.isStale ?? false;
-    final productName = device.productName?.isNotEmpty == true
-        ? device.productName!
-        : liveData?.productName?.isNotEmpty == true
-            ? liveData!.productName!
-            : null;
+  Widget _buildScaffold(
+      BuildContext context, DeviceView view, DeviceProvider provider) {
+    final cs          = Theme.of(context).colorScheme;
+    final productName = view.displayProductName;
 
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(device.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(view.name,
+              style: const TextStyle(fontWeight: FontWeight.bold)),
           Row(children: [
-            Text(productName ?? device.deviceType.displayName,
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant)),
-            if (isStale) ...[
+            Text(
+              productName ?? view.deviceType.displayName,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            if (view.isStale) ...[
               const SizedBox(width: 6),
-              Icon(Icons.cloud_off_outlined, size: 12,
-                   color: cs.onSurfaceVariant.withAlpha(150)),
+              Icon(Icons.cloud_off_outlined,
+                  size: 12,
+                  color: cs.onSurfaceVariant.withAlpha(150)),
             ],
           ]),
         ]),
@@ -197,55 +207,58 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Device settings',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => DeviceSettingsScreen(device: device))),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => DeviceSettingsScreen(device: view.device)),
+            ),
           ),
         ],
       ),
       body: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            if (view.deviceType.hasOnOff && view.isOnline) ...[
+              _OnOffCard(view: view),
               const SizedBox(height: 12),
-              if (device.deviceType.hasOnOff && device.isOnline) ...[
-                _OnOffCard(device: device),
-                const SizedBox(height: 12),
-              ],
-              if (device.deviceType.hasBrightness && device.isOnline) ...[
-                _BrightnessCard(
-                  brightness: device.brightness,
-                  onChanged:  (v) => provider.setBrightness(device.id, v),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (device.deviceType == DeviceType.thermostat && device.isOnline) ...[
-                _ThermostatCard(
-                  state:           liveData?.thermoState,
-                  pendingSetpt:    _pendingSetpt,
-                  pendingMode:     _pendingMode,
-                  humidityCenti:   liveData?.humidityCenti,
-                  battery:         liveData?.batteryInfo,
-                  serialNumber:    liveData?.serialNumber,
-                  softwareVersion: liveData?.softwareVersion,
-                  onSetSetpoint:   _setSetpointC,
-                  onSetMode:       _setMode,
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (device.deviceType == DeviceType.contactSensor) ...[
-                _ContactStateCard(
-                  contactState: liveData?.contactState,
-                  isStale:      liveData?.isStale ?? false,
-                ),
-                const SizedBox(height: 12),
-              ],
-              _ReadingsSection(
-                readings:  _readings,
-                loading:   _readingsLoading,
-              ),
             ],
-          ),
+            if (view.deviceType.hasBrightness && view.isOnline) ...[
+              _BrightnessCard(
+                brightness: view.brightness,
+                onChanged:  (v) => provider.setBrightness(view.id, v),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType == DeviceType.thermostat && view.isOnline) ...[
+              _ThermostatCard(
+                state:           view.thermoState,
+                pendingSetpt:    _pendingSetpt,
+                pendingMode:     _pendingMode,
+                humidityCenti:   view.humidityCenti,
+                battery:         view.batteryInfo,
+                serialNumber:    view.serialNumber,
+                softwareVersion: view.softwareVersion,
+                onSetSetpoint:   _setSetpointC,
+                onSetMode:       _setMode,
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType == DeviceType.contactSensor) ...[
+              _ContactStateCard(
+                contactState: view.contactState,
+                isStale:      view.isStale,
+              ),
+              const SizedBox(height: 12),
+            ],
+            _ReadingsSection(
+              readings: _readings,
+              loading:  _readingsLoading,
+            ),
+          ],
+        ),
       ),
     );
   }

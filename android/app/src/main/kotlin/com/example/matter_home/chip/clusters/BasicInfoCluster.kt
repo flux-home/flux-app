@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.BasicInformation
 import chip.devicecontroller.model.ChipAttributePath
-import com.example.matter_home.chip.ChipClient
 private const val TAG = "BasicInfoCluster"
 
 data class BasicInfo(

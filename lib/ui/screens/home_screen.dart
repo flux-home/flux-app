@@ -35,68 +35,36 @@ class HomeScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (provider.devices.isEmpty) {
+          final views = provider.deviceViews;
+          if (views.isEmpty) {
             return const SizedBox.shrink();
           }
 
-          return RefreshIndicator(
-            onRefresh: provider.refreshAll,
-            child: CustomScrollView(
-              slivers: [
-                ..._buildRoomSections(context, provider),
-                const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
-              ],
-            ),
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 180,
+                    mainAxisSpacing:    12,
+                    crossAxisSpacing:   12,
+                    childAspectRatio:   1.0,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) => DeviceCard(
+                      deviceId: views[i].id,
+                      onTap:    () => context.push('/device/${views[i].id}'),
+                    ),
+                    childCount: views.length,
+                  ),
+                ),
+              ),
+              const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
+            ],
           );
         },
       ),
     );
-  }
-
-  List<Widget> _buildRoomSections(BuildContext context, DeviceProvider provider) {
-    final rooms = provider.rooms;
-    if (rooms.isEmpty) return [];
-
-    return rooms.expand((room) {
-      final roomDevices =
-          provider.devices.where((d) => d.room == room).toList();
-      return [
-        if (room != 'Unassigned')
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
-            sliver: SliverToBoxAdapter(
-              child: Text(
-                room,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-              ),
-            ),
-          ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 180,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.0,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (ctx, i) {
-                final device = roomDevices[i];
-                return DeviceCard(
-                  device: device,
-                  onTap: () => context.push('/device/${device.id}'),
-                );
-              },
-              childCount: roomDevices.length,
-            ),
-          ),
-        ),
-      ];
-    }).toList();
   }
 }

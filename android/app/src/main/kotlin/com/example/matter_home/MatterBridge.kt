@@ -117,9 +117,20 @@ class MatterBridge(private val context: Context) {
                 }
             },
             onError = { nid, err ->
-                if (nid !in cancelledNodeIds)
+                if (nid !in cancelledNodeIds) {
                     emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "error",
                                          "message" to (err.message ?: "unknown")))
+                    // For ICD / sleepy devices the initial connection may time out
+                    // because the device is asleep.  Retry after 60 s — the device
+                    // will be reachable once it wakes up for its next check-in.
+                    scope.launch {
+                        delay(60_000L)
+                        if (nid !in cancelledNodeIds) {
+                            Log.d(TAG, "Retrying subscription after failure nodeId=$nid")
+                            startSubscriptionForNode(nid)
+                        }
+                    }
+                }
             },
         )
     }
@@ -756,9 +767,9 @@ class MatterBridge(private val context: Context) {
 
     // ── Read device type from Descriptor cluster ───────────────────────────────
 
-    fun identify(nodeId: Long, result: MethodChannel.Result) =
+    fun identify(nodeId: Long, seconds: Int, result: MethodChannel.Result) =
         requireChip(result) {
-            ClusterClient.sendIdentify(context, nodeId)
+            ClusterClient.sendIdentify(context, nodeId, seconds)
             main.post { result.success(null) }
         }
 

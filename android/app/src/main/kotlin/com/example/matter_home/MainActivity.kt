@@ -165,8 +165,9 @@ class MainActivity : FlutterActivity() {
                     "cancelOta" -> bridge.cancelOta(result)
 
                     "identify" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
-                        bridge.identify(nodeId, result)
+                        val nodeId  = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val seconds = call.argument<Int>("seconds") ?: 15
+                        bridge.identify(nodeId, seconds, result)
                     }
 
                     "shareDevice" -> {

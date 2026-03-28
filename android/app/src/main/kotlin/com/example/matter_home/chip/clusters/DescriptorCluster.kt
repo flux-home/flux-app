@@ -7,7 +7,6 @@ import chip.devicecontroller.model.ChipAttributePath
 import matter.tlv.AnonymousTag
 import matter.tlv.ContextSpecificTag
 import matter.tlv.TlvReader
-import com.example.matter_home.chip.ChipClient
 
 private const val TAG = "DescriptorCluster"
 

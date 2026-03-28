@@ -5,7 +5,6 @@ import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.OtaSoftwareUpdateRequestor
 import chip.devicecontroller.model.AttributeWriteRequest
 import chip.devicecontroller.model.InvokeElement
-import com.example.matter_home.chip.ChipClient
 import matter.tlv.AnonymousTag
 import matter.tlv.ContextSpecificTag
 import matter.tlv.TlvWriter

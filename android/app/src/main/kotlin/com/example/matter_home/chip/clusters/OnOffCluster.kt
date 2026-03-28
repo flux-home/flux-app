@@ -5,7 +5,6 @@ import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.OnOff
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.InvokeElement
-import com.example.matter_home.chip.ChipClient
 import matter.tlv.AnonymousTag
 import matter.tlv.TlvReader
 import matter.tlv.TlvWriter

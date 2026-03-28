@@ -28,8 +28,7 @@ class DeviceSettingsScreen extends StatefulWidget {
 class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   bool _identifying = false;
 
-  Future<void> _identify(MatterDevice d) async {
-    if (_identifying) return;
+  Future<void> _identify(MatterDevice d) async {    if (_identifying) return;
     setState(() => _identifying = true);
     await context.read<MatterClusterPort>().identify(d.nodeId);
     await Future.delayed(const Duration(seconds: 15));
@@ -311,10 +310,10 @@ class _OtaSectionState extends State<_OtaSection> {
   }
 
   Future<void> _runCheck() async {
-    final live = context.read<DeviceProvider>().liveDataFor(widget.device.id);
-    final vid  = _parseHexId(live?.vendorId);
-    final pid  = _parseHexId(live?.productId);
-    final cur  = live?.softwareVersionNum;
+    final view = context.read<DeviceProvider>().viewFor(widget.device.id);
+    final vid  = _parseHexId(view?.vendorId);
+    final pid  = _parseHexId(view?.productId);
+    final cur  = view?.softwareVersionNum;
     if (vid == null || pid == null || cur == null) {
       setState(() => _check = _OtaCheckState.missingInfo);
       return;
@@ -350,7 +349,7 @@ class _OtaSectionState extends State<_OtaSection> {
       targetVersionString: r.latestVersionString ?? '',
       dryRun:              _dryRun,
       endpoint:            context.read<DeviceProvider>()
-                               .liveDataFor(widget.device.id)?.otaEndpoint ?? 0,
+                               .viewFor(widget.device.id)?.otaEndpoint ?? 0,
     );
     if (!ok && mounted) setState(() => _flashing = false);
   }
@@ -358,8 +357,8 @@ class _OtaSectionState extends State<_OtaSection> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeviceProvider>();
-    final live     = provider.liveDataFor(widget.device.id);
-    if (live?.otaSupported != true) return const SizedBox.shrink();
+    final view     = provider.viewFor(widget.device.id);
+    if (view?.otaSupported != true) return const SizedBox.shrink();
 
     final otaProgress = _flashing ? provider.otaProgressFor(widget.device.id) : null;
 
@@ -374,7 +373,7 @@ class _OtaSectionState extends State<_OtaSection> {
     }
 
     final cs             = Theme.of(context).colorScheme;
-    final currentVersion = live?.softwareVersion ?? '';
+    final currentVersion = view?.softwareVersion ?? '';
     final newVersion     = _result?.latestVersionString ?? '';
 
     return Column(
@@ -592,7 +591,7 @@ class DeviceInfoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs   = Theme.of(context).colorScheme;
-    final live = context.watch<DeviceProvider>().liveDataFor(device.id);
+    final view = context.watch<DeviceProvider>().viewFor(device.id);
 
     // Helper: only show a row if the value is non-null and non-empty.
     List<Widget> rows = [];
@@ -602,18 +601,18 @@ class DeviceInfoScreen extends StatelessWidget {
     }
 
     // ── Identity ───────────────────────────────────────────────────────
-    add('Product',    device.productName ?? live?.productName);
-    add('Vendor',     live?.vendorName);
-    add('Vendor ID',  live?.vendorId,  mono: true);
-    add('Product ID', live?.productId, mono: true);
-    add('Part no.',   live?.partNumber);
+    add('Product',    view?.displayProductName);
+    add('Vendor',     view?.vendorName);
+    add('Vendor ID',  view?.vendorId,  mono: true);
+    add('Product ID', view?.productId, mono: true);
+    add('Part no.',   view?.partNumber);
 
     // ── Versions ───────────────────────────────────────────────────────
-    add('Hardware',   live?.hwVersion);
-    add('Firmware',   live?.softwareVersion);
+    add('Hardware',   view?.hwVersion);
+    add('Firmware',   view?.softwareVersion);
 
     // ── Manufacturing ──────────────────────────────────────────────────
-    add('Mfg. date',  live?.manufacturingDate);
+    add('Mfg. date',  view?.manufacturingDate);
 
     // ── Device type / node ─────────────────────────────────────────────
     add('Type',       device.deviceType.displayName);
@@ -625,11 +624,11 @@ class DeviceInfoScreen extends StatelessWidget {
     add('Commissioned', _formatDate(device.commissionedAt));
 
     // ── Identifiers ────────────────────────────────────────────────────
-    add('Serial no.', live?.serialNumber, mono: true);
-    add('Unique ID',  live?.uniqueId,     mono: true);
+    add('Serial no.', view?.serialNumber, mono: true);
+    add('Unique ID',  view?.uniqueId,     mono: true);
 
     // ── Links ──────────────────────────────────────────────────────────
-    add('Product URL', live?.productUrl, link: true);
+    add('Product URL', view?.productUrl, link: true);
 
     return Scaffold(
       appBar: AppBar(

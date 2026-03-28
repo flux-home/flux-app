@@ -156,8 +156,5 @@ object ClusterIDMapping {
             // Identify command: field 0x00 = IdentifyTime (uint16, seconds)
             object Identify { const val id: Long = 0x00000000L }
         }
-        object CommandField {
-            object IdentifyTime { const val id: Int = 0x00 }
-        }
     }
 }

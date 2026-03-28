@@ -1,7 +1,5 @@
 package com.example.matter_home.chip.clusters
 
-import com.example.matter_home.chip.ChipClient
-
 import android.content.Context
 
 /**
@@ -66,7 +64,7 @@ object ClusterClient {
         ThermostatCluster.writeSystemMode(context, nodeId, mode, endpoint)
 
     // ── Battery / Humidity sensors ────────────────────────────────────────────
-    suspend fun readBattery(context: Context, nodeId: Long) =
+    suspend fun readBattery(context: Context, nodeId: Long): Map<String, Long> =
         SensorCluster.readBattery(context, nodeId)
 
     suspend fun readHumidity(context: Context, nodeId: Long) =

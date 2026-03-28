@@ -5,7 +5,6 @@ import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.Thermostat
 import chip.devicecontroller.model.AttributeWriteRequest
 import chip.devicecontroller.model.ChipAttributePath
-import com.example.matter_home.chip.ChipClient
 import matter.tlv.AnonymousTag
 import matter.tlv.TlvWriter
 
@@ -24,9 +23,9 @@ internal object ThermostatCluster {
             val c = state?.getEndpointState(endpoint)?.getClusterState(Thermostat.ID)
             fun attr(id: Long) = c?.getAttributeState(id)?.getValue()
                 ?.let { (it as? Number)?.toInt() }
-                ?.takeUnless { it == 0x8000 }
+            fun nullableAttr(id: Long) = attr(id)?.takeUnless { it == 0x8000 }
             mapOf(
-                "localTemp"       to attr(Thermostat.Attribute.LocalTemperature.id),
+                "localTemp"       to nullableAttr(Thermostat.Attribute.LocalTemperature.id),
                 "heatingSetpoint" to attr(Thermostat.Attribute.OccupiedHeatingSetpoint.id),
                 "coolingSetpoint" to attr(Thermostat.Attribute.OccupiedCoolingSetpoint.id),
                 "systemMode"      to attr(Thermostat.Attribute.SystemMode.id),
@@ -51,7 +50,7 @@ internal object ThermostatCluster {
      * Values: 0=Off 1=Auto 3=Cool 4=Heat 5=EmergencyHeat 7=FanOnly
      */
     suspend fun writeSystemMode(context: Context, nodeId: Long, mode: Int, endpoint: Int = 1) {
-        val tlv = TlvWriter().putUnsigned(AnonymousTag, mode).getEncoded()
+        val tlv = TlvWriter().put(AnonymousTag, mode.toUByte()).getEncoded()
         writeAttribute(context, nodeId, AttributeWriteRequest.newInstance(
             endpoint, Thermostat.ID, Thermostat.Attribute.SystemMode.id, tlv,
         ), TAG)

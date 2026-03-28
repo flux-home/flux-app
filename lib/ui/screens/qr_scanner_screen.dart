@@ -13,11 +13,35 @@ class QrScannerScreen extends StatefulWidget {
 class _QrScannerScreenState extends State<QrScannerScreen> {
   final MobileScannerController _controller = MobileScannerController();
   bool _scanned = false;
+  double _zoom = 0.3; // initial zoom — 30 % of the camera's max range
+
+  @override
+  void initState() {
+    super.initState();
+    // Apply initial zoom once the camera has had time to start.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _controller.setZoomScale(_zoom);
+    });
+  }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  // ── Pinch-to-zoom ─────────────────────────────────────────────────────────
+
+  double _baseZoom = 0.3;
+
+  void _onScaleStart(ScaleStartDetails _) => _baseZoom = _zoom;
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final newZoom = (_baseZoom + (details.scale - 1) * 0.3).clamp(0.0, 1.0);
+    if ((newZoom - _zoom).abs() > 0.01) {
+      setState(() => _zoom = newZoom);
+      _controller.setZoomScale(_zoom);
+    }
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -47,7 +71,10 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           ),
         ],
       ),
-      body: Stack(
+      body: GestureDetector(
+        onScaleStart:  _onScaleStart,
+        onScaleUpdate: _onScaleUpdate,
+        child: Stack(
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),
           // Overlay cutout
@@ -70,6 +97,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

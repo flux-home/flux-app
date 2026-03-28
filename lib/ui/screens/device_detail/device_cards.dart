@@ -5,16 +5,14 @@ part of '../device_detail_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _OnOffCard extends StatelessWidget {
-  final MatterDevice device;
-  const _OnOffCard({required this.device});
+  final DeviceView view;
+  const _OnOffCard({required this.view});
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
-    final provider = context.watch<DeviceProvider>();
-    final live     = provider.liveDataFor(device.id);
-    final isStale  = live?.isStale ?? false;
-    final isOn     = live?.isOn ?? device.isOn;
+    final cs      = Theme.of(context).colorScheme;
+    final isStale = view.isStale;
+    final isOn    = view.isOn;
 
     final label    = isStale ? '--' : (isOn ? 'ON' : 'OFF');
     final litColor = isStale
@@ -48,7 +46,8 @@ class _OnOffCard extends StatelessWidget {
               const Spacer(),
               Switch(
                 value:     isOn,
-                onChanged: isStale ? null : (_) => provider.toggle(device.id),
+                onChanged: isStale ? null
+                    : (_) => context.read<DeviceProvider>().toggle(view.id),
               ),
             ]),
             const SizedBox(height: 12),

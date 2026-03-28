@@ -6,7 +6,6 @@ import chip.devicecontroller.ClusterIDMapping.PowerSource
 import chip.devicecontroller.ClusterIDMapping.RelativeHumidityMeasurement
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.ChipPathId
-import com.example.matter_home.chip.ChipClient
 private const val TAG = "SensorCluster"
 
 internal object SensorCluster {
@@ -21,7 +20,7 @@ internal object SensorCluster {
      *
      * Returns an empty map when the cluster is absent.
      */
-    suspend fun readBattery(context: Context, nodeId: Long): Map<String, Int> =
+    suspend fun readBattery(context: Context, nodeId: Long): Map<String, Long> =
         readAttributes(
             context, nodeId,
             ChipAttributePath.newInstance(
@@ -29,15 +28,15 @@ internal object SensorCluster {
             ),
             emptyMap(), TAG,
         ) { state ->
-            mutableMapOf<String, Int>().also { result ->
+            mutableMapOf<String, Long>().also { result ->
                 state?.getEndpointStates()?.values?.forEach { ep ->
                     val c = ep.getClusterState(PowerSource.ID) ?: return@forEach
-                    fun int(id: Long) = c.getAttributeState(id)?.getValue()?.let { (it as? Number)?.toInt() }
-                    int(PowerSource.Attribute.BatPercentRemaining.id)
+                    fun long(id: Long) = c.getAttributeState(id)?.getValue()?.let { (it as? Number)?.toLong() }
+                    long(PowerSource.Attribute.BatPercentRemaining.id)
                         ?.takeIf { it in 0..200 }?.let { result["percent"] = it / 2 }
-                    int(PowerSource.Attribute.BatChargeLevel.id)
+                    long(PowerSource.Attribute.BatChargeLevel.id)
                         ?.takeIf { it in 0..2 }?.let { result["chargeLevel"] = it }
-                    int(PowerSource.Attribute.BatVoltage.id)
+                    long(PowerSource.Attribute.BatVoltage.id)
                         ?.takeIf { it > 0 }?.let { result["voltageMilliV"] = it }
                 }
                 Log.d(TAG, "readBattery → $result")

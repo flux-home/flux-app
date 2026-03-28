@@ -5,8 +5,10 @@ import 'package:uuid/uuid.dart';
 
 import '../models/device_live_data.dart';
 import '../models/device_type.dart';
+import '../models/device_view.dart';
 import '../models/matter_device.dart';
 import '../models/ota_progress.dart';
+import '../models/persisted_snapshot.dart';
 import '../services/device_store.dart';
 import '../models/commission_models.dart';
 import '../services/matter_port.dart';
@@ -14,31 +16,46 @@ import '../services/matter_port.dart';
 enum DeviceProviderState { idle, loading, error }
 
 class DeviceProvider extends ChangeNotifier {
-  final DeviceStore   _store;
-  final MatterPort    _channel;
+  final DeviceStore _store;
+  final MatterPort  _channel;
   final _uuid = const Uuid();
 
   DeviceProviderState state = DeviceProviderState.idle;
   String? errorMessage;
   List<MatterDevice> _devices = [];
 
-  // ── Live cache (in-memory, not persisted) ──────────────────────────────────
-  final Map<String, DeviceLiveData> _liveCache    = {};
-  final Map<String, String>         _clusterCache = {}; // deviceId → clusters JSON
-  final Map<String, OtaProgressState> _otaProgress = {}; // deviceId → OTA state
+  // ── In-memory caches ──────────────────────────────────────────────────────
+  final Map<String, DeviceLiveData>     _liveCache     = {};
+  final Map<String, String>             _clusterCache  = {}; // deviceId → JSON
+  final Map<String, OtaProgressState>   _otaProgress   = {};
+  final Map<String, PersistedSnapshot>  _snapshots     = {};
 
-  /// Subscription node IDs that are currently active.
   final Set<int> _subscribedNodeIds = {};
 
   StreamSubscription<Map<String, dynamic>>? _deviceStateSub;
 
+  // ── Public device list ────────────────────────────────────────────────────
+
+  /// Raw commissioning records.  Most screens should use [deviceViews] or
+  /// [viewFor] instead — those carry merged live state.
   List<MatterDevice> get devices => List.unmodifiable(_devices);
+
+  /// All devices as merged [DeviceView] objects (commissioning record + live).
+  List<DeviceView> get deviceViews =>
+      _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
+
+  /// Returns a merged [DeviceView] for [id], or null if the device is unknown.
+  DeviceView? viewFor(String id) {
+    final idx = _indexById(id);
+    if (idx < 0) return null;
+    return DeviceView(_devices[idx], _liveCache[_devices[idx].id]);
+  }
+
+  // ── Constructor ───────────────────────────────────────────────────────────
 
   DeviceProvider(this._store, this._channel) {
     _load();
-    // Listen to live subscription updates from the Android CHIP layer.
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
-    // Start subscriptions for all already-commissioned devices.
     Future.microtask(_startAllSubscriptions);
   }
 
@@ -48,24 +65,71 @@ class DeviceProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  // ── Persistence ────────────────────────────────────────────────────────────
+  // ── Persistence ───────────────────────────────────────────────────────────
 
   void _load() {
+    _snapshots.addAll(_store.loadSnapshots());
+
     _devices = _store.loadDevices().map((d) {
-      if (d.deviceType == DeviceType.onOffLight && d.localTempCenti != null) {
-        return d.copyWith(deviceType: DeviceType.thermostat);
+      // Legacy fix: devices stored before device-type mapping may have
+      // onOffLight as a stale commissioning fallback for thermostats.
+      if (d.deviceType == DeviceType.onOffLight) {
+        final snap = _snapshots[d.id];
+        if (snap?.localTempCenti != null) {
+          return d.copyWith(deviceType: DeviceType.thermostat);
+        }
       }
       return d;
     }).toList();
+
+    // Seed the live cache from snapshots so home-screen tiles show the
+    // last-known state immediately — before any subscription arrives.
+    for (final device in _devices) {
+      final snap = _snapshots[device.id];
+      if (snap != null) {
+        _liveCache[device.id] = DeviceLiveData(
+          updatedAt:      DateTime.now(),
+          isStale:        true, // cold-start seed — replaced when subscription fires
+          isOn:           snap.isOn,
+          levelRaw:       snap.levelRaw,
+          localTempCenti: snap.localTempCenti,
+          basicInfo:      snap.productName != null
+              ? BasicInfoCache(productName: snap.productName)
+              : BasicInfoCache.empty,
+        );
+      }
+    }
+
     notifyListeners();
   }
 
-  Future<void> _persist() => _store.saveDevices(_devices);
+  /// Persists both the commissioning records and the live-state snapshots.
+  Future<void> _persist() async {
+    await _store.saveDevices(_devices);
+    await _store.saveSnapshots(_snapshots);
+  }
 
-  // ── Live cache helpers ─────────────────────────────────────────────────────
+  /// Captures the current live cache for [deviceId] into [_snapshots] and
+  /// writes both stores to disk.  Called only at explicit checkpoints
+  /// (user action, successful poll) — never from the subscription hot path.
+  Future<void> _flushSnapshot(String deviceId) async {
+    _snapshots[deviceId] = PersistedSnapshot(
+      deviceId:       deviceId,
+      isOn:           _liveCache[deviceId]?.isOn,
+      levelRaw:       _liveCache[deviceId]?.levelRaw,
+      localTempCenti: _liveCache[deviceId]?.localTempCenti,
+      productName:    _liveCache[deviceId]?.productName,
+    );
+    await _persist();
+  }
 
+  // ── Live cache helpers ────────────────────────────────────────────────────
+
+  /// Returns the raw live cache for [deviceId].
+  /// Prefer [viewFor] when you also need commissioning fields.
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
-  String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
+
+  String?          clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
   void clearOtaProgress(String deviceId) {
@@ -78,30 +142,47 @@ class DeviceProvider extends ChangeNotifier {
     // No notifyListeners needed — detail screen reads this directly.
   }
 
-  /// Applies [transform] to the live cache entry for [deviceId], creating
-  /// a blank entry if none exists.  Always calls [notifyListeners].
-  void _mergeLiveCache(String deviceId, DeviceLiveData Function(DeviceLiveData) transform) {
+  /// Applies [transform] to the live cache entry for [deviceId], creating a
+  /// blank entry if none exists.  Always calls [notifyListeners].
+  void _mergeLiveCache(
+      String deviceId, DeviceLiveData Function(DeviceLiveData) transform) {
     _liveCache[deviceId] = transform(
-      _liveCache[deviceId] ?? DeviceLiveData(updatedAt: DateTime.now(), isStale: false),
+      _liveCache[deviceId] ??
+          DeviceLiveData(updatedAt: DateTime.now(), isStale: false),
     );
     notifyListeners();
   }
 
-  void updateBasicInfo(String deviceId, String? productName, String? serial, String? swVersion,
-      {String? vendorName, String? vendorId, String? productId,
-       String? hwVersion, String? manufacturingDate, String? partNumber,
-       String? productUrl, String? uniqueId, int? swVersionNum}) {
-    _mergeLiveCache(deviceId, (e) => e.withBasicInfo(serial, swVersion, productName,
-        vendorName: vendorName, vendorId: vendorId, productId: productId,
-        hwVersion: hwVersion, manufacturingDate: manufacturingDate,
-        partNumber: partNumber, productUrl: productUrl, uniqueId: uniqueId,
-        swVersionNum: swVersionNum));
+  void updateBasicInfo(
+    String deviceId,
+    String? productName,
+    String? serial,
+    String? swVersion, {
+    String? vendorName,
+    String? vendorId,
+    String? productId,
+    String? hwVersion,
+    String? manufacturingDate,
+    String? partNumber,
+    String? productUrl,
+    String? uniqueId,
+    int?    swVersionNum,
+  }) {
+    _mergeLiveCache(
+        deviceId,
+        (e) => e.withBasicInfo(serial, swVersion, productName,
+            vendorName:        vendorName,
+            vendorId:          vendorId,
+            productId:         productId,
+            hwVersion:         hwVersion,
+            manufacturingDate: manufacturingDate,
+            partNumber:        partNumber,
+            productUrl:        productUrl,
+            uniqueId:          uniqueId,
+            swVersionNum:      swVersionNum));
+    // Persist the product name into the snapshot so it survives cold restarts.
     if (productName != null && productName.isNotEmpty) {
-      final idx = _indexById(deviceId);
-      if (idx != -1 && _devices[idx].productName != productName) {
-        _devices[idx] = _devices[idx].copyWith(productName: productName);
-        _persist();
-      }
+      unawaited(_flushSnapshot(deviceId));
     }
   }
 
@@ -109,10 +190,7 @@ class DeviceProvider extends ChangeNotifier {
     _mergeLiveCache(deviceId, (e) => e.withOtaSupported(supported, endpoint));
   }
 
-  /// Searches for the OTA Requestor cluster (0x002A) across all endpoints,
-  /// starting at EP0 then walking PartsList. Updates [otaSupported] in the
-  /// live cache once found (or confirmed absent).
-  /// No-ops if the result is already known from a previous session.
+  /// Searches for the OTA Requestor cluster (0x002A) across all endpoints.
   Future<void> detectAndUpdateOtaSupport(String deviceId) async {
     if (liveDataFor(deviceId)?.otaSupported != null) return;
     final device = findById(deviceId);
@@ -126,14 +204,19 @@ class DeviceProvider extends ChangeNotifier {
       foundEndpoint = 0;
     } else {
       for (final ep in await _channel.readPartsList(device.nodeId)) {
-        final clusters = await _channel.readServerClusterList(device.nodeId, endpoint: ep);
-        if (clusters.contains(otaClusterId)) { foundEndpoint = ep; break; }
+        final clusters =
+            await _channel.readServerClusterList(device.nodeId, endpoint: ep);
+        if (clusters.contains(otaClusterId)) {
+          foundEndpoint = ep;
+          break;
+        }
       }
     }
-    updateOtaSupport(deviceId, foundEndpoint != null, endpoint: foundEndpoint ?? 0);
+    updateOtaSupport(deviceId, foundEndpoint != null,
+        endpoint: foundEndpoint ?? 0);
   }
 
-  // ── Subscription event handler ─────────────────────────────────────────────
+  // ── Subscription event handler ────────────────────────────────────────────
 
   void _onDeviceStateEvent(Map<String, dynamic> event) {
     final nodeId = event['nodeId'] as int?;
@@ -141,7 +224,7 @@ class DeviceProvider extends ChangeNotifier {
     if (nodeId == null) return;
 
     final candidates = _devices.where((d) => d.nodeId == nodeId);
-    if (candidates.isEmpty) return; // event for a device we no longer track
+    if (candidates.isEmpty) return;
     final device = candidates.first;
 
     switch (type) {
@@ -155,7 +238,7 @@ class DeviceProvider extends ChangeNotifier {
 
       case 'error':
       case 'resubscribing':
-        // Mark cache stale but don't discard it — UI keeps showing last value.
+        // Mark cache stale but keep values — UI shows last known state dimmed.
         final existing = _liveCache[device.id];
         if (existing != null && !existing.isStale) {
           _liveCache[device.id] = existing.markStale();
@@ -164,16 +247,14 @@ class DeviceProvider extends ChangeNotifier {
 
       case 'established':
       case 'update':
+        // Merge event into live cache.
         final existing = _liveCache[device.id];
         _liveCache[device.id] = existing != null
             ? existing.merge(event)
             : DeviceLiveData.fromUpdate(event);
 
         // Infer device type from subscription attributes when the stored type
-        // is unknown or is a stale commissioning fallback.  Battery-powered
-        // ICDs (e.g. contact sensors) are often asleep during the post-
-        // commissioning descriptor read, so the type defaults to onOffLight.
-        // The first subscription event tells us the truth.
+        // is unknown or is a stale commissioning fallback.
         final storedType = device.deviceType;
         if (storedType == DeviceType.unknown ||
             storedType == DeviceType.onOffLight) {
@@ -181,50 +262,35 @@ class DeviceProvider extends ChangeNotifier {
           if (inferred != null) {
             final idx2 = _indexById(device.id);
             if (idx2 != -1) {
-              _devices[idx2] = _devices[idx2].copyWith(deviceType: inferred);
+              _devices[idx2] =
+                  _devices[idx2].copyWith(deviceType: inferred);
               unawaited(_persist());
             }
           }
         }
 
-        // Mirror on/off + brightness + temp into the persisted MatterDevice
-        // so the home screen tiles stay accurate.
+        // Update persisted isOnline flag only on transition false → true
+        // (avoids a disk write on every subscription event).
         final idx = _indexById(device.id);
-        if (idx != -1) {
-          final isOn  = event['onOff']          as bool?;
-          final level = event['level']           as int?;
-          final temp  = event['localTempCenti']  as int?;
-          final updated = _devices[idx].copyWith(
-            isOnline:       true,
-            isOn:           isOn   ?? _devices[idx].isOn,
-            brightness:     level  != null ? level / 254.0 : null,
-            localTempCenti: temp   ?? _devices[idx].localTempCenti,
-          );
-          if (updated != _devices[idx]) {
-            _devices[idx] = updated;
-            _persist();
-          }
+        if (idx != -1 && !_devices[idx].isOnline) {
+          _devices[idx] = _devices[idx].copyWith(isOnline: true);
+          unawaited(_persist());
         }
-
         notifyListeners();
     }
   }
 
-  // ── Subscription management ────────────────────────────────────────────────
+  // ── Subscription management ───────────────────────────────────────────────
 
   Future<void> _startAllSubscriptions() async {
     for (final device in _devices) {
       await _startSubscription(device);
-      // If the device type was never resolved (commissioned before type mapping
-      // existed), re-detect it now from the Descriptor cluster.
       if (device.deviceType == DeviceType.unknown) {
         _resolveUnknownDeviceType(device);
       }
     }
   }
 
-  /// Infers a device type from the attribute keys present in a subscription
-  /// event.  Returns null if the event gives no clue (e.g. only onOff/level).
   DeviceType? _inferTypeFromEvent(Map<String, dynamic> event) {
     if (event.containsKey('contactState'))  return DeviceType.contactSensor;
     if (event.containsKey('occupancy'))     return DeviceType.occupancySensor;
@@ -262,7 +328,7 @@ class DeviceProvider extends ChangeNotifier {
     await _channel.stopSubscription(device.nodeId);
   }
 
-  // ── Commission ─────────────────────────────────────────────────────────────
+  // ── Commission ────────────────────────────────────────────────────────────
 
   Future<MatterDevice?> commissionDevice(
     String payload,
@@ -287,13 +353,14 @@ class DeviceProvider extends ChangeNotifier {
       wifiPassword:     wifiPassword,
       threadDatasetHex: threadDatasetHex,
     );
-    return _handleCommissionResult(result, deviceName, room, networkType: networkType);
+    return _handleCommissionResult(result, deviceName, room,
+        networkType: networkType);
   }
 
   Future<MatterDevice?> commissionViaIp({
     required String ipAddress,
-    required int discriminator,
-    required int setupPinCode,
+    required int    discriminator,
+    required int    setupPinCode,
     required String deviceName,
     required String room,
     int port = 5540,
@@ -307,7 +374,8 @@ class DeviceProvider extends ChangeNotifier {
       discriminator: discriminator,
       setupPinCode:  setupPinCode,
     );
-    return _handleCommissionResult(result, deviceName, room, networkType: NetworkType.ethernet);
+    return _handleCommissionResult(result, deviceName, room,
+        networkType: NetworkType.ethernet);
   }
 
   Future<MatterDevice?> _handleCommissionResult(
@@ -334,7 +402,6 @@ class DeviceProvider extends ChangeNotifier {
       nodeId:         result.nodeId!,
       room:           room,
       isOnline:       true,
-      isOn:           false,
       commissionedAt: DateTime.now(),
       networkType:    networkType,
     );
@@ -344,15 +411,14 @@ class DeviceProvider extends ChangeNotifier {
     state = DeviceProviderState.idle;
     notifyListeners();
 
-    // Poll once immediately to seed the cache with the initial state.
+    // Poll once to seed live cache, then start subscription.
     unawaited(refreshDevice(device.id));
-    // Then subscribe for live updates.
     unawaited(_startSubscription(device));
 
     return device;
   }
 
-  // ── Control ────────────────────────────────────────────────────────────────
+  // ── Control ───────────────────────────────────────────────────────────────
 
   Future<void> toggle(String deviceId) async {
     final idx = _indexById(deviceId);
@@ -360,37 +426,28 @@ class DeviceProvider extends ChangeNotifier {
     final device = _devices[idx];
     if (!device.deviceType.hasOnOff) return;
 
-    // Use live-subscription state as the source of truth so the toggle
-    // direction is always correct even if the persisted value hasn't caught up.
-    final currentOn = _liveCache[deviceId]?.isOn ?? device.isOn;
+    // Use live cache as source of truth so toggle direction is always correct.
+    final currentOn = _liveCache[deviceId]?.isOn ?? false;
     final newOn     = !currentOn;
 
     final ok = await _channel.toggleDevice(device.nodeId, on: newOn);
     if (ok) {
-      _devices[idx] = device.copyWith(isOn: newOn);
-      // Mirror the new state into the live cache so the UI stays in sync
-      // even when the subscription is stale or dead (e.g. after a power cycle).
-      // The next subscription update will overwrite this with the confirmed
-      // device state, which is fine — it will be the same value.
-      final existing = _liveCache[deviceId];
-      if (existing != null) {
-        _liveCache[deviceId] = existing.merge({'onOff': newOn});
-      }
-      await _persist();
+      _mergeLiveCache(deviceId, (e) => e.merge({'onOff': newOn}));
+      await _flushSnapshot(deviceId);
     }
   }
 
   Future<void> setBrightness(String deviceId, double value) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
-    _devices[idx] = _devices[idx].copyWith(brightness: value);
-    notifyListeners();
     final level = (value * 254).round().clamp(0, 254);
+    // Update live cache immediately for responsive slider feedback.
+    _mergeLiveCache(deviceId, (e) => e.merge({'level': level}));
     await _channel.setLevel(_devices[idx].nodeId, level);
-    await _persist();
+    await _flushSnapshot(deviceId);
   }
 
-  // ── Refresh (on-demand one-shot read) ──────────────────────────────────────
+  // ── Refresh (on-demand one-shot read) ─────────────────────────────────────
 
   Future<void> refreshDevice(String deviceId) async {
     final idx = _indexById(deviceId);
@@ -411,41 +468,36 @@ class DeviceProvider extends ChangeNotifier {
         ? DeviceType.fromMatterDeviceTypeId(typeIdRaw)
         : device.deviceType;
 
-    int? localTempCenti = device.localTempCenti;
     if (newType == DeviceType.thermostat) {
       final thermo = await _channel.readThermostat(device.nodeId);
       if (thermo != null) {
-        localTempCenti = thermo.localTempCenti ?? localTempCenti;
-        _mergeLiveCache(device.id, (e) => e.copyWith(
+        _mergeLiveCache(deviceId, (e) => e.copyWith(
           updatedAt:         DateTime.now(),
           isStale:           false,
-          isOn:              deviceState.isOn  ?? e.isOn,
-          levelRaw:          deviceState.brightnessLevel ?? e.levelRaw,
-          localTempCenti:    thermo.localTempCenti    ?? e.localTempCenti,
-          heatingSetptCenti: thermo.heatingSetptCenti ?? e.heatingSetptCenti,
-          coolingSetptCenti: thermo.coolingSetptCenti ?? e.coolingSetptCenti,
-          systemMode:        thermo.systemMode        ?? e.systemMode,
-          controlSequence:   thermo.controlSequence   ?? e.controlSequence,
-          // All basic-info and OTA fields are preserved automatically via copyWith.
+          isOn:              deviceState.isOn              ?? e.isOn,
+          levelRaw:          deviceState.brightnessLevel   ?? e.levelRaw,
+          localTempCenti:    thermo.localTempCenti         ?? e.localTempCenti,
+          heatingSetptCenti: thermo.heatingSetptCenti      ?? e.heatingSetptCenti,
+          coolingSetptCenti: thermo.coolingSetptCenti      ?? e.coolingSetptCenti,
+          systemMode:        thermo.systemMode             ?? e.systemMode,
+          controlSequence:   thermo.controlSequence        ?? e.controlSequence,
         ));
       }
     } else {
-      _mergeLiveCache(device.id, (e) => e.merge({
-        if (deviceState.isOn != null)            'onOff': deviceState.isOn,
+      _mergeLiveCache(deviceId, (e) => e.merge({
+        if (deviceState.isOn            != null) 'onOff': deviceState.isOn,
         if (deviceState.brightnessLevel != null) 'level': deviceState.brightnessLevel,
       }));
     }
 
+    // Update commissioning record with the resolved device type and online state.
     _devices[idx] = device.copyWith(
-      isOnline:       true,
-      isOn:           deviceState.isOn ?? device.isOn,
-      brightness:     deviceState.brightnessLevel != null
-          ? deviceState.brightnessLevel! / 254.0
-          : device.brightness,
-      deviceType:     newType,
-      localTempCenti: localTempCenti,
+      isOnline:   true,
+      deviceType: newType,
     );
-    await _persist();
+
+    // Checkpoint: flush live state to snapshot so it survives a cold restart.
+    await _flushSnapshot(deviceId);
     notifyListeners();
   }
 
@@ -455,7 +507,7 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
-  // ── Share / rename / remove ────────────────────────────────────────────────
+  // ── Share / rename / remove ───────────────────────────────────────────────
 
   Future<bool> shareWithGoogleHome(String deviceId) async {
     final device = findById(deviceId);
@@ -495,21 +547,25 @@ class DeviceProvider extends ChangeNotifier {
     _devices.removeAt(idx);
     _liveCache.remove(deviceId);
     _clusterCache.remove(deviceId);
+    _snapshots.remove(deviceId);
     await _persist();
     notifyListeners();
     return true;
   }
 
   Future<void> clearAllDevices() async {
-    for (final d in _devices) { await _stopSubscription(d); }
+    for (final d in _devices) {
+      await _stopSubscription(d);
+    }
     _devices.clear();
     _liveCache.clear();
     _clusterCache.clear();
+    _snapshots.clear();
     await _persist();
     notifyListeners();
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   MatterDevice? findById(String id) {
     final idx = _indexById(id);
