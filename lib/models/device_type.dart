@@ -105,6 +105,11 @@ enum DeviceType {
         _                 => false,
       };
 
+  bool get hasWindowCovering => this == windowCovering;
+  bool get hasFanControl     => this == fan || this == airPurifier;
+  bool get hasColorTemp      => this == colorTemperatureLight ||
+                                this == extendedColorLight;
+
   // ── Device type ID ↔ enum mapping (Matter spec §7) ────────────────────────
   static DeviceType fromMatterDeviceTypeId(int id) => switch (id) {
         // Lighting

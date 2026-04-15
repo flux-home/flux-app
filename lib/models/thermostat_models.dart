@@ -25,6 +25,18 @@ class ThermostatState {
   final int? heatingSetptCenti;
   final int? coolingSetptCenti;
 
+  /// Setpoint limits in centidegrees — configurable limits (user-adjustable).
+  final int? minHeatSetptCenti;
+  final int? maxHeatSetptCenti;
+  final int? minCoolSetptCenti;
+  final int? maxCoolSetptCenti;
+
+  /// Absolute limits (hardware floor/ceiling, spec §4.3.x).
+  final int? absMinHeatSetptCenti;
+  final int? absMaxHeatSetptCenti;
+  final int? absMinCoolSetptCenti;
+  final int? absMaxCoolSetptCenti;
+
   /// 0=Off 1=Auto 3=Cool 4=Heat 5=EmergencyHeat 6=Precooling 7=FanOnly
   final int? systemMode;
 
@@ -36,6 +48,14 @@ class ThermostatState {
     this.localTempCenti,
     this.heatingSetptCenti,
     this.coolingSetptCenti,
+    this.minHeatSetptCenti,
+    this.maxHeatSetptCenti,
+    this.minCoolSetptCenti,
+    this.maxCoolSetptCenti,
+    this.absMinHeatSetptCenti,
+    this.absMaxHeatSetptCenti,
+    this.absMinCoolSetptCenti,
+    this.absMaxCoolSetptCenti,
     this.systemMode,
     this.controlSequence,
   });
@@ -46,6 +66,31 @@ class ThermostatState {
       heatingSetptCenti != null ? heatingSetptCenti! / 100.0 : null;
   double? get coolingSetptC =>
       coolingSetptCenti != null ? coolingSetptCenti! / 100.0 : null;
+
+  /// Effective heating setpoint range in °C.
+  /// Takes the tighter intersection of the configurable and absolute limits,
+  /// falling back to safe defaults when neither is reported.
+  /// Tighter of two optional centidegree values, converted to °C.
+  static double _tighterMin(int? cfg, int? abs, int fallbackCenti) {
+    final a = cfg, b = abs;
+    if (a != null && b != null) return (a > b ? a : b) / 100.0;
+    return (a ?? b ?? fallbackCenti) / 100.0;
+  }
+
+  static double _tighterMax(int? cfg, int? abs, int fallbackCenti) {
+    final a = cfg, b = abs;
+    if (a != null && b != null) return (a < b ? a : b) / 100.0;
+    return (a ?? b ?? fallbackCenti) / 100.0;
+  }
+
+  double get effectiveMinHeatC =>
+      _tighterMin(minHeatSetptCenti, absMinHeatSetptCenti, 500);
+  double get effectiveMaxHeatC =>
+      _tighterMax(maxHeatSetptCenti, absMaxHeatSetptCenti, 3500);
+  double get effectiveMinCoolC =>
+      _tighterMin(minCoolSetptCenti, absMinCoolSetptCenti, 1600);
+  double get effectiveMaxCoolC =>
+      _tighterMax(maxCoolSetptCenti, absMaxCoolSetptCenti, 3200);
 
   /// True when the device supports heating (CSO 2, 3, 4, 5; or unknown).
   bool get supportsHeating {

@@ -86,6 +86,14 @@ class DeviceView {
   BatteryInfo?     get batteryInfo    => _live?.batteryInfo;
   bool?            get contactState   => _live?.contactState;
 
+  // ── New controllable clusters ─────────────────────────────────────────────
+  int? get liftPercent100ths => _live?.liftPercent100ths;
+  int? get fanMode           => _live?.fanMode;
+  int? get fanPercent        => _live?.fanPercent;
+  int? get colorTempMireds   => _live?.colorTempMireds;
+  int? get smokeState        => _live?.smokeState;
+  int? get coState           => _live?.coState;
+
   // ── Escape hatch ──────────────────────────────────────────────────────────
 
   /// Direct access to the raw live cache for edge cases.
