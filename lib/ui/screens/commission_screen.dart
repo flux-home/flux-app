@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/commission_models.dart';
+import '../../models/thread_models.dart';
 import '../../models/wifi_network.dart';
 import '../../providers/commissioning_controller.dart';
 import '../../providers/device_provider.dart';
@@ -39,6 +40,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
   bool _showThreadDataset = false;
   bool _showPassword      = false;
 
+  // ── Thread dataset selection ───────────────────────────────────────────────
+  ThreadDataset? _activeDataset;
+  bool           _threadExplicitlySelected = false;
+
   // ── Form controllers ───────────────────────────────────────────────────────
   final _threadCtrl = TextEditingController();
   final _ssidCtrl   = TextEditingController();
@@ -70,8 +75,18 @@ class _CommissionScreenState extends State<CommissionScreen> {
     _ctrl.addListener(_onControllerChanged);
 
     // Pre-fill Thread dataset from stored settings.
-    ThreadSettingsService.load().then((ds) {
-      if (mounted) _threadCtrl.text = ds;
+    Future.wait([
+      ThreadSettingsService.loadActive(),
+      ThreadSettingsService.load(),
+    ]).then((results) {
+      if (!mounted) return;
+      final active  = results[0] as ThreadDataset?;
+      final hex     = results[1] as String;
+      setState(() {
+        _activeDataset             = active;
+        _threadExplicitlySelected  = active != null;
+        _threadCtrl.text           = hex;
+      });
     });
 
     if (widget.initialPayload != null) {
@@ -151,7 +166,11 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (p != null) {
       setState(() {
         _method  = CommissioningController.suggestMethod(p);
-        _netType = CommissioningController.suggestNetType(p, threadDataset: _threadCtrl.text);
+        _netType = CommissioningController.suggestNetType(
+          p,
+          threadDataset:  _threadCtrl.text,
+          threadSelected: _threadExplicitlySelected,
+        );
 
         if (!p.hasShortDiscriminator && p.discriminator > 0) {
           _discCtrl.text = p.discriminator.toString();
@@ -629,9 +648,15 @@ class _CommissionScreenState extends State<CommissionScreen> {
                   passCtrl:              _passCtrl,
                   showThreadDataset:     _showThreadDataset,
                   showPassword:          _showPassword,
+                  activeDataset:         _activeDataset,
                   onNetTypeChanged:      (v) => setState(() => _netType = v),
                   onShowDatasetChanged:  (v) => setState(() => _showThreadDataset = v),
                   onShowPasswordChanged: (v) => setState(() => _showPassword = v),
+                  onDatasetChanged: (ds) => setState(() {
+                    _activeDataset            = ds;
+                    _threadExplicitlySelected = true;
+                    _threadCtrl.text          = ds.hex;
+                  }),
                 ),
               ],
 
@@ -996,9 +1021,11 @@ class _NetworkSection extends StatefulWidget {
   final TextEditingController passCtrl;
   final bool showThreadDataset;
   final bool showPassword;
-  final ValueChanged<int>  onNetTypeChanged;
-  final ValueChanged<bool> onShowDatasetChanged;
-  final ValueChanged<bool> onShowPasswordChanged;
+  final ThreadDataset? activeDataset;
+  final ValueChanged<int>           onNetTypeChanged;
+  final ValueChanged<bool>          onShowDatasetChanged;
+  final ValueChanged<bool>          onShowPasswordChanged;
+  final ValueChanged<ThreadDataset> onDatasetChanged;
 
   const _NetworkSection({
     required this.netType,
@@ -1010,6 +1037,8 @@ class _NetworkSection extends StatefulWidget {
     required this.onNetTypeChanged,
     required this.onShowDatasetChanged,
     required this.onShowPasswordChanged,
+    required this.onDatasetChanged,
+    this.activeDataset,
   });
 
   @override
@@ -1095,55 +1124,13 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
             // ── Thread ─────────────────────────────────────────────────
             if (widget.netType == 0) ...[
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => widget.onShowDatasetChanged(!widget.showThreadDataset),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: cs.secondaryContainer.withAlpha(120),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.memory_outlined, size: 16, color: cs.secondary),
-                    const SizedBox(width: 8),
-                    Expanded(child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('NEST-PAN-26BA  •  Ch 15  •  PAN 0x26BA',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(fontWeight: FontWeight.w600,
-                                           color: cs.secondary)),
-                        Text('Ext PAN: 12f209ab410ad778',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(fontFamily: 'monospace',
-                                           color: cs.onSurfaceVariant)),
-                      ],
-                    )),
-                    Icon(widget.showThreadDataset
-                        ? Icons.expand_less : Icons.expand_more,
-                        size: 18, color: cs.onSurfaceVariant),
-                  ]),
-                ),
+              _ThreadDatasetHeader(
+                activeDataset:       widget.activeDataset,
+                threadCtrl:          widget.threadCtrl,
+                showHex:             widget.showThreadDataset,
+                onToggleHex:         () => widget.onShowDatasetChanged(!widget.showThreadDataset),
+                onDatasetChanged:    widget.onDatasetChanged,
               ),
-              if (widget.showThreadDataset) ...[
-                const SizedBox(height: 10),
-                TextField(
-                  controller: widget.threadCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Active Operational Dataset (hex TLV)',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.restart_alt_outlined),
-                      tooltip: 'Restore default',
-                      onPressed: () async =>
-                          widget.threadCtrl.text = await ThreadSettingsService.load(),
-                    ),
-                  ),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                  maxLines: 3, minLines: 2,
-                ),
-              ],
             ],
 
             // ── Wi-Fi ──────────────────────────────────────────────────
@@ -1217,6 +1204,193 @@ class _NetworkSectionState extends State<_NetworkSection> {
               Text('No network credentials — for Ethernet-only devices.',
                   style: Theme.of(context).textTheme.bodySmall
                       ?.copyWith(color: cs.onSurfaceVariant)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Thread dataset header + picker ────────────────────────────────────────────
+
+/// Compact row shown inside the Thread section of [_NetworkSection].
+/// Displays the active dataset name and a "change" button that opens a
+/// bottom-sheet picker.  Also houses the expandable hex text field.
+class _ThreadDatasetHeader extends StatefulWidget {
+  final ThreadDataset?              activeDataset;
+  final TextEditingController       threadCtrl;
+  final bool                        showHex;
+  final VoidCallback                onToggleHex;
+  final ValueChanged<ThreadDataset> onDatasetChanged;
+
+  const _ThreadDatasetHeader({
+    required this.activeDataset,
+    required this.threadCtrl,
+    required this.showHex,
+    required this.onToggleHex,
+    required this.onDatasetChanged,
+  });
+
+  @override
+  State<_ThreadDatasetHeader> createState() => _ThreadDatasetHeaderState();
+}
+
+class _ThreadDatasetHeaderState extends State<_ThreadDatasetHeader> {
+  Future<void> _pickDataset() async {
+    final datasets = await ThreadSettingsService.loadDatasets();
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<ThreadDataset>(
+      context:       context,
+      isScrollControlled: true,
+      builder:       (_) => _DatasetPickerSheet(
+        datasets:  datasets,
+        active:    widget.activeDataset,
+      ),
+    );
+    if (picked != null) widget.onDatasetChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs     = Theme.of(context).colorScheme;
+    final active = widget.activeDataset;
+
+    // Derive a one-line summary for the active dataset.
+    final String title;
+    final String? subtitle;
+    if (active == null) {
+      title    = 'No dataset configured';
+      subtitle = null;
+    } else if (active.isEmpty) {
+      title    = 'Empty dataset';
+      subtitle = 'No credentials — device joins via MeshCoP';
+    } else {
+      title    = active.label;
+      subtitle = active.hex.length > 16
+          ? '${active.hex.substring(0, 16)}…'
+          : active.hex;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: widget.onToggleHex,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: cs.secondaryContainer.withAlpha(120),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Icon(Icons.memory_outlined, size: 16, color: cs.secondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(fontWeight: FontWeight.w600,
+                                       color: cs.secondary)),
+                    if (subtitle != null)
+                      Text(subtitle,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(fontFamily: active != null && !active.isEmpty
+                                  ? 'monospace' : null,
+                                         color: cs.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.swap_horiz_outlined, size: 18),
+                tooltip: 'Choose dataset',
+                visualDensity: VisualDensity.compact,
+                color: cs.secondary,
+                onPressed: _pickDataset,
+              ),
+              Icon(widget.showHex ? Icons.expand_less : Icons.expand_more,
+                  size: 18, color: cs.onSurfaceVariant),
+            ]),
+          ),
+        ),
+
+        if (widget.showHex) ...[
+          const SizedBox(height: 10),
+          TextField(
+            controller: widget.threadCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Active Operational Dataset (hex TLV)',
+              border:    OutlineInputBorder(),
+            ),
+            style:    const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            maxLines: 3,
+            minLines: 2,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ── Dataset picker bottom sheet ───────────────────────────────────────────────
+
+class _DatasetPickerSheet extends StatelessWidget {
+  final List<ThreadDataset> datasets;
+  final ThreadDataset?      active;
+
+  const _DatasetPickerSheet({required this.datasets, this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final allItems = [ThreadDataset.empty, ...datasets];
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text('Thread dataset',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            const Divider(height: 1),
+            ...allItems.map((ds) {
+              final isActive = active != null && active == ds;
+              final subtitle = ds.isEmpty
+                  ? 'No credentials — device joins via MeshCoP'
+                  : ds.hex.length > 20
+                      ? '${ds.hex.substring(0, 20)}…'
+                      : ds.hex;
+              return ListTile(
+                leading: Icon(
+                  isActive
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  color: isActive ? cs.primary : cs.onSurfaceVariant,
+                ),
+                title: Text(ds.label,
+                    style: TextStyle(
+                        fontWeight: isActive
+                            ? FontWeight.w600
+                            : FontWeight.normal)),
+                subtitle: Text(subtitle,
+                    style: TextStyle(
+                        fontFamily: ds.isEmpty ? null : 'monospace',
+                        fontSize: 11,
+                        color: cs.onSurfaceVariant)),
+                onTap: () => Navigator.pop(context, ds),
+              );
+            }),
           ],
         ),
       ),

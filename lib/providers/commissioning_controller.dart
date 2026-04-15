@@ -402,10 +402,20 @@ class CommissioningController extends ChangeNotifier {
           ? CommissionMethod.ble
           : CommissionMethod.ip;
 
-  static int suggestNetType(ParsedPayload p, {String threadDataset = ''}) {
+  /// Returns the suggested network type for [p].
+  ///
+  /// [threadDataset] — the current dataset hex (used when non-empty).
+  /// [threadSelected] — true if the user has explicitly selected a Thread
+  ///   dataset (even the "Empty dataset" option); overrides the empty-string
+  ///   check so an empty dataset still defaults to Thread.
+  static int suggestNetType(
+    ParsedPayload p, {
+    String threadDataset = '',
+    bool   threadSelected = false,
+  }) {
     if (p.hasOnNetwork) return 2;
     if (p.discoveryCapabilities.contains(DiscoveryCapability.wifiPaf)) return 1;
-    if (threadDataset.trim().isNotEmpty) return 0;
+    if (threadSelected || threadDataset.trim().isNotEmpty) return 0;
     return 1;
   }
 
