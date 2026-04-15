@@ -16,7 +16,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/commission',
-      pageBuilder: (_, state) => _slide(state, const CommissionScreen()),
+      pageBuilder: (_, state) =>
+          _slide(state, CommissionScreen(initialPayload: state.extra as String?)),
     ),
     GoRoute(
       path: '/device/:id',

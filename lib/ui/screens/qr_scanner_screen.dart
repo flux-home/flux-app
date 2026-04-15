@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-
-/// A full-screen QR scanner used during local commissioning.
-/// Returns the raw scanned string via Navigator.pop.
+/// Full-screen QR scanner that also accepts a manually typed code.
+///
+/// Returns the raw scanned/entered string via [Navigator.pop].
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
 
@@ -12,13 +13,14 @@ class QrScannerScreen extends StatefulWidget {
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
   final MobileScannerController _controller = MobileScannerController();
-  bool _scanned = false;
-  double _zoom = 0.3; // initial zoom — 30 % of the camera's max range
+  final _manualCtrl = TextEditingController();
+  bool _scanned    = false;
+  bool _manualMode = false;
+  double _zoom     = 0.4;  // 0.4 → 1.0 maps to 1.8× → 3.0× display
 
   @override
   void initState() {
     super.initState();
-    // Apply initial zoom once the camera has had time to start.
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) _controller.setZoomScale(_zoom);
     });
@@ -27,25 +29,26 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _manualCtrl.dispose();
     super.dispose();
   }
 
   // ── Pinch-to-zoom ─────────────────────────────────────────────────────────
 
-  double _baseZoom = 0.3;
-
+  double _baseZoom = 0.4;
   void _onScaleStart(ScaleStartDetails _) => _baseZoom = _zoom;
-
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    final newZoom = (_baseZoom + (details.scale - 1) * 0.3).clamp(0.0, 1.0);
-    if ((newZoom - _zoom).abs() > 0.01) {
-      setState(() => _zoom = newZoom);
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    final z = (_baseZoom + (d.scale - 1) * 0.3).clamp(0.0, 1.0);
+    if ((z - _zoom).abs() > 0.01) {
+      setState(() => _zoom = z);
       _controller.setZoomScale(_zoom);
     }
   }
 
+  // ── Camera scan ───────────────────────────────────────────────────────────
+
   void _onDetect(BarcodeCapture capture) {
-    if (_scanned) return;
+    if (_scanned || _manualMode) return;
     final code = capture.barcodes.firstOrNull?.rawValue;
     if (code != null && code.isNotEmpty) {
       _scanned = true;
@@ -53,118 +56,402 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     }
   }
 
+  // ── Manual entry ──────────────────────────────────────────────────────────
+
+  void _confirmManual() {
+    // Strip any dashes the formatter inserted before handing off the raw digits.
+    final code = _manualCtrl.text.replaceAll('-', '').trim();
+    if (code.isEmpty) return;
+    Navigator.of(context).pop(code);
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        title: const Text('Scan QR Code'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.flash_on_outlined),
-            onPressed: _controller.toggleTorch,
-            tooltip: 'Toggle torch',
-          ),
-        ],
-      ),
+      // No AppBar — full-screen camera, back arrow from system gesture.
       body: GestureDetector(
         onScaleStart:  _onScaleStart,
         onScaleUpdate: _onScaleUpdate,
-        child: Stack(
-        children: [
+        child: Stack(children: [
+          // ── Camera feed ──────────────────────────────────────────────────
           MobileScanner(controller: _controller, onDetect: _onDetect),
-          // Overlay cutout
-          _ScanOverlay(borderColor: cs.primary),
-          // Bottom hint
+
+          // ── Scan-area overlay (hidden in manual mode) ─────────────────────
+          if (!_manualMode) _ScanOverlay(),
+
+          // ── System-chrome: back + torch ───────────────────────────────────
+          SafeArea(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.flash_on_outlined, color: Colors.white),
+                  onPressed: _controller.toggleTorch,
+                  tooltip: 'Toggle torch',
+                ),
+              ],
+            ),
+          ),
+
+          // ── Bottom panel ──────────────────────────────────────────────────
           Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              margin: const EdgeInsets.all(24),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(12),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _manualMode
+                  ? _ManualEntryPanel(
+                      key:       const ValueKey('manual'),
+                      controller: _manualCtrl,
+                      onConfirm:  _confirmManual,
+                      onCancel:   () => setState(() {
+                        _manualMode = false;
+                        _manualCtrl.clear();
+                      }),
+                    )
+                  : _ScanBottomBar(
+                      key:         const ValueKey('scan'),
+                      zoom:        _zoom,
+                      onZoomOut:   () {
+                        final z = (_zoom - 0.15).clamp(0.0, 1.0);
+                        setState(() => _zoom = z);
+                        _controller.setZoomScale(z);
+                      },
+                      onZoomIn:    () {
+                        final z = (_zoom + 0.15).clamp(0.0, 1.0);
+                        setState(() => _zoom = z);
+                        _controller.setZoomScale(z);
+                      },
+                      onManualTap: () => setState(() => _manualMode = true),
+                    ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Bottom bar ────────────────────────────────────────────────────────────────
+
+class _ScanBottomBar extends StatelessWidget {
+  final double       zoom;
+  final VoidCallback onZoomOut;
+  final VoidCallback onZoomIn;
+  final VoidCallback onManualTap;
+
+  const _ScanBottomBar({
+    super.key,
+    required this.zoom,
+    required this.onZoomOut,
+    required this.onZoomIn,
+    required this.onManualTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // zoom 0.0–1.0 → display as e.g. "1.0×" … "3.0×"  (linear 1–3×)
+    final displayZoom = 1.0 + zoom * 2.0;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+          24, 40, 24, 24 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end:   Alignment.topCenter,
+          colors: [Colors.black87, Colors.transparent],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Zoom split-pill ───────────────────────────────────────────────
+          Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color:        Colors.white.withAlpha(20),
+              borderRadius: BorderRadius.circular(22),
+              border:       Border.all(color: Colors.white24),
+            ),
+            child: Row(children: [
+              // − button
+              Expanded(
+                child: GestureDetector(
+                  onTap: onZoomOut,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Center(
+                    child: Icon(Icons.remove, color: Colors.white, size: 18),
+                  ),
+                ),
               ),
-              child: const Text(
-                'Point the camera at the Matter device QR code',
-                style: TextStyle(color: Colors.white, fontSize: 13),
-                textAlign: TextAlign.center,
+              // Divider + zoom label
+              Container(
+                width: 1,
+                height: 20,
+                color: Colors.white24,
+              ),
+              SizedBox(
+                width: 56,
+                child: Center(
+                  child: Text(
+                    '${displayZoom.toStringAsFixed(1)}×',
+                    style: const TextStyle(
+                      color:      Colors.white,
+                      fontSize:   13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 20,
+                color: Colors.white24,
+              ),
+              // + button
+              Expanded(
+                child: GestureDetector(
+                  onTap: onZoomIn,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Center(
+                    child: Icon(Icons.add, color: Colors.white, size: 18),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Enter manually pill ───────────────────────────────────────────
+          GestureDetector(
+            onTap: onManualTap,
+            child: Container(
+              height: 52,
+              decoration: BoxDecoration(
+                color:        Colors.white.withAlpha(24),
+                borderRadius: BorderRadius.circular(26),
+                border:       Border.all(color: Colors.white24),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.keyboard_outlined, size: 18, color: Colors.white70),
+                  SizedBox(width: 10),
+                  Text('Enter code manually',
+                      style: TextStyle(
+                          color: Colors.white, fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                ],
               ),
             ),
           ),
         ],
       ),
-      ),
     );
   }
 }
 
-class _ScanOverlay extends StatelessWidget {
-  final Color borderColor;
-  const _ScanOverlay({required this.borderColor});
+// ── Manual entry panel ────────────────────────────────────────────────────────
+
+class _ManualEntryPanel extends StatelessWidget {
+  final TextEditingController controller;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _ManualEntryPanel({
+    super.key,
+    required this.controller,
+    required this.onConfirm,
+    required this.onCancel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const cutout = 240.0;
-    return CustomPaint(
-      painter: _OverlayPainter(borderColor: borderColor, cutoutSize: cutout),
-      child: const SizedBox.expand(),
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottom),
+      decoration: BoxDecoration(
+        color:        Colors.grey.shade900.withAlpha(240),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow:    [BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 20)],
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Handle bar
+        Container(
+          width: 36, height: 4,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color:        Colors.white24,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+
+        TextField(
+          controller:      controller,
+          autofocus:       true,
+          keyboardType:    TextInputType.number,
+          textAlign:       TextAlign.center,
+          inputFormatters: [_ManualCodeFormatter()],
+          style: const TextStyle(color: Colors.white, fontFamily: 'monospace',
+              fontSize: 15),
+          decoration: InputDecoration(
+            hintText:  '1234-567-8910',
+            hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+            filled:    true,
+            fillColor: Colors.white10,
+            border:    OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide:   BorderSide(color: Colors.white24, width: 1.5)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide:   BorderSide(color: Colors.white24, width: 1.5)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide:   BorderSide(color: Colors.white60, width: 1.5)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => onConfirm(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Confirm — white filled pill
+        GestureDetector(
+          onTap: onConfirm,
+          child: Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              color:        Colors.white.withAlpha(230),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: const Center(
+              child: Text('Confirm',
+                  style: TextStyle(
+                      color: Colors.black87,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // Cancel — ghost pill
+        GestureDetector(
+          onTap: onCancel,
+          child: Container(
+            width: double.infinity,
+            height: 44,
+            decoration: BoxDecoration(
+              color:        Colors.white.withAlpha(20),
+              borderRadius: BorderRadius.circular(22),
+              border:       Border.all(color: Colors.white24, width: 1.5),
+            ),
+            child: const Center(
+              child: Text('Cancel',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }
 
-class _OverlayPainter extends CustomPainter {
-  final Color borderColor;
-  final double cutoutSize;
+// ── Scan overlay ──────────────────────────────────────────────────────────────
 
-  const _OverlayPainter({required this.borderColor, required this.cutoutSize});
+class _ScanOverlay extends StatelessWidget {
+  const _ScanOverlay();
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _OverlayPainter(cutoutSize: 240),
+        child: const SizedBox.expand(),
+      );
+}
+
+class _OverlayPainter extends CustomPainter {
+  final double cutoutSize;
+  const _OverlayPainter({required this.cutoutSize});
+
+  static const double _radius = 22.0;   // matches _kCardShape in device_card.dart
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black.withAlpha(140);
     final cutoutRect = Rect.fromCenter(
       center: Offset(size.width / 2, size.height / 2 - 40),
-      width: cutoutSize,
-      height: cutoutSize,
+      width: cutoutSize, height: cutoutSize,
     );
+    final rRect = RRect.fromRectAndRadius(
+        cutoutRect, const Radius.circular(_radius));
 
+    // ── Scrim outside the cutout ──────────────────────────────────────────
     canvas.drawPath(
       Path.combine(
         PathOperation.difference,
         Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
-        Path()
-          ..addRRect(
-              RRect.fromRectAndRadius(cutoutRect, const Radius.circular(12))),
+        Path()..addRRect(rRect),
       ),
-      paint,
+      Paint()..color = Colors.black.withAlpha(210),
     );
 
-    // Corner brackets
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    const len = 24.0;
-    final r = cutoutRect;
-
-    for (final (dx, dy) in [
-      (r.left, r.top),
-      (r.right, r.top),
-      (r.left, r.bottom),
-      (r.right, r.bottom),
-    ]) {
-      final sx = dx == r.left ? 1.0 : -1.0;
-      final sy = dy == r.top ? 1.0 : -1.0;
-      canvas.drawLine(Offset(dx, dy), Offset(dx + sx * len, dy), borderPaint);
-      canvas.drawLine(Offset(dx, dy), Offset(dx, dy + sy * len), borderPaint);
-    }
+    // ── White rounded-rect border (matches home-screen tile style) ────────
+    canvas.drawRRect(
+      rRect,
+      Paint()
+        ..color       = Colors.white
+        ..strokeWidth = 1.5
+        ..style       = PaintingStyle.stroke,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant CustomPainter _) => false;
+}
+
+// ── Manual pairing code formatter ─────────────────────────────────────────────
+//
+// Spec §5.1.4: 11-digit decimal code (XXXXX-XXXXXX).
+// Digits beyond 11 are discarded.  A single dash is inserted after digit 5.
+// The commissioner must receive raw digits — _confirmManual strips the dash.
+
+class _ManualCodeFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .substring(0, newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length
+            .clamp(0, 11));
+
+    if (digits.isEmpty) return TextEditingValue.empty;
+
+    final formatted = digits.length > 5
+        ? '${digits.substring(0, 5)}-${digits.substring(5)}'
+        : digits;
+
+    return TextEditingValue(
+      text:      formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }

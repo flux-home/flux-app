@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -8,155 +6,161 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/commission_models.dart';
-import '../../models/matter_device.dart';
 import '../../models/wifi_network.dart';
+import '../../providers/commissioning_controller.dart';
 import '../../providers/device_provider.dart';
 import '../../services/matter_port.dart';
 import '../../services/qr_payload_service.dart';
 import '../../services/thread_settings_service.dart';
+import '../../services/wifi_scan_service.dart';
 import '../widgets/dot_matrix_painter.dart';
 import '../widgets/section_label.dart';
 import 'qr_payload_detail_screen.dart';
 import 'qr_scanner_screen.dart';
 
-// ── Commissioning method ──────────────────────────────────────────────────
-enum _CommissionMethod { ble, ip }
-
 class CommissionScreen extends StatefulWidget {
-  const CommissionScreen({super.key});
+  /// When provided the screen skips the form and starts commissioning immediately.
+  final String? initialPayload;
+  const CommissionScreen({super.key, this.initialPayload});
 
   @override
   State<CommissionScreen> createState() => _CommissionScreenState();
 }
 
 class _CommissionScreenState extends State<CommissionScreen> {
-  // ── Mode ──────────────────────────────────────────────────────────────────
+  // ── UI-only state ─────────────────────────────────────────────────────────
   bool _expertMode = false;
 
-  // ── Form state ────────────────────────────────────────────────────────────
-  final _threadCtrl  = TextEditingController();
-  final _ssidCtrl    = TextEditingController();
-  final _passCtrl    = TextEditingController();
-  final _ipCtrl      = TextEditingController();
-  final _discCtrl    = TextEditingController();
-  final _pinCtrl     = TextEditingController();
-  final _formKey     = GlobalKey<FormState>();
+  // Form state — method / network type are initialised from the parsed payload
+  // but can be overridden by the user in expert mode.
+  CommissionMethod _method  = CommissionMethod.ble;
+  int              _netType = 0; // 0 = Thread, 1 = Wi-Fi, 2 = None
 
-  String? _rawPayload;           // QR or manual code string
-  ParsedPayload? _parsed;        // info extracted from the code
-  bool _parsing = false;         // waiting for parsePayload call
-  String? _parseError;           // last parse error
-
-  _CommissionMethod _method = _CommissionMethod.ble;
-
-  // Network: 0 = Thread, 1 = Wi-Fi, 2 = None
-  int _netType = 0;
   bool _showThreadDataset = false;
   bool _showPassword      = false;
 
-  // ── Live log state ────────────────────────────────────────────────────────
-  bool _commissioning  = false;
-  final List<_LogEntry> _log = [];
-  final _logScrollCtrl = ScrollController();
-  StreamSubscription<String>? _eventSub;
-  bool _commissionDone   = false;
-  bool _commissionFailed = false;
+  // ── Form controllers ───────────────────────────────────────────────────────
+  final _threadCtrl = TextEditingController();
+  final _ssidCtrl   = TextEditingController();
+  final _passCtrl   = TextEditingController();
+  final _ipCtrl     = TextEditingController();
+  final _discCtrl   = TextEditingController();
+  final _pinCtrl    = TextEditingController();
+  final _formKey    = GlobalKey<FormState>();
 
-  // ── Simple-mode commissioning timer ───────────────────────────────────────
-  Timer?  _elapsedTimer;
-  double  _elapsed = 0.0;
+  // ── Log scroll controller ─────────────────────────────────────────────────
+  final _rawLogScrollCtrl = ScrollController();
 
-  // ── Simple-mode WiFi auto-detect ──────────────────────────────────────────
-  // (removed — simple mode auto-commissions immediately after scan)
+  // ── Commissioning controller ──────────────────────────────────────────────
+  late CommissioningController _ctrl;
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+
+    _ctrl = CommissioningController(
+      port:                 context.read<MatterCommissionPort>(),
+      provider:             context.read<DeviceProvider>(),
+      requestBlePermissions: _requestBlePermissions,
+      onNeedsCredentials:   _credentialCallback,
+      threadDataset:        () => _threadCtrl.text,
+    );
+    _ctrl.addListener(_onControllerChanged);
+
+    // Pre-fill Thread dataset from stored settings.
     ThreadSettingsService.load().then((ds) {
       if (mounted) _threadCtrl.text = ds;
     });
-    // Restore the last scanned payload so the user doesn't have to re-scan.
-    QrPayloadService.load().then((saved) {
-      if (saved != null && mounted) _setPayload(saved, autoCommission: false);
-    });
+
+    if (widget.initialPayload != null) {
+      // Opened from the camera — start immediately, no form shown.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _setPayload(widget.initialPayload!, autoStart: true);
+      });
+    } else {
+      // Restore the last scanned payload so the user doesn't have to re-scan.
+      QrPayloadService.load().then((saved) {
+        if (saved != null && mounted) _setPayload(saved, autoStart: false);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _ctrl.removeListener(_onControllerChanged);
+    _ctrl.dispose();
     _threadCtrl.dispose();
     _ssidCtrl.dispose();
     _passCtrl.dispose();
     _ipCtrl.dispose();
     _discCtrl.dispose();
     _pinCtrl.dispose();
-    _logScrollCtrl.dispose();
-    _eventSub?.cancel();
-    _elapsedTimer?.cancel();
+    _rawLogScrollCtrl.dispose();
     super.dispose();
   }
 
-  // ── Payload handling ──────────────────────────────────────────────────────
+  // ── Controller listener ────────────────────────────────────────────────────
 
-  Future<void> _setPayload(String raw, {bool autoCommission = true}) async {
-    setState(() {
-      _rawPayload  = raw;
-      _parsed      = null;
-      _parseError  = null;
-      _parsing     = true;
-    });
-
-    final result = await context.read<MatterCommissionPort>().parsePayload(raw);
-
-    if (!mounted) return;
-    if (result == null) {
-      setState(() {
-        _parsing    = false;
-        _parseError = 'Could not parse payload';
+  void _onControllerChanged() {
+    // Auto-scroll expert log to bottom on every new raw entry.
+    if (_expertMode && _rawLogScrollCtrl.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_rawLogScrollCtrl.hasClients) {
+          _rawLogScrollCtrl.animateTo(
+            _rawLogScrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+          );
+        }
       });
+    }
+    setState(() {});
+  }
+
+  // ── Credential callback (injected into controller) ────────────────────────
+
+  Future<CommissionCredentials?> _credentialCallback() async {
+    final confirmed = await _collectWifiCredentials();
+    if (confirmed) {
+      return CommissionCredentials.wifi(_ssidCtrl.text.trim(), _passCtrl.text);
+    }
+    final threadHex = _threadCtrl.text.trim();
+    if (threadHex.isNotEmpty) {
+      return CommissionCredentials.thread(threadHex);
+    }
+    return null;
+  }
+
+  // ── Payload handling ───────────────────────────────────────────────────────
+
+  Future<void> _setPayload(String raw, {bool autoStart = false}) async {
+    await _ctrl.setPayload(raw, autoStart: autoStart);
+    if (!mounted) return;
+
+    // Handle navigation when autoStart commissioning completes successfully.
+    if (_ctrl.phase == CommissionPhase.done && _ctrl.result != null) {
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (mounted) context.pushReplacement('/device/${_ctrl.result!.id}');
       return;
     }
 
-    // Auto-select commissioning method from discoveryCapabilities.
-    // Manual pairing codes carry no capability flags — default to BLE since
-    // most unboxed devices are first commissioned over Bluetooth.
-    final method = (result.prefersBle || result.capabilitiesUnknown)
-        ? _CommissionMethod.ble
-        : _CommissionMethod.ip;
+    // Pre-fill form fields from the parsed payload.
+    final p = _ctrl.parsed;
+    if (p != null) {
+      setState(() {
+        _method  = CommissioningController.suggestMethod(p);
+        _netType = CommissioningController.suggestNetType(p, threadDataset: _threadCtrl.text);
 
-    // Auto-select network type:
-    // ON_NETWORK devices are already on the network — no credentials needed.
-    // In simple mode prefer Thread when a dataset is stored; otherwise Wi-Fi.
-    // In expert mode default to Wi-Fi so the user can see and change it.
-    final netType = result.hasOnNetwork
-        ? 2 // None — device is already on the network
-        : (!_expertMode && _threadCtrl.text.trim().isNotEmpty)
-            ? 0 // Thread — simple mode, dataset available
-            : 1; // Wi-Fi
-
-    // Pre-fill discriminator + PIN so IP commissioning works without the user
-    // having to re-type them.  Manual pairing codes only carry the upper 4 bits
-    // of the discriminator (hasShortDiscriminator = true); that value cannot be
-    // used as a full 12-bit discriminator for IP/mDNS commissioning, so we
-    // leave the field empty in that case and let the user fill it in.
-    if (!result.hasShortDiscriminator && result.discriminator > 0) {
-      _discCtrl.text = result.discriminator.toString();
-    } else {
-      _discCtrl.clear();
+        if (!p.hasShortDiscriminator && p.discriminator > 0) {
+          _discCtrl.text = p.discriminator.toString();
+        } else {
+          _discCtrl.clear();
+        }
+        if (p.setupPinCode > 0) _pinCtrl.text = p.setupPinCode.toString();
+      });
     }
-    if (result.setupPinCode > 0) _pinCtrl.text = result.setupPinCode.toString();
-
-    setState(() {
-      _parsed   = result;
-      _parsing  = false;
-      _method   = method;
-      _netType  = netType;
-    });
-
-    // In simple mode: start commissioning immediately after a successful parse.
-    if (autoCommission && !_expertMode && _parsed != null) _commission();
-
-    // Persist so the screen restores after an app restart.
-    await QrPayloadService.save(raw);
   }
 
   // ── QR scan ───────────────────────────────────────────────────────────────
@@ -190,8 +194,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     final permanent = results.values.any((s) => s.isPermanentlyDenied);
 
     if (denied && mounted) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(permanent
             ? 'Bluetooth permissions permanently denied — open Settings.'
             : 'Bluetooth permissions are required for BLE commissioning.'),
@@ -204,156 +207,72 @@ class _CommissionScreenState extends State<CommissionScreen> {
     return true;
   }
 
-  // ── Name generation ───────────────────────────────────────────────────────
-
-  /// Generates a unique device name from the parsed payload.
-  /// Uses suggestedName (vendor-based) and appends " 2", " 3", … if a device
-  /// with that name already exists in the fabric.
-  String _generateName(List<String> existingNames) {
-    final base = _parsed?.suggestedName ?? 'Matter Device';
-    if (!existingNames.contains(base)) return base;
-    for (int i = 2; i <= 99; i++) {
-      final candidate = '$base $i';
-      if (!existingNames.contains(candidate)) return candidate;
-    }
-    return '$base ${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  // ── Elapsed timer (simple mode) ───────────────────────────────────────────
-
-  void _startElapsedTimer() {
-    _elapsed = 0.0;
-    _elapsedTimer?.cancel();
-    _elapsedTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (mounted) setState(() => _elapsed += 0.1);
-    });
-  }
-
-  void _stopElapsedTimer() {
-    _elapsedTimer?.cancel();
-    _elapsedTimer = null;
-  }
-
-  // ── Simple-mode reset and re-scan ────────────────────────────────────────
+  // ── Reset and re-scan ─────────────────────────────────────────────────────
 
   Future<void> _resetAndScan() async {
-    _eventSub?.cancel();
-    _eventSub = null;
-    _stopElapsedTimer();
-    setState(() {
-      _commissioning    = false;
-      _commissionDone   = false;
-      _commissionFailed = false;
-      _rawPayload       = null;
-      _parsed           = null;
-      _parseError       = null;
-      _log.clear();
-    });
+    _ctrl.reset();
     await _scanQr();
   }
 
-  // ── Commission ────────────────────────────────────────────────────────────
+  // ── WiFi credential collection ────────────────────────────────────────────
 
-  Future<void> _commission() async {
-    // When retrying from the log screen the form widget is no longer in the
-    // tree, so currentState is null.  Skip validation in that case — the data
-    // was already validated on the first attempt.
-    if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
-    if (_rawPayload == null) return;
-
-    if (_method == _CommissionMethod.ble) {
-      if (!await _requestBlePermissions()) return;
-    }
-    if (!mounted) return;
-
-    final provider = context.read<DeviceProvider>();
-    final name     = _generateName(provider.devices.map((d) => d.name).toList());
-
-    _log.clear();
-    setState(() {
-      _commissioning    = true;
-      _commissionDone   = false;
-      _commissionFailed = false;
-    });
-    if (!_expertMode) _startElapsedTimer();
-    _eventSub = context.read<MatterCommissionPort>().commissionEvents.listen(
-      (event) {
-        _LogLevel lvl = _LogLevel.info;
-        if (event.startsWith('✓') || event.startsWith('🎉')) lvl = _LogLevel.success;
-        if (event.startsWith('✗')) lvl = _LogLevel.error;
-        if (event.startsWith('🔍') || event.startsWith('▶'))  lvl = _LogLevel.step;
-        _appendLog(event, level: lvl);
-      },
+  Future<bool> _collectWifiCredentials() async {
+    if (!mounted) return false;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.grey.shade900.withAlpha(240),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _WifiCredentialPanel(
+        ssidCtrl: _ssidCtrl,
+        passCtrl: _passCtrl,
+        onConfirm: () => Navigator.pop(sheetCtx, true),
+      ),
     );
-    _appendLog('Commissioning "$name"…', level: _LogLevel.step);
-
-    MatterDevice? device;
-
-    if (_method == _CommissionMethod.ip) {
-      device = await provider.commissionViaIp(
-        ipAddress:    _ipCtrl.text.trim(),
-        discriminator: int.tryParse(_discCtrl.text) ?? (_parsed?.discriminator ?? 3840),
-        setupPinCode: int.tryParse(_pinCtrl.text) ?? 20202021,
-        deviceName:   name,
-        room:         'Unassigned',
-      );
-    } else {
-      switch (_netType) {
-        case 0: // Thread
-          device = await provider.commissionDevice(
-            _rawPayload!, name, 'Unassigned',
-            threadDatasetHex: _threadCtrl.text.replaceAll(RegExp(r'\s'), ''),
-          );
-        case 1: // Wi-Fi
-          device = await provider.commissionDevice(
-            _rawPayload!, name, 'Unassigned',
-            wifiSsid:     _ssidCtrl.text.trim(),
-            wifiPassword: _passCtrl.text,
-          );
-        default: // None
-          device = await provider.commissionDevice(_rawPayload!, name, 'Unassigned');
-      }
-    }
-
-    await _eventSub?.cancel();
-    _eventSub = null;
-    if (!mounted) return;
-    if (!_expertMode) _stopElapsedTimer();
-
-    if (device != null) {
-      setState(() => _commissionDone = true);
-      await QrPayloadService.clear(); // commissioned — don't restore this payload again
-      await Future.delayed(const Duration(milliseconds: 700));
-      if (mounted) context.pushReplacement('/device/${device.id}');
-    } else {
-      setState(() => _commissionFailed = true);
-      _appendLog(provider.errorMessage ?? 'Commissioning failed',
-          level: _LogLevel.error);
-    }
+    return confirmed == true;
   }
 
-  // ── Log helpers ───────────────────────────────────────────────────────────
+  // ── Commission ─────────────────────────────────────────────────────────────
 
-  void _appendLog(String msg, {_LogLevel level = _LogLevel.info}) {
+  Future<void> _commission() async {
+    // When retrying, the form widget may not be in the tree — skip validation.
+    if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
+    if (_ctrl.rawPayload == null) return;
+
+    await _ctrl.start(CommissionConfig(
+      method:           _method,
+      netType:          _netType,
+      threadDatasetHex: _threadCtrl.text.trim(),
+      wifiSsid:         _ssidCtrl.text.trim(),
+      wifiPassword:     _passCtrl.text,
+      ipAddress:        _ipCtrl.text.trim(),
+      discriminator:    int.tryParse(_discCtrl.text) ?? 3840,
+      setupPinCode:     int.tryParse(_pinCtrl.text) ?? 20202021,
+    ));
+
     if (!mounted) return;
-    setState(() => _log.add(_LogEntry(message: msg, level: level,
-        time: TimeOfDay.now())));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logScrollCtrl.hasClients) {
-        _logScrollCtrl.animateTo(
-          _logScrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    if (_ctrl.phase == CommissionPhase.done && _ctrl.result != null) {
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (mounted) context.pushReplacement('/device/${_ctrl.result!.id}');
+    }
   }
 
   // ── Mode toggle button ────────────────────────────────────────────────────
 
   Widget _modeToggleButton() => IconButton(
-    icon: Icon(_expertMode ? Icons.view_compact_outlined : Icons.tune),
-    tooltip: _expertMode ? 'Simple view' : 'Expert view',
+    icon: Icon(
+      _expertMode ? Icons.close : Icons.bug_report_outlined,
+      size: 18,
+      color: _ctrl.phase == CommissionPhase.failed && !_expertMode
+          ? const Color(0xFFE53935)
+          : _expertMode
+              ? Theme.of(context).colorScheme.onSurface
+              : Theme.of(context).colorScheme.onSurface.withAlpha(80),
+    ),
+    tooltip: _expertMode ? 'Hide debug log' : 'Show debug log',
     onPressed: () => setState(() => _expertMode = !_expertMode),
   );
 
@@ -361,11 +280,11 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_commissioning) {
-      return _expertMode
-          ? _buildLogScreen(context)
-          : _buildSimpleCommissioningScreen(context);
-    }
+    final inProgress = _ctrl.phase == CommissionPhase.running
+        || _ctrl.phase == CommissionPhase.done
+        || _ctrl.phase == CommissionPhase.failed;
+
+    if (inProgress) return _buildProgressScreen(context);
     return _expertMode
         ? _buildExpertFormScreen(context)
         : _buildSimpleFormScreen(context);
@@ -375,217 +294,271 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   Widget _buildSimpleFormScreen(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Matter Device'),
-        actions: [_modeToggleButton()],
-      ),
+      appBar: AppBar(title: const Text('Add Matter Device')),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 48),
-          child: OutlinedButton.icon(
-            onPressed: _parsing ? null : _scanQr,
-            icon: _parsing
-                ? const SizedBox(
-                    width: 22, height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.qr_code_scanner, size: 28),
-            label: const Text('Scan QR code', style: TextStyle(fontSize: 16)),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(56),
-            ),
+        child: _ctrl.parsing
+            ? const CircularProgressIndicator()
+            : Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 48),
+                child: FilledButton.icon(
+                  onPressed: _scanQr,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Open camera'),
+                ),
+              ),
+      ),
+    );
+  }
+
+  // ── Progress screen ────────────────────────────────────────────────────────
+
+  Widget _buildProgressScreen(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final bool done   = _ctrl.phase == CommissionPhase.done;
+    final bool failed = _ctrl.phase == CommissionPhase.failed;
+    final bool busy   = _ctrl.phase == CommissionPhase.running;
+
+    return PopScope(
+      canPop: !busy,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final cancel = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Cancel commissioning?'),
+            content: const Text(
+                'The device will not be added and any partial state will be reverted.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep going')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Cancel')),
+            ],
           ),
+        );
+        if ((cancel ?? false) && mounted) _ctrl.reset();
+      },
+      child: Scaffold(
+        backgroundColor: cs.surface,
+        appBar: AppBar(
+          title: const Text('Adding Device'),
+          automaticallyImplyLeading: false,
+          leading: failed
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _ctrl.reset,
+                )
+              : null,
+          actions: [_modeToggleButton()],
         ),
-      ),
-    );
-  }
-
-  // ── Simple commissioning screen ───────────────────────────────────────────
-
-  Widget _buildSimpleCommissioningScreen(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    final String statusText = _commissionDone
-        ? 'Done'
-        : _commissionFailed
-            ? (_log.isNotEmpty ? _log.last.message : 'Failed')
-            : (_log.isNotEmpty ? _log.last.message : 'Starting…');
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Matter Device'),
-        automaticallyImplyLeading: false,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-
-                    // ── Dot-matrix elapsed time / result ──────────────
-                    if (!_commissionDone && !_commissionFailed) ...[
-                      SizedBox(
+        body: _expertMode
+            ? _buildRawLogScreen(context, cs, busy)
+            : Column(children: [
+                Expanded(
+                  child: _buildProgressTrack(
+                    context, cs, busy,
+                    _ctrl.humanLog.isEmpty ? -1 : _ctrl.humanLog.length - 1,
+                  ),
+                ),
+                if (done) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                    child: Column(children: [
+                      Icon(Icons.check_circle_rounded,
+                          size: 48, color: const Color(0xFF34A853)),
+                      const SizedBox(height: 10),
+                      Text('Device added',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: const Color(0xFF34A853),
+                              fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ] else if (failed) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    child: GestureDetector(
+                      onTap: _resetAndScan,
+                      child: Container(
                         width: double.infinity,
-                        height: 96,
-                        child: CustomPaint(
-                          painter: DotMatrixPainter(
-                            text: _elapsed.toStringAsFixed(1),
-                            litColor: Colors.white,
-                            dimColor: Colors.white12,
-                          ),
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color:        Colors.white.withAlpha(230),
+                          borderRadius: BorderRadius.circular(26),
+                        ),
+                        child: const Center(
+                          child: Text('Scan again',
+                              style: TextStyle(
+                                  color:      Colors.black87,
+                                  fontSize:   15,
+                                  fontWeight: FontWeight.w600)),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        statusText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                          color: cs.onSurfaceVariant,
-                          letterSpacing: 0.3,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ] else if (_commissionDone) ...[
-                      Icon(Icons.check_circle_outline,
-                          size: 64, color: const Color(0xFF34A853)),
-                    ] else ...[
-                      Icon(Icons.error_outline,
-                          size: 64, color: cs.error),
-                      const SizedBox(height: 16),
-                      Text(
-                        statusText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                          color: cs.onSurfaceVariant,
-                          letterSpacing: 0.3,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // ── Single restart button (shown on failure) ──────────────────
-          if (_commissionFailed)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: OutlinedButton.icon(
-                onPressed: _resetAndScan,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Scan QR code'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                ),
-              ),
-            ),
-        ],
+                    ),
+                  ),
+                ],
+              ]),
       ),
     );
   }
 
-  // ── Log screen (expert commissioning) ────────────────────────────────────
+  // ── Progress track ────────────────────────────────────────────────────────
 
-  Widget _buildLogScreen(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final (IconData icon, Color color, String title) = _commissionDone
-        ? (Icons.check_circle_outline, const Color(0xFF34A853), 'Complete')
-        : _commissionFailed
-            ? (Icons.error_outline, cs.error, 'Failed')
-            : (Icons.settings_outlined, cs.primary, 'Commissioning…');
+  static const double _kActiveWordH = 44.0;
+  static const double _kOtherWordH  = 32.0;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Matter Device'),
-        automaticallyImplyLeading: false,
-        leading: _commissionFailed
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => setState(() {
-                  _commissioning    = false;
-                  _commissionFailed = false;
-                }),
-              )
-            : null,
-      ),
-      body: Column(
+  static double _slotH(String text, {required bool active}) {
+    final words = text.trim().split(' ').where((w) => w.isNotEmpty).toList();
+    final n = words.isEmpty ? 1 : words.length;
+    return n * (active ? _kActiveWordH : _kOtherWordH);
+  }
+
+  Widget _buildProgressTrack(
+    BuildContext context,
+    ColorScheme cs,
+    bool busy,
+    int lastHumanIdx,
+  ) {
+    final humanLog = _ctrl.humanLog;
+    final slots    = <int, ({String text, Color? color})>{};
+
+    for (int i = 0; i < humanLog.length; i++) {
+      final d = lastHumanIdx - i;
+      slots[d] = (text: humanLog[i].text, color: humanLog[i].color);
+    }
+
+    if (busy) {
+      final nextIdx  = _ctrl.stageIdx + 1;
+      int futureDist = 1;
+      for (int s = nextIdx; s < kCommissionStages.length; s++) {
+        final human = kCommissionStageHuman[kCommissionStages[s]]
+            ?? kCommissionStages[s].toUpperCase();
+        slots.putIfAbsent(-futureDist, () => (text: human, color: null));
+        futureDist++;
+      }
+      slots.putIfAbsent(0, () => (text: '', color: null));
+    }
+
+    if (slots.isEmpty) return const Center(child: SizedBox.shrink());
+
+    final dists = slots.keys.toList()..sort((a, b) => b.compareTo(a));
+    final items = [for (final d in dists) (text: slots[d]!.text, color: slots[d]!.color, dist: d)];
+
+    final activeIdx = items.indexWhere((it) => it.dist == 0);
+    if (activeIdx < 0) return const Center(child: SizedBox.shrink());
+
+    double yBeforeActive = 0;
+    for (int i = 0; i < activeIdx; i++) {
+      yBeforeActive += _slotH(items[i].text, active: false);
+    }
+    final activeH   = _slotH(items[activeIdx].text, active: true);
+    final activeMid = yBeforeActive + activeH / 2;
+
+    final column = OverflowBox(
+      alignment: Alignment.topLeft,
+      minHeight: 0,
+      maxHeight: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-            child: Row(children: [
-              _commissionDone || _commissionFailed
-                  ? Icon(icon, color: color, size: 32)
-                  : SizedBox(
-                      width: 32, height: 32,
-                      child: CircularProgressIndicator(strokeWidth: 3, color: color)),
-              const SizedBox(width: 14),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold, color: color)),
-                  if (_log.isNotEmpty)
-                    Text(_log.last.message,
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: cs.onSurfaceVariant),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              )),
-            ]),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              controller: _logScrollCtrl,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _log.length,
-              itemBuilder: (_, i) => _LogRow(
-                entry: _log[i],
-                isActive: i == _log.length - 1 && !_commissionDone && !_commissionFailed,
-              ),
-            ),
-          ),
-          if (_commissionFailed)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => setState(() {
-                      _commissioning = false; _commissionFailed = false;
-                    }),
-                    child: const Text('Back'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      // Cancel any stale event subscription before retrying so
-                      // we don't get duplicate log lines from a previous attempt.
-                      _eventSub?.cancel();
-                      _eventSub = null;
-                      _commission();
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ),
-              ]),
+          for (final item in items)
+            _GlyphLogLine(
+              text:           item.text,
+              distFromActive: item.dist,
+              overrideColor:  item.color,
             ),
         ],
       ),
+    );
+
+    return LayoutBuilder(builder: (_, constraints) {
+      final screenH  = constraints.maxHeight;
+      final offsetY  = screenH / 2 - activeMid;
+      final fadeSize = screenH * 0.28;
+
+      return ClipRect(
+        child: Stack(children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: offsetY),
+            duration: const Duration(milliseconds: 480),
+            curve: Curves.easeOutCubic,
+            child: column,
+            builder: (_, animY, child) => Transform.translate(
+              offset: Offset(0, animY),
+              child: child,
+            ),
+          ),
+          Positioned(top: 0, left: 0, right: 0, height: fadeSize,
+            child: IgnorePointer(child: Container(
+              decoration: BoxDecoration(gradient: LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [cs.surface, cs.surface.withAlpha(0)],
+              )),
+            )),
+          ),
+          Positioned(bottom: 0, left: 0, right: 0, height: fadeSize,
+            child: IgnorePointer(child: Container(
+              decoration: BoxDecoration(gradient: LinearGradient(
+                begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                colors: [cs.surface, cs.surface.withAlpha(0)],
+              )),
+            )),
+          ),
+        ]),
+      );
+    });
+  }
+
+  // ── Expert raw log ─────────────────────────────────────────────────────────
+
+  Widget _buildRawLogScreen(BuildContext context, ColorScheme cs, bool busy) {
+    return ListView.builder(
+      controller:  _rawLogScrollCtrl,
+      padding:     const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      itemCount:   _ctrl.rawLog.length,
+      itemBuilder: (_, i) {
+        final entry    = _ctrl.rawLog[i];
+        final isSuccess = entry.level == LogLevel.success;
+        final isError   = entry.level == LogLevel.error;
+
+        final Color msgColor = switch (entry.level) {
+          LogLevel.success => cs.onSurfaceVariant,
+          LogLevel.error   => cs.onSurfaceVariant,
+          LogLevel.step    => cs.onSurface,
+          LogLevel.info    => cs.onSurfaceVariant,
+        };
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5),
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize:   11,
+                height:     1.5,
+                color:      msgColor,
+              ),
+              children: [
+                TextSpan(text: entry.message),
+                if (isSuccess)
+                  const TextSpan(
+                    text:  ' — success',
+                    style: TextStyle(color: Color(0xFF34A853)),
+                  ),
+                if (isError)
+                  TextSpan(
+                    text:  ' — failed',
+                    style: TextStyle(color: Color(0xFFE53935)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -607,34 +580,34 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
               // ── Step 1: Scan / Enter code ─────────────────────────────
               _PayloadEntry(
-                onScan:         _scanQr,
-                onCodeEntered:  _setPayload,
-                parsed:         _parsed,
-                rawPayload:     _rawPayload,
-                parsing:        _parsing,
-                parseError:     _parseError,
-                onViewDetails: _rawPayload != null && _parsed != null
+                onScan:        _scanQr,
+                onCodeEntered: _setPayload,
+                parsed:        _ctrl.parsed,
+                rawPayload:    _ctrl.rawPayload,
+                parsing:       _ctrl.parsing,
+                parseError:    _ctrl.parseError,
+                onViewDetails: _ctrl.rawPayload != null && _ctrl.parsed != null
                     ? () => context.push('/qr-detail',
                           extra: QrPayloadDetailArgs(
-                            rawPayload: _rawPayload!,
-                            parsed:     _parsed!,
+                            rawPayload: _ctrl.rawPayload!,
+                            parsed:     _ctrl.parsed!,
                           ))
                     : null,
               ),
 
-              // ── Method toggle (shown when both methods are available) ──────
-              if (_parsed != null &&
-                  _parsed!.canUseBle && _parsed!.canUseIp) ...[
+              // ── Method toggle ─────────────────────────────────────────
+              if (_ctrl.parsed != null &&
+                  _ctrl.parsed!.canUseBle && _ctrl.parsed!.canUseIp) ...[
                 const SizedBox(height: 16),
-                SegmentedButton<_CommissionMethod>(
+                SegmentedButton<CommissionMethod>(
                   segments: const [
                     ButtonSegment(
-                      value: _CommissionMethod.ble,
+                      value: CommissionMethod.ble,
                       icon:  Icon(Icons.bluetooth, size: 16),
                       label: Text('BLE'),
                     ),
                     ButtonSegment(
-                      value: _CommissionMethod.ip,
+                      value: CommissionMethod.ip,
                       icon:  Icon(Icons.lan_outlined, size: 16),
                       label: Text('IP'),
                     ),
@@ -645,25 +618,25 @@ class _CommissionScreenState extends State<CommissionScreen> {
               ],
 
               // ── Step 2: Network credentials (BLE only) ────────────────
-              if (_parsed != null && _method == _CommissionMethod.ble) ...[
+              if (_ctrl.parsed != null && _method == CommissionMethod.ble) ...[
                 const SizedBox(height: 20),
                 const SectionLabel('Network', style: SectionLabelStyle.prominent),
                 const SizedBox(height: 10),
                 _NetworkSection(
-                  netType:              _netType,
-                  threadCtrl:           _threadCtrl,
-                  ssidCtrl:             _ssidCtrl,
-                  passCtrl:             _passCtrl,
-                  showThreadDataset:    _showThreadDataset,
-                  showPassword:         _showPassword,
-                  onNetTypeChanged:     (v) => setState(() => _netType = v),
-                  onShowDatasetChanged: (v) => setState(() => _showThreadDataset = v),
-                  onShowPasswordChanged:(v) => setState(() => _showPassword = v),
+                  netType:               _netType,
+                  threadCtrl:            _threadCtrl,
+                  ssidCtrl:              _ssidCtrl,
+                  passCtrl:              _passCtrl,
+                  showThreadDataset:     _showThreadDataset,
+                  showPassword:          _showPassword,
+                  onNetTypeChanged:      (v) => setState(() => _netType = v),
+                  onShowDatasetChanged:  (v) => setState(() => _showThreadDataset = v),
+                  onShowPasswordChanged: (v) => setState(() => _showPassword = v),
                 ),
               ],
 
-              // ── IP fields (IP method) ─────────────────────────────────
-              if (_parsed != null && _method == _CommissionMethod.ip) ...[
+              // ── IP fields ─────────────────────────────────────────────
+              if (_ctrl.parsed != null && _method == CommissionMethod.ip) ...[
                 const SizedBox(height: 20),
                 const SectionLabel('IP commissioning', style: SectionLabelStyle.prominent),
                 const SizedBox(height: 10),
@@ -682,9 +655,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
                     controller: _discCtrl,
                     decoration: InputDecoration(
                       labelText: 'Discriminator',
-                      hintText: _parsed?.hasShortDiscriminator == true
+                      hintText: _ctrl.parsed?.hasShortDiscriminator == true
                           ? 'Unknown — manual codes only carry 4 bits'
-                          : '${_parsed?.discriminator ?? 3840}',
+                          : '${_ctrl.parsed?.discriminator ?? 3840}',
                       border: const OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
@@ -702,14 +675,14 @@ class _CommissionScreenState extends State<CommissionScreen> {
                 ]),
               ],
 
-              // ── Commission button ─────────────────────────────────────
+              // ── Commission button ──────────────────────────────────────
               const SizedBox(height: 28),
               FilledButton.icon(
-                onPressed: _rawPayload != null && _parsed != null && !_parsing
+                onPressed: _ctrl.rawPayload != null && _ctrl.parsed != null && !_ctrl.parsing
                     ? _commission
                     : null,
                 icon: const Icon(Icons.add_link),
-                label: Text(_method == _CommissionMethod.ble
+                label: Text(_method == CommissionMethod.ble
                     ? 'Commission via BLE'
                     : 'Commission via IP'),
               ),
@@ -729,13 +702,13 @@ class _CommissionScreenState extends State<CommissionScreen> {
 enum _EntryMode { qr, manual }
 
 class _PayloadEntry extends StatefulWidget {
-  final VoidCallback          onScan;
-  final ValueChanged<String>  onCodeEntered;
-  final ParsedPayload?        parsed;
-  final String?               rawPayload;
-  final bool                  parsing;
-  final String?               parseError;
-  final VoidCallback?         onViewDetails;
+  final VoidCallback                        onScan;
+  final Future<void> Function(String)       onCodeEntered;
+  final ParsedPayload?                      parsed;
+  final String?                             rawPayload;
+  final bool                                parsing;
+  final String?                             parseError;
+  final VoidCallback?                       onViewDetails;
 
   const _PayloadEntry({
     required this.onScan,
@@ -754,9 +727,7 @@ class _PayloadEntry extends StatefulWidget {
 class _PayloadEntryState extends State<_PayloadEntry> {
   _EntryMode _mode = _EntryMode.qr;
 
-  // QR tab: free-text field for pasting MT:… payloads
   final _qrCtrl     = TextEditingController();
-  // Manual tab: numeric code (auto-formatted as XXXXX-XXXXXX)
   final _manualCtrl = TextEditingController();
 
   @override
@@ -766,17 +737,12 @@ class _PayloadEntryState extends State<_PayloadEntry> {
     super.dispose();
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  /// Strips any non-digit characters from a formatted manual code.
   static String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
   void _submitManual() {
     final d = _digits(_manualCtrl.text);
     if (d.length == 11) widget.onCodeEntered(d);
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -785,7 +751,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Mode selector ────────────────────────────────────────────────
         SegmentedButton<_EntryMode>(
           segments: const [
             ButtonSegment(
@@ -803,17 +768,11 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           onSelectionChanged: (s) => setState(() => _mode = s.first),
         ),
         const SizedBox(height: 16),
-
-        // ── QR tab ───────────────────────────────────────────────────────
-        if (_mode == _EntryMode.qr) _buildQrTab(context, cs),
-
-        // ── Manual tab ───────────────────────────────────────────────────
+        if (_mode == _EntryMode.qr)     _buildQrTab(context, cs),
         if (_mode == _EntryMode.manual) _buildManualTab(context, cs),
       ],
     );
   }
-
-  // ── QR tab ────────────────────────────────────────────────────────────────
 
   Widget _buildQrTab(BuildContext context, ColorScheme cs) {
     final scanned   = widget.parsed != null;
@@ -822,7 +781,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Scan button
         OutlinedButton.icon(
           onPressed: widget.onScan,
           icon: widget.parsing
@@ -830,9 +788,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
                   width: 18, height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2))
               : Icon(
-                  scanned
-                      ? Icons.check_circle_outline
-                      : Icons.qr_code_scanner,
+                  scanned ? Icons.check_circle_outline : Icons.qr_code_scanner,
                   color: scanColor),
           label: Text(scanned ? 'QR scanned ✓' : 'Scan QR code',
               style: TextStyle(color: scanColor)),
@@ -842,7 +798,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           ),
         ),
 
-        // QR thumbnail + details link
         if (scanned && widget.rawPayload != null) ...[
           const SizedBox(height: 14),
           Row(
@@ -880,7 +835,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           ),
         ],
 
-        // "or paste" divider
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 10),
           child: Row(children: [
@@ -893,15 +847,14 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           ]),
         ),
 
-        // MT:… paste field
         TextField(
           controller: _qrCtrl,
           decoration: InputDecoration(
-            labelText: 'Setup payload string',
-            hintText:  'MT:Y.K9042C00KA0648G00',
+            labelText:  'Setup payload string',
+            hintText:   'MT:Y.K9042C00KA0648G00',
             prefixIcon: const Icon(Icons.content_paste_outlined),
-            border: const OutlineInputBorder(),
-            errorText: widget.parseError,
+            border:     const OutlineInputBorder(),
+            errorText:  widget.parseError,
             suffixIcon: _qrCtrl.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
@@ -931,32 +884,27 @@ class _PayloadEntryState extends State<_PayloadEntry> {
     );
   }
 
-  // ── Manual code tab ───────────────────────────────────────────────────────
-
   Widget _buildManualTab(BuildContext context, ColorScheme cs) {
-    final digits = _digits(_manualCtrl.text);
-    final ready  = digits.length == 11;
+    final digits   = _digits(_manualCtrl.text);
+    final ready    = digits.length == 11;
     final hasError = widget.parseError != null && !widget.parsing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Description
         Text(
           'Enter the 11-digit code printed on the device or its packaging.',
           style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
-
-        // Numeric input
         TextField(
           controller: _manualCtrl,
           decoration: InputDecoration(
-            labelText: 'Pairing code',
-            hintText:  '12345-678901',
-            prefixIcon: const Icon(Icons.dialpad_outlined),
-            border: const OutlineInputBorder(),
-            errorText: hasError ? widget.parseError : null,
+            labelText:   'Pairing code',
+            hintText:    '12345-678901',
+            prefixIcon:  const Icon(Icons.dialpad_outlined),
+            border:      const OutlineInputBorder(),
+            errorText:   hasError ? widget.parseError : null,
             counterText: '${digits.length}/11',
             suffixIcon: _manualCtrl.text.isNotEmpty
                 ? IconButton(
@@ -967,25 +915,22 @@ class _PayloadEntryState extends State<_PayloadEntry> {
                     })
                 : null,
           ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [_ManualCodeFormatter()],
+          keyboardType:     TextInputType.number,
+          inputFormatters:  [_ManualCodeFormatter()],
           style: const TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
+            fontFamily:    'monospace',
+            fontSize:      22,
+            fontWeight:    FontWeight.w600,
             letterSpacing: 4,
           ),
           textAlign: TextAlign.center,
           onChanged: (v) {
             setState(() {});
-            // Auto-submit when all 11 digits are filled.
             if (_digits(v).length == 11) _submitManual();
           },
           onSubmitted: (_) => _submitManual(),
         ),
         const SizedBox(height: 12),
-
-        // Parse / status row
         if (widget.parsing)
           const Center(
             child: Padding(
@@ -997,21 +942,17 @@ class _PayloadEntryState extends State<_PayloadEntry> {
             ),
           )
         else if (widget.parsed != null) ...[
-          Row(
-            children: [
-              Icon(Icons.check_circle_outline,
-                  size: 18, color: const Color(0xFF34A853)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Code recognised — '
-                  '${widget.parsed!.suggestedName}',
-                  style: const TextStyle(
-                      fontSize: 13, color: Color(0xFF34A853)),
-                ),
+          Row(children: [
+            Icon(Icons.check_circle_outline,
+                size: 18, color: const Color(0xFF34A853)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Code recognised — ${widget.parsed!.suggestedName}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF34A853)),
               ),
-            ],
-          ),
+            ),
+          ]),
         ] else if (ready && !widget.parsing) ...[
           FilledButton.tonal(
             onPressed: _submitManual,
@@ -1029,23 +970,20 @@ class _ManualCodeFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
-    // Keep only digits, cap at 11.
     final digits = newValue.text
         .replaceAll(RegExp(r'[^0-9]'), '')
         .substring(0, newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length
             .clamp(0, 11));
     if (digits.isEmpty) return TextEditingValue.empty;
-    // Insert dash after 5th digit.
     final formatted = digits.length > 5
         ? '${digits.substring(0, 5)}-${digits.substring(5)}'
         : digits;
     return TextEditingValue(
-      text: formatted,
+      text:      formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Network credentials section
@@ -1079,10 +1017,9 @@ class _NetworkSection extends StatefulWidget {
 }
 
 class _NetworkSectionState extends State<_NetworkSection> {
-  List<WifiNetwork> _networks = [];
-  bool _loadingNetworks = false;
-  // null = nothing picked yet (user can still type freely)
-  WifiNetwork? _selected;
+  List<WifiNetwork> _networks       = [];
+  bool              _loadingNetworks = false;
+  WifiNetwork?      _selected;
 
   @override
   void initState() {
@@ -1093,7 +1030,6 @@ class _NetworkSectionState extends State<_NetworkSection> {
   @override
   void didUpdateWidget(_NetworkSection old) {
     super.didUpdateWidget(old);
-    // Start loading when the user switches to Wi-Fi tab
     if (widget.netType == 1 && old.netType != 1 && _networks.isEmpty) {
       _loadNetworks();
     }
@@ -1101,35 +1037,29 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
   Future<void> _loadNetworks() async {
     if (_loadingNetworks) return;
+    setState(() => _loadingNetworks = true);
 
-    // Android requires ACCESS_FINE_LOCATION at runtime to read Wi-Fi scan results.
-    final locStatus = await Permission.locationWhenInUse.request();
-    if (!locStatus.isGranted) {
-      if (mounted) {
-        final permanent = locStatus.isPermanentlyDenied;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(permanent
-              ? 'Location permission permanently denied — open Settings to enable Wi-Fi scanning.'
-              : 'Location permission is required to scan for Wi-Fi networks.'),
-          action: permanent
-              ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
-              : null,
-        ));
-      }
+    final result = await context.read<WifiScanService>().scan();
+    if (!mounted) return;
+
+    if (result.permissionDenied) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result.permanentlyDenied
+            ? 'Location permission permanently denied — open Settings to enable Wi-Fi scanning.'
+            : 'Location permission is required to scan for Wi-Fi networks.'),
+        action: result.permanentlyDenied
+            ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
+            : null,
+      ));
       setState(() => _loadingNetworks = false);
       return;
     }
 
-    setState(() => _loadingNetworks = true);
-    final nets = await context.read<MatterCommissionPort>().scanWifiNetworks();
-    if (!mounted) return;
     setState(() {
-      _networks        = nets;
+      _networks        = result.networks;
       _loadingNetworks = false;
-      // Auto-select the currently connected network if the SSID field is empty
-      if (_selected == null && widget.ssidCtrl.text.isEmpty) {
-        final connected = nets.where((n) => n.isConnected).firstOrNull;
-        if (connected != null) _pickNetwork(connected);
+      if (_selected == null && widget.ssidCtrl.text.isEmpty && result.autoSelected != null) {
+        _pickNetwork(result.autoSelected!);
       }
     });
   }
@@ -1218,7 +1148,6 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
             // ── Wi-Fi ──────────────────────────────────────────────────
             if (widget.netType == 1) ...[
-              // Network dropdown
               DropdownButtonFormField<String>(
                 value: _selected?.ssid,
                 decoration: InputDecoration(
@@ -1263,7 +1192,6 @@ class _NetworkSectionState extends State<_NetworkSection> {
                     (v == null || v.isEmpty) ? 'Select a network' : null,
               ),
               const SizedBox(height: 10),
-              // Password field
               TextFormField(
                 controller: widget.passCtrl,
                 decoration: InputDecoration(
@@ -1299,91 +1227,290 @@ class _NetworkSectionState extends State<_NetworkSection> {
 // ── Wi-Fi signal icon ─────────────────────────────────────────────────────────
 
 class _WifiSignalIcon extends StatelessWidget {
-  final int   bars;  // 0–4
+  final int   bars;
   final Color color;
   const _WifiSignalIcon({required this.bars, required this.color});
 
   @override
   Widget build(BuildContext context) {
     final icon = switch (bars) {
-      4      => Icons.wifi,
-      3      => Icons.wifi,
+      4 || 3 => Icons.wifi,
       2      => Icons.wifi_2_bar,
       1      => Icons.wifi_1_bar,
       _      => Icons.wifi_off_outlined,
     };
-    // bars 4/3 share the same icon; use opacity to show strength
     final opacity = bars >= 3 ? 1.0 : bars == 2 ? 0.75 : 0.5;
     return Icon(icon, size: 18, color: color.withOpacity(opacity));
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Log row
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Glyph log line ────────────────────────────────────────────────────────────
 
-enum _LogLevel { step, info, success, error }
+class _GlyphLogLine extends StatelessWidget {
+  final String    text;
+  final LogLevel? level;
+  final Color?    overrideColor;
+  final int       distFromActive;
 
-class _LogEntry {
-  final String _message;
-  final _LogLevel _level;
-  final TimeOfDay _time;
-  String get message => _message;
-  _LogLevel get level => _level;
-  TimeOfDay get time => _time;
-  _LogEntry({required String message, required _LogLevel level, required TimeOfDay time})
-      : _message = message, _level = level, _time = time;
-}
+  const _GlyphLogLine({
+    required this.text,
+    required this.distFromActive,
+    this.level,
+    this.overrideColor,
+    super.key,
+  });
 
-class _LogRow extends StatelessWidget {
-  final _LogEntry entry;
-  final bool      isActive;
-  const _LogRow({required this.entry, required this.isActive});
+  static const double _activeWordH = 44.0;
+  static const double _otherWordH  = 32.0;
+  static const double _activeTextH = 32.0;
+  static const double _otherTextH  = 22.0;
+
+  bool   get _isActive => distFromActive == 0;
+  double get _wordH    => _isActive ? _activeWordH : _otherWordH;
+  double get _textH    => _isActive ? _activeTextH : _otherTextH;
+
+  List<String> get _words {
+    final ws = text.trim().split(' ').where((w) => w.isNotEmpty).toList();
+    return ws.isEmpty ? [''] : ws;
+  }
+
+  double get _opacity {
+    final d = distFromActive.abs();
+    return switch (d) {
+      0 => 1.00,
+      1 => 0.45,
+      2 => 0.18,
+      3 => 0.07,
+      _ => 0.03,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final Color color = switch (entry.level) {
-      _LogLevel.success => const Color(0xFF34A853),
-      _LogLevel.error   => cs.error,
-      _LogLevel.step    => cs.primary,
-      _LogLevel.info    => cs.onSurfaceVariant,
-    };
-    final Widget leadingIcon = isActive
-        ? SizedBox(width: 14, height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary))
-        : Icon(
-            switch (entry.level) {
-              _LogLevel.success => Icons.check_circle,
-              _LogLevel.error   => Icons.cancel,
-              _LogLevel.step    => Icons.play_circle_outline,
-              _LogLevel.info    => Icons.info_outline,
-            },
-            size: 14, color: color);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(padding: const EdgeInsets.only(top: 2, right: 8), child: leadingIcon),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(fontFamily: 'monospace', height: 1.5),
-                children: [
-                  TextSpan(
-                    text: '${entry.time.format(context)}  ',
-                    style: TextStyle(color: cs.onSurfaceVariant.withAlpha(120), fontSize: 10)),
-                  TextSpan(text: entry.message,
-                      style: TextStyle(color: color, fontSize: 12)),
-                ],
+    final Color baseColor = overrideColor ?? (level == null
+        ? cs.onSurface
+        : switch (level!) {
+            LogLevel.success => const Color(0xFF34A853),
+            LogLevel.error   => cs.error,
+            LogLevel.step    => cs.onSurface,
+            LogLevel.info    => cs.onSurfaceVariant,
+          });
+
+    final Color litColor = baseColor.withOpacity(_opacity);
+    final Color dimColor = litColor.withAlpha(12);
+    final words = _words;
+
+    return SizedBox(
+      height: words.length * _wordH,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (final word in words)
+              SizedBox(
+                height: _wordH,
+                child: Center(
+                  child: SizedBox(
+                    height: _textH,
+                    width: double.infinity,
+                    child: word.isEmpty
+                        ? null
+                        : CustomPaint(
+                            painter: DotMatrixPainter(
+                              text:     word,
+                              litColor: litColor,
+                              dimColor: dimColor,
+                            ),
+                          ),
+                  ),
+                ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── WiFi credential panel ─────────────────────────────────────────────────────
+
+class _WifiCredentialPanel extends StatefulWidget {
+  final TextEditingController ssidCtrl;
+  final TextEditingController passCtrl;
+  final VoidCallback          onConfirm;
+
+  const _WifiCredentialPanel({
+    required this.ssidCtrl,
+    required this.passCtrl,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_WifiCredentialPanel> createState() => _WifiCredentialPanelState();
+}
+
+class _WifiCredentialPanelState extends State<_WifiCredentialPanel> {
+  bool              _showPassword    = false;
+  bool              _loadingNetworks = true;
+  List<WifiNetwork> _networks        = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _scanNetworks();
+  }
+
+  Future<void> _scanNetworks() async {
+    final result = await context.read<WifiScanService>().scan();
+    if (!mounted) return;
+    setState(() {
+      _networks        = result.networks;
+      _loadingNetworks = false;
+      if (widget.ssidCtrl.text.isEmpty && result.autoSelected != null) {
+        widget.ssidCtrl.text = result.autoSelected!.ssid;
+      }
+    });
+  }
+
+  static InputDecoration _fieldDeco(String hint, {Widget? suffix}) => InputDecoration(
+    hintText:  hint,
+    hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+    filled:    true,
+    fillColor: Colors.white10,
+    border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide:   const BorderSide(color: Colors.white24, width: 1.5)),
+    enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide:   const BorderSide(color: Colors.white24, width: 1.5)),
+    focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide:   const BorderSide(color: Colors.white60, width: 1.5)),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    suffixIcon: suffix,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottom),
+      decoration: BoxDecoration(
+        color:        Colors.grey.shade900.withAlpha(240),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow:    [BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 20)],
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 36, height: 4,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+              color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+        ),
+
+        // ── SSID ──────────────────────────────────────────────────────────
+        if (_loadingNetworks)
+          Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color:        Colors.white10,
+              borderRadius: BorderRadius.circular(22),
+              border:       Border.all(color: Colors.white24, width: 1.5),
+            ),
+            child: const Center(
+              child: SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 1.5, color: Colors.white38)),
+            ),
+          )
+        else if (_networks.isEmpty)
+          TextField(
+            controller:      widget.ssidCtrl,
+            autofocus:       true,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            decoration:      _fieldDeco('Network name (SSID)'),
+            textInputAction: TextInputAction.next,
+          )
+        else
+          DropdownButtonFormField<String>(
+            value: _networks.any((n) => n.ssid == widget.ssidCtrl.text)
+                ? widget.ssidCtrl.text
+                : null,
+            hint: const Text('Select network',
+                style: TextStyle(color: Colors.white38, fontSize: 14)),
+            dropdownColor: Colors.grey.shade900,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            icon: const Icon(Icons.expand_more, color: Colors.white38),
+            decoration: _fieldDeco(''),
+            isExpanded: true,
+            items: _networks.map((n) => DropdownMenuItem(
+              value: n.ssid,
+              child: Row(children: [
+                Icon(
+                  n.rssi > -60 ? Icons.wifi : n.rssi > -75 ? Icons.wifi_2_bar : Icons.wifi_1_bar,
+                  size: 16, color: n.isConnected ? Colors.white70 : Colors.white38,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(n.ssid,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: n.isConnected ? Colors.white : Colors.white70))),
+                if (n.isConnected)
+                  const Text(' ✓',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+              ]),
+            )).toList(),
+            onChanged: (v) {
+              if (v != null) {
+                widget.ssidCtrl.text = v;
+                setState(() {});
+              }
+            },
+          ),
+
+        const SizedBox(height: 10),
+
+        // ── Password ───────────────────────────────────────────────────────
+        TextField(
+          controller:    widget.passCtrl,
+          obscureText:   !_showPassword,
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+          decoration: _fieldDeco('Password', suffix: IconButton(
+            icon: Icon(
+              _showPassword ? Icons.visibility_off : Icons.visibility,
+              color: Colors.white38, size: 20),
+            onPressed: () => setState(() => _showPassword = !_showPassword),
+          )),
+          textInputAction: TextInputAction.done,
+          onSubmitted:     (_) => widget.onConfirm(),
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Connect ────────────────────────────────────────────────────────
+        GestureDetector(
+          onTap: widget.onConfirm,
+          child: Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              color:        Colors.white.withAlpha(230),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: const Center(
+              child: Text('Connect',
+                  style: TextStyle(
+                      color:      Colors.black87,
+                      fontSize:   15,
+                      fontWeight: FontWeight.w600)),
             ),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }

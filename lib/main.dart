@@ -7,6 +7,7 @@ import 'router.dart';
 import 'services/device_store.dart';
 import 'services/matter_channel.dart';
 import 'services/matter_port.dart';
+import 'services/wifi_scan_service.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -28,6 +29,9 @@ Future<void> main() async {
         Provider<MatterCommissionPort>.value(value: channel),
         Provider<MatterClusterPort>.value(value: channel),
         Provider<MatterFabricPort>.value(value: channel),
+        Provider<WifiScanService>(
+          create: (ctx) => WifiScanService(ctx.read<MatterCommissionPort>()),
+        ),
         ChangeNotifierProvider(create: (_) => DeviceProvider(store, channel)),
       ],
       child: const MatterHomeApp(),
@@ -41,7 +45,7 @@ class MatterHomeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Flux',
+      title: 'Flux Home',
       debugShowCheckedModeBanner: false,
       theme:      buildAppTheme(brightness: Brightness.light),
       darkTheme:  buildAppTheme(brightness: Brightness.dark),
