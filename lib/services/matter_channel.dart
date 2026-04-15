@@ -21,9 +21,9 @@ import 'matter_port.dart';
 /// ([MatterSubscriptionPort], [MatterCommissionPort], [MatterClusterPort],
 /// [MatterFabricPort]) and be tested with fakes.
 class MatterChannel implements MatterPort {
-  static const _method       = MethodChannel('com.example.matter_home/matter');
-  static const _events       = EventChannel('com.example.matter_home/commission_events');
-  static const _deviceEvents = EventChannel('com.example.matter_home/device_state');
+  static const _method       = MethodChannel('com.fluxhome.app/matter');
+  static const _events       = EventChannel('com.fluxhome.app/commission_events');
+  static const _deviceEvents = EventChannel('com.fluxhome.app/device_state');
 
   // ── Internal helper ────────────────────────────────────────────────────────
 
@@ -162,6 +162,41 @@ class MatterChannel implements MatterPort {
   Future<bool> setLevel(int nodeId, int level) =>
       _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
 
+  // ── Window Covering ────────────────────────────────────────────────────────
+
+  @override
+  Future<bool> coveringUp(int nodeId) =>
+      _invoke('coveringUp', false, args: {'nodeId': nodeId});
+
+  @override
+  Future<bool> coveringDown(int nodeId) =>
+      _invoke('coveringDown', false, args: {'nodeId': nodeId});
+
+  @override
+  Future<bool> coveringStop(int nodeId) =>
+      _invoke('coveringStop', false, args: {'nodeId': nodeId});
+
+  @override
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths) =>
+      _invoke('coveringGoToLift', false,
+          args: {'nodeId': nodeId, 'percent100ths': percent100ths});
+
+  // ── Fan Control ────────────────────────────────────────────────────────────
+
+  @override
+  Future<bool> setFanMode(int nodeId, int mode) =>
+      _invoke('setFanMode', false, args: {'nodeId': nodeId, 'mode': mode});
+
+  @override
+  Future<bool> setFanPercent(int nodeId, int percent) =>
+      _invoke('setFanPercent', false, args: {'nodeId': nodeId, 'percent': percent});
+
+  // ── Color Control ──────────────────────────────────────────────────────────
+
+  @override
+  Future<bool> setColorTemperature(int nodeId, int mireds) =>
+      _invoke('setColorTemperature', false, args: {'nodeId': nodeId, 'mireds': mireds});
+
   // ── Basic information ──────────────────────────────────────────────────────
 
   /// Reads the BasicInformation cluster (0x0028) from EP0.
@@ -209,14 +244,29 @@ class MatterChannel implements MatterPort {
       _invoke<ThermostatState?>('readThermostat', null, args: {'nodeId': nodeId},
           decode: (raw) {
             if (raw == null) return null;
-            final map = Map<String, int>.from(raw as Map<Object?, Object?>);
-            int? orNull(int v) => v == -32768 || v == -2147483648 ? null : v;
+            // Use int? map — Kotlin sends null for attributes not present on the
+            // device, and Map<String,int>.from() would silently drop those entries.
+            final raw2 = raw as Map<Object?, Object?>;
+            int? get(String key) {
+              final v = raw2[key];
+              if (v == null) return null;
+              final i = (v as num).toInt();
+              return (i == -32768 || i == -2147483648) ? null : i;
+            }
             return ThermostatState(
-              localTempCenti:    orNull(map['localTemp']    ?? -32768),
-              heatingSetptCenti: orNull(map['heatingSetpoint'] ?? -32768),
-              coolingSetptCenti: orNull(map['coolingSetpoint'] ?? -32768),
-              systemMode:        map['systemMode']      == -1 ? null : map['systemMode'],
-              controlSequence:   map['controlSequence'] == -1 ? null : map['controlSequence'],
+              localTempCenti:       get('localTemp'),
+              heatingSetptCenti:    get('heatingSetpoint'),
+              coolingSetptCenti:    get('coolingSetpoint'),
+              systemMode:           get('systemMode'),
+              controlSequence:      get('controlSequence'),
+              minHeatSetptCenti:    get('minHeatSetpt'),
+              maxHeatSetptCenti:    get('maxHeatSetpt'),
+              minCoolSetptCenti:    get('minCoolSetpt'),
+              maxCoolSetptCenti:    get('maxCoolSetpt'),
+              absMinHeatSetptCenti: get('absMinHeatSetpt'),
+              absMaxHeatSetptCenti: get('absMaxHeatSetpt'),
+              absMinCoolSetptCenti: get('absMinCoolSetpt'),
+              absMaxCoolSetptCenti: get('absMaxCoolSetpt'),
             );
           });
 
@@ -313,6 +363,18 @@ class MatterChannel implements MatterPort {
           decode: (raw) => (raw as List<dynamic>?)
                   ?.map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>))
                   .toList() ?? []);
+
+  @override
+  Future<void> provideCredentials({
+    String? ssid,
+    String? password,
+    String? threadDatasetHex,
+  }) =>
+      _invoke<void>('provideCredentials', null, args: {
+        if (ssid             != null) 'ssid':             ssid,
+        if (password         != null) 'password':         password,
+        if (threadDatasetHex != null) 'threadDatasetHex': threadDatasetHex,
+      });
 
   @override
   Future<bool> shareDevice(int nodeId) =>

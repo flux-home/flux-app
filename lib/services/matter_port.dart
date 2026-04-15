@@ -1,5 +1,5 @@
-import '../models/basic_info.dart';
-import '../models/commission_models.dart';
+import 'dart:typed_data';
+import '../models/basic_info.dart';import '../models/commission_models.dart';
 import '../models/network_diagnostics.dart';
 import '../models/thermostat_models.dart';
 import '../models/thread_models.dart';
@@ -43,6 +43,14 @@ abstract interface class MatterCommissionPort {
   });
 
   Future<List<WifiNetwork>> scanWifiNetworks();
+
+  /// Responds to a CREDENTIALS_NEEDED event emitted during BLE commissioning.
+  /// Pass [ssid]+[password] for WiFi, [threadDatasetHex] for Thread, or all null to cancel.
+  Future<void> provideCredentials({
+    String? ssid,
+    String? password,
+    String? threadDatasetHex,
+  });
 }
 
 /// Per-device cluster reads, attribute writes, and control commands.
@@ -59,6 +67,13 @@ abstract interface class MatterClusterPort {
 
   Future<bool> toggleDevice(int nodeId, {required bool on});
   Future<bool> setLevel(int nodeId, int level);
+  Future<bool> coveringUp(int nodeId);
+  Future<bool> coveringDown(int nodeId);
+  Future<bool> coveringStop(int nodeId);
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths);
+  Future<bool> setFanMode(int nodeId, int mode);
+  Future<bool> setFanPercent(int nodeId, int percent);
+  Future<bool> setColorTemperature(int nodeId, int mireds);
   Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees);
   Future<bool> writeSystemMode(int nodeId, int mode);
   Future<void> identify(int nodeId, {int seconds = 15});
