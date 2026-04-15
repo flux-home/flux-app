@@ -74,7 +74,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
     );
     _ctrl.addListener(_onControllerChanged);
 
-    // Pre-fill Thread dataset from stored settings.
+    // Pre-fill Thread dataset from stored settings, then handle any initial
+    // payload.  Both run after the async load so that _threadExplicitlySelected
+    // is set before suggestNetType is called.
     Future.wait([ThreadSettingsService.loadActive(), ThreadSettingsService.load()]).then((results) {
       if (!mounted) return;
       final active = results[0] as ThreadDataset?;
@@ -84,19 +86,18 @@ class _CommissionScreenState extends State<CommissionScreen> {
         _threadExplicitlySelected = active != null;
         _threadCtrl.text = hex;
       });
-    });
 
-    if (widget.initialPayload != null) {
-      // Opened from the camera — start immediately, no form shown.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _setPayload(widget.initialPayload!, autoStart: true);
-      });
-    } else {
-      // Restore the last scanned payload so the user doesn't have to re-scan.
-      QrPayloadService.load().then((saved) {
-        if (saved != null && mounted) _setPayload(saved);
-      });
-    }
+      if (widget.initialPayload != null) {
+        // Opened from the home-screen camera — start immediately once we know
+        // whether a Thread dataset is configured.
+        _setPayload(widget.initialPayload!, autoStart: true);
+      } else {
+        // Restore the last scanned payload so the user doesn't have to re-scan.
+        QrPayloadService.load().then((saved) {
+          if (saved != null && mounted) _setPayload(saved);
+        });
+      }
+    });
   }
 
   @override
@@ -149,15 +150,8 @@ class _CommissionScreenState extends State<CommissionScreen> {
   // ── Payload handling ───────────────────────────────────────────────────────
 
   Future<void> _setPayload(String raw, {bool autoStart = false}) async {
-    await _ctrl.setPayload(raw, autoStart: autoStart);
+    await _ctrl.setPayload(raw);
     if (!mounted) return;
-
-    // Handle navigation when autoStart commissioning completes successfully.
-    if (_ctrl.phase == CommissionPhase.done && _ctrl.result != null) {
-      await Future<void>.delayed(const Duration(milliseconds: 700));
-      if (mounted) context.pushReplacement('/device/${_ctrl.result!.id}');
-      return;
-    }
 
     // Pre-fill form fields from the parsed payload.
     final p = _ctrl.parsed;
@@ -177,6 +171,17 @@ class _CommissionScreenState extends State<CommissionScreen> {
         }
         if (p.setupPinCode > 0) _pinCtrl.text = p.setupPinCode.toString();
       });
+
+      if (autoStart) {
+        // For autoStart the user never saw the form, so always confirm
+        // Thread credentials before BLE starts.  For Wi-Fi the pre-collection
+        // prompt inside start() already handles the empty-credentials case.
+        if (_netType == 0) {
+          final ok = await _ensureThreadDataset();
+          if (!mounted || !ok) return;
+        }
+        await _commission();
+      }
     }
   }
 
@@ -266,9 +271,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (!mounted) return false;
 
     final picked = await showModalBottomSheet<ThreadDataset>(
-      context:             context,
-      isScrollControlled:  true,
-      builder:             (_) => _ThreadDatasetPromptSheet(datasets: datasets),
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _ThreadDatasetPromptSheet(datasets: datasets),
     );
 
     if (picked == null) return false; // user cancelled → abort
@@ -279,9 +284,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
     if (mounted) {
       setState(() {
-        _activeDataset            = picked;
+        _activeDataset = picked;
         _threadExplicitlySelected = true;
-        _threadCtrl.text          = picked.hex;
+        _threadCtrl.text = picked.hex;
       });
     }
     return true;
@@ -294,9 +299,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
     if (_ctrl.rawPayload == null) return;
 
-    // Pre-flight: if Thread is selected and no dataset is configured, prompt
-    // the user to pick one before opening a BLE connection.
-    if (_netType == 0 && _threadCtrl.text.trim().isEmpty) {
+    // Pre-flight: if Thread is selected and the user has NOT yet explicitly
+    // chosen a dataset (including "Empty dataset"), prompt them to pick one
+    // before opening a BLE connection.
+    if (_netType == 0 && !_threadExplicitlySelected) {
       final ok = await _ensureThreadDataset();
       if (!ok) return; // user cancelled
     }
@@ -1343,51 +1349,57 @@ class _ThreadDatasetHeaderState extends State<_ThreadDatasetHeader> {
 ///
 /// Dismissing without a selection (back / outside tap) returns null.
 class _ThreadDatasetPromptSheet extends StatefulWidget {
-  final List<ThreadDataset> datasets;
   const _ThreadDatasetPromptSheet({required this.datasets});
+  final List<ThreadDataset> datasets;
 
   @override
-  State<_ThreadDatasetPromptSheet> createState() =>
-      _ThreadDatasetPromptSheetState();
+  State<_ThreadDatasetPromptSheet> createState() => _ThreadDatasetPromptSheetState();
 }
 
-class _ThreadDatasetPromptSheetState
-    extends State<_ThreadDatasetPromptSheet> {
-  bool    _loadingAndroid = false;
+class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
+  bool _loadingAndroid = false;
   String? _androidError;
 
   Future<void> _loadFromAndroid() async {
-    setState(() { _loadingAndroid = true; _androidError = null; });
+    setState(() {
+      _loadingAndroid = true;
+      _androidError = null;
+    });
     try {
-      final hex = await context
-          .read<MatterFabricPort>()
-          .readAndroidThreadCredentials();
+      final hex = await context.read<MatterFabricPort>().readAndroidThreadCredentials();
 
       if (!mounted) return;
 
       if (hex == null) {
-        setState(() { _loadingAndroid = false; _androidError = 'Could not contact credential store'; });
+        setState(() {
+          _loadingAndroid = false;
+          _androidError = 'Could not contact credential store';
+        });
         return;
       }
       if (hex.isEmpty) {
         // User cancelled the OS picker — stay on sheet.
-        setState(() { _loadingAndroid = false; });
+        setState(() {
+          _loadingAndroid = false;
+        });
         return;
       }
 
-      final name = ThreadTlvDecoder.networkName(hex) ??
-          hex.substring(0, 8.clamp(0, hex.length));
+      final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
       Navigator.pop(context, ThreadDataset(label: name, hex: hex));
-    } catch (e) {
+    } on Exception catch (e) {
       if (mounted) {
-        setState(() { _loadingAndroid = false; _androidError = e.toString(); });
+        setState(() {
+          _loadingAndroid = false;
+          _androidError = e.toString();
+        });
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final allItems = [ThreadDataset.empty, ...widget.datasets];
 
     return SafeArea(
@@ -1399,11 +1411,10 @@ class _ThreadDatasetPromptSheetState
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: Text('Thread dataset required',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              child: Text(
+                'Thread dataset required',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -1420,19 +1431,19 @@ class _ThreadDatasetPromptSheetState
               final subtitle = ds.isEmpty
                   ? 'No credentials — device joins via MeshCoP'
                   : ds.hex.length > 20
-                      ? '${ds.hex.substring(0, 20)}…'
-                      : ds.hex;
+                  ? '${ds.hex.substring(0, 20)}…'
+                  : ds.hex;
               return ListTile(
-                leading: Icon(
-                  ds.isEmpty ? Icons.memory_outlined : Icons.router_outlined,
-                  color: cs.onSurfaceVariant,
-                ),
+                leading: Icon(ds.isEmpty ? Icons.memory_outlined : Icons.router_outlined, color: cs.onSurfaceVariant),
                 title: Text(ds.label),
-                subtitle: Text(subtitle,
-                    style: TextStyle(
-                        fontFamily: ds.isEmpty ? null : 'monospace',
-                        fontSize: 11,
-                        color: cs.onSurfaceVariant)),
+                subtitle: Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: ds.isEmpty ? null : 'monospace',
+                    fontSize: 11,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
                 onTap: () => Navigator.pop(context, ds),
               );
             }),
@@ -1442,17 +1453,15 @@ class _ThreadDatasetPromptSheetState
             // ── Load from Android ──────────────────────────────────────
             ListTile(
               leading: _loadingAndroid
-                  ? const SizedBox(
-                      width: 24, height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(Icons.android, color: cs.primary),
               title: const Text('Load from Android'),
               subtitle: _androidError != null
-                  ? Text(_androidError!,
-                      style: TextStyle(color: cs.error, fontSize: 11))
-                  : Text('Use a credential stored by another app',
-                      style: TextStyle(
-                          fontSize: 11, color: cs.onSurfaceVariant)),
+                  ? Text(_androidError!, style: TextStyle(color: cs.error, fontSize: 11))
+                  : Text(
+                      'Use a credential stored by another app',
+                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                    ),
               onTap: _loadingAndroid ? null : _loadFromAndroid,
             ),
           ],
@@ -1547,6 +1556,9 @@ class _WifiSignalIcon extends StatelessWidget {
 // ── Glyph log line ────────────────────────────────────────────────────────────
 
 class _GlyphLogLine extends StatelessWidget {
+  // distFromActive drives animation offset in the parent list; the linter
+  // cannot see it is read by the enclosing AnimatedList builder.
+  // ignore: unused_element_parameter
   const _GlyphLogLine({required this.text, required this.distFromActive, this.level, this.overrideColor});
   final String text;
   final LogLevel? level;

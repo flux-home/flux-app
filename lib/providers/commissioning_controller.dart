@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:ui' show Color;
 
+import 'package:flutter/cupertino.dart' show BuildContext;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show BuildContext;
+import 'package:flutter/widgets.dart' show BuildContext;
 
-import '../models/commission_models.dart';
-import '../models/matter_device.dart';
-import '../providers/device_provider.dart';
-import '../services/matter_port.dart';
-import '../services/qr_payload_service.dart';
+import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/qr_payload_service.dart';
 
 // ── Public enums ──────────────────────────────────────────────────────────────
 
@@ -18,71 +21,62 @@ enum CommissionPhase { idle, parsing, parsed, running, done, failed }
 // ── Data classes ──────────────────────────────────────────────────────────────
 
 class CommissionConfig {
+  const CommissionConfig({
+    required this.method,
+    this.netType = 1,
+    this.threadDatasetHex = '',
+    this.wifiSsid = '',
+    this.wifiPassword = '',
+    this.ipAddress = '',
+    this.discriminator = 3840,
+    this.setupPinCode = 20202021,
+  });
   final CommissionMethod method;
-  final int    netType;           // 0 = Thread, 1 = Wi-Fi, 2 = None
+  final int netType; // 0 = Thread, 1 = Wi-Fi, 2 = None
   final String threadDatasetHex;
   final String wifiSsid;
   final String wifiPassword;
   final String ipAddress;
-  final int    discriminator;
-  final int    setupPinCode;
-
-  const CommissionConfig({
-    required this.method,
-    this.netType          = 1,
-    this.threadDatasetHex = '',
-    this.wifiSsid         = '',
-    this.wifiPassword     = '',
-    this.ipAddress        = '',
-    this.discriminator    = 3840,
-    this.setupPinCode     = 20202021,
-  });
+  final int discriminator;
+  final int setupPinCode;
 
   CommissionConfig copyWith({
     CommissionMethod? method,
-    int?    netType,
+    int? netType,
     String? threadDatasetHex,
     String? wifiSsid,
     String? wifiPassword,
     String? ipAddress,
-    int?    discriminator,
-    int?    setupPinCode,
+    int? discriminator,
+    int? setupPinCode,
   }) => CommissionConfig(
-    method:           method           ?? this.method,
-    netType:          netType          ?? this.netType,
+    method: method ?? this.method,
+    netType: netType ?? this.netType,
     threadDatasetHex: threadDatasetHex ?? this.threadDatasetHex,
-    wifiSsid:         wifiSsid         ?? this.wifiSsid,
-    wifiPassword:     wifiPassword     ?? this.wifiPassword,
-    ipAddress:        ipAddress        ?? this.ipAddress,
-    discriminator:    discriminator    ?? this.discriminator,
-    setupPinCode:     setupPinCode     ?? this.setupPinCode,
+    wifiSsid: wifiSsid ?? this.wifiSsid,
+    wifiPassword: wifiPassword ?? this.wifiPassword,
+    ipAddress: ipAddress ?? this.ipAddress,
+    discriminator: discriminator ?? this.discriminator,
+    setupPinCode: setupPinCode ?? this.setupPinCode,
   );
 }
 
 /// Credentials returned by the [CommissioningController.onNeedsCredentials]
 /// callback.  Return null to cancel credential provision (BLE pre-collection
-/// aborts commissioning; CREDENTIALS_NEEDED calls [provideCredentials] with
+/// aborts commissioning; CREDENTIALS_NEEDED calls provideCredentials with
 /// no args so the SDK fails gracefully).
 class CommissionCredentials {
+  const CommissionCredentials({this.wifiSsid, this.wifiPassword, this.threadDatasetHex});
+
+  const CommissionCredentials.wifi(String ssid, String pass)
+    : wifiSsid = ssid,
+      wifiPassword = pass,
+      threadDatasetHex = null;
+
+  const CommissionCredentials.thread(String hex) : wifiSsid = null, wifiPassword = null, threadDatasetHex = hex;
   final String? wifiSsid;
   final String? wifiPassword;
   final String? threadDatasetHex;
-
-  const CommissionCredentials({
-    this.wifiSsid,
-    this.wifiPassword,
-    this.threadDatasetHex,
-  });
-
-  const CommissionCredentials.wifi(String ssid, String pass)
-      : wifiSsid         = ssid,
-        wifiPassword     = pass,
-        threadDatasetHex = null;
-
-  const CommissionCredentials.thread(String hex)
-      : wifiSsid         = null,
-        wifiPassword     = null,
-        threadDatasetHex = hex;
 }
 
 // ── Log types (public — consumed by the progress widgets) ─────────────────────
@@ -90,15 +84,15 @@ class CommissionCredentials {
 enum LogLevel { step, info, success, error }
 
 class LogEntry {
-  final String   message;
-  final LogLevel level;
   const LogEntry({required this.message, required this.level});
+  final String message;
+  final LogLevel level;
 }
 
 class HumanEntry {
+  const HumanEntry({required this.text, this.color});
   final String text;
   final Color? color;
-  const HumanEntry({required this.text, this.color});
 }
 
 // ── Stage constants (public — consumed by _buildProgressTrack) ────────────────
@@ -139,38 +133,38 @@ const List<String> kCommissionStages = [
 ];
 
 const Map<String, String> kCommissionStageHuman = {
-  'ReadCommissioningInfo':                   'READ DEVICE INFO',
-  'ArmFailSafe':                             'SET TIMEOUT',
-  'ConfigRegulatory':                        'SET REGIONAL SETTINGS',
-  'ConfigureTCAcknowledgments':              'TERMS AND CONDITIONS',
-  'ConfigureUTCTime':                        'SYNC TIME/CLOCK',
-  'ScanNetworks':                            'SCAN NETWORKS',
-  'NeedsNetworkCreds':                       'NEED CREDENTIALS',
-  'RequestWiFiCredentials':                  'REQUEST WIFI CREDS',
-  'RequestThreadCredentials':                'REQUEST THREAD CREDS',
-  'SendPAICertificateRequest':               'REQUEST PAI CERTIFICATE',
-  'SendDACCertificateRequest':               'REQUEST DAC CERTIFICATE',
-  'SendAttestationRequest':                  'SEND VERIFICATION',
-  'AttestationVerification':                 'DEVICE VERIFICATION',
-  'AttestationRevocationCheck':              'DCL SECURITY CHECK',
-  'SendOpCertSigningRequest':                'KEY REQUEST',
-  'ValidateCSR':                             'ID CHECK',
-  'GenerateNOCChain':                        'ASSIGN NETWORK ID',
-  'SendTrustedRootCert':                     'ALLOW ACCESS',
-  'SendNOC':                                 'INSTALL ID',
-  'WiFiNetworkSetup':                        'WIFI NETWORK SETUP',
-  'WiFiNetworkEnable':                       'ENABLE WIFI',
-  'ThreadNetworkSetup':                      'THREAD NETWORK SETUP',
-  'ThreadNetworkEnable':                     'ENABLE THREAD',
-  'PrimaryOperationalNetworkFailed':         'NETWORK FAILED',
-  'RemoveWiFiNetworkConfig':                 'REMOVE WIFI CONFIG',
-  'RemoveThreadNetworkConfig':               'REMOVE THREAD CONFIG',
-  'EvictPreviousCaseSessions':               'CLEAR CONNECTION',
-  'FindOperationalForStayActive':            'ICD STAY AWAKE',
-  'ICDSendStayActive':                       'WAKING',
+  'ReadCommissioningInfo': 'READ DEVICE INFO',
+  'ArmFailSafe': 'SET TIMEOUT',
+  'ConfigRegulatory': 'SET REGIONAL SETTINGS',
+  'ConfigureTCAcknowledgments': 'TERMS AND CONDITIONS',
+  'ConfigureUTCTime': 'SYNC TIME/CLOCK',
+  'ScanNetworks': 'SCAN NETWORKS',
+  'NeedsNetworkCreds': 'NEED CREDENTIALS',
+  'RequestWiFiCredentials': 'REQUEST WIFI CREDS',
+  'RequestThreadCredentials': 'REQUEST THREAD CREDS',
+  'SendPAICertificateRequest': 'REQUEST PAI CERTIFICATE',
+  'SendDACCertificateRequest': 'REQUEST DAC CERTIFICATE',
+  'SendAttestationRequest': 'SEND VERIFICATION',
+  'AttestationVerification': 'DEVICE VERIFICATION',
+  'AttestationRevocationCheck': 'DCL SECURITY CHECK',
+  'SendOpCertSigningRequest': 'KEY REQUEST',
+  'ValidateCSR': 'ID CHECK',
+  'GenerateNOCChain': 'ASSIGN NETWORK ID',
+  'SendTrustedRootCert': 'ALLOW ACCESS',
+  'SendNOC': 'INSTALL ID',
+  'WiFiNetworkSetup': 'WIFI NETWORK SETUP',
+  'WiFiNetworkEnable': 'ENABLE WIFI',
+  'ThreadNetworkSetup': 'THREAD NETWORK SETUP',
+  'ThreadNetworkEnable': 'ENABLE THREAD',
+  'PrimaryOperationalNetworkFailed': 'NETWORK FAILED',
+  'RemoveWiFiNetworkConfig': 'REMOVE WIFI CONFIG',
+  'RemoveThreadNetworkConfig': 'REMOVE THREAD CONFIG',
+  'EvictPreviousCaseSessions': 'CLEAR CONNECTION',
+  'FindOperationalForStayActive': 'ICD STAY AWAKE',
+  'ICDSendStayActive': 'WAKING',
   'FindOperationalForCommissioningComplete': 'CHECK ID',
-  'SendComplete':                            'FINALIZING',
-  'Cleanup':                                 'DONE',
+  'SendComplete': 'FINALIZING',
+  'Cleanup': 'DONE',
 };
 
 // ── CommissioningController ────────────────────────────────────────────────────
@@ -184,25 +178,33 @@ const Map<String, String> kCommissionStageHuman = {
 ///   - [requestBlePermissions] — shows OS dialogs, returns true if granted
 ///   - [onNeedsCredentials]    — shows credential sheet, returns creds or null
 class CommissioningController extends ChangeNotifier {
+  CommissioningController({
+    required MatterCommissionPort port,
+    required DeviceProvider provider,
+    required this.requestBlePermissions,
+    required this.onNeedsCredentials,
+    this.threadDataset = _returnEmpty,
+  }) : _port = port,
+       _provider = provider;
   final MatterCommissionPort _port;
-  final DeviceProvider       _provider;
+  final DeviceProvider _provider;
 
-  final Future<bool> Function()                    requestBlePermissions;
-  final Future<CommissionCredentials?> Function()  onNeedsCredentials;
-  final String Function()                          threadDataset;
+  final Future<bool> Function() requestBlePermissions;
+  final Future<CommissionCredentials?> Function() onNeedsCredentials;
+  final String Function() threadDataset;
 
   // ── Public state ──────────────────────────────────────────────────────────
 
-  CommissionPhase  phase      = CommissionPhase.idle;
-  ParsedPayload?   parsed;
-  String?          parseError;
-  bool             parsing    = false;
-  String?          rawPayload;
-  List<LogEntry>   rawLog     = const [];
-  List<HumanEntry> humanLog   = const [];
-  int              stageIdx   = -1;
-  MatterDevice?    result;
-  String?          error;
+  CommissionPhase phase = CommissionPhase.idle;
+  ParsedPayload? parsed;
+  String? parseError;
+  bool parsing = false;
+  String? rawPayload;
+  List<LogEntry> rawLog = const [];
+  List<HumanEntry> humanLog = const [];
+  int stageIdx = -1;
+  MatterDevice? result;
+  String? error;
 
   // ── Private ───────────────────────────────────────────────────────────────
 
@@ -213,58 +215,46 @@ class CommissioningController extends ChangeNotifier {
   /// mismatch and discards its result.
   int _sessionId = 0;
 
-  CommissioningController({
-    required MatterCommissionPort port,
-    required DeviceProvider       provider,
-    required this.requestBlePermissions,
-    required this.onNeedsCredentials,
-    this.threadDataset = _returnEmpty,
-  })  : _port     = port,
-        _provider = provider;
-
   static String _returnEmpty() => '';
 
   // ── setPayload ────────────────────────────────────────────────────────────
 
-  /// Parses [raw] and optionally starts commissioning immediately.
-  /// After this returns the caller should read [parsed], [parseError], and
-  /// [phase] to decide what to show.
-  Future<void> setPayload(String raw, {bool autoStart = false}) async {
+  /// Parses [raw] and updates [parsed] / [parseError] / [phase].
+  /// After this returns the caller should read those fields and decide whether
+  /// to call [start].  Auto-starting from inside the controller is intentionally
+  /// not supported — the widget has the authoritative thread-selected state
+  /// needed to pick the correct network type.
+  Future<void> setPayload(String raw) async {
     rawPayload = raw;
-    parsed     = null;
+    parsed = null;
     parseError = null;
-    parsing    = true;
-    phase      = CommissionPhase.parsing;
+    parsing = true;
+    phase = CommissionPhase.parsing;
     notifyListeners();
 
     final p = await _port.parsePayload(raw);
 
     if (p == null) {
-      parsing    = false;
+      parsing = false;
       parseError = 'Could not parse payload';
-      phase      = CommissionPhase.idle;
+      phase = CommissionPhase.idle;
       notifyListeners();
       return;
     }
 
     parsing = false;
-    parsed  = p;
-    phase   = CommissionPhase.parsed;
+    parsed = p;
+    phase = CommissionPhase.parsed;
     notifyListeners();
 
-    debugPrint('🔍 parsed payload: caps=${p.discoveryCapabilities} '
-        'prefersBle=${p.prefersBle} hasOnNetwork=${p.hasOnNetwork} '
-        'capabilitiesUnknown=${p.capabilitiesUnknown} '
-        '→ method=${suggestMethod(p)} netType=${suggestNetType(p, threadDataset: threadDataset())}');
+    debugPrint(
+      '🔍 parsed payload: caps=${p.discoveryCapabilities} '
+      'prefersBle=${p.prefersBle} hasOnNetwork=${p.hasOnNetwork} '
+      'capabilitiesUnknown=${p.capabilitiesUnknown} '
+      '→ method=${suggestMethod(p)} netType=${suggestNetType(p, threadDataset: threadDataset())}',
+    );
 
     await QrPayloadService.save(raw);
-
-    if (autoStart) {
-      await start(CommissionConfig(
-        method:  suggestMethod(p),
-        netType: suggestNetType(p, threadDataset: threadDataset()),
-      ));
-    }
   }
 
   // ── start ─────────────────────────────────────────────────────────────────
@@ -281,14 +271,14 @@ class CommissioningController extends ChangeNotifier {
       if (!await requestBlePermissions()) return;
     }
 
-    final int sessionId = ++_sessionId;
+    final sessionId = ++_sessionId;
 
-    rawLog   = const [];
+    rawLog = const [];
     humanLog = const [];
     stageIdx = -1;
-    result   = null;
-    error    = null;
-    phase    = CommissionPhase.running;
+    result = null;
+    error = null;
+    phase = CommissionPhase.running;
     notifyListeners();
 
     final name = _generateName(_provider.devices.map((d) => d.name).toList());
@@ -297,7 +287,7 @@ class CommissioningController extends ChangeNotifier {
     _eventSub = _port.commissionEvents.listen(_onEvent);
 
     // Pre-collect Wi-Fi credentials for BLE+WiFi when the form was left empty.
-    CommissionConfig cfg = config;
+    var cfg = config;
     if (config.method == CommissionMethod.ble &&
         config.netType == 1 &&
         config.wifiSsid.isEmpty &&
@@ -307,16 +297,16 @@ class CommissioningController extends ChangeNotifier {
       if (creds == null) {
         await _eventSub?.cancel();
         _eventSub = null;
-        rawLog    = const [];
-        humanLog  = const [];
-        phase     = CommissionPhase.idle;
+        rawLog = const [];
+        humanLog = const [];
+        phase = CommissionPhase.idle;
         notifyListeners();
         return;
       }
       cfg = config.copyWith(
-        wifiSsid:         creds.wifiSsid         ?? '',
-        wifiPassword:     creds.wifiPassword      ?? '',
-        threadDatasetHex: creds.threadDatasetHex  ?? '',
+        wifiSsid: creds.wifiSsid ?? '',
+        wifiPassword: creds.wifiPassword ?? '',
+        threadDatasetHex: creds.threadDatasetHex ?? '',
       );
     }
 
@@ -324,27 +314,31 @@ class CommissioningController extends ChangeNotifier {
 
     if (cfg.method == CommissionMethod.ip) {
       device = await _provider.commissionViaIp(
-        ipAddress:    cfg.ipAddress,
+        ipAddress: cfg.ipAddress,
         discriminator: cfg.discriminator > 0
             ? cfg.discriminator
             : (parsed!.discriminator > 0 ? parsed!.discriminator : 3840),
         setupPinCode: cfg.setupPinCode,
-        deviceName:   name,
-        room:         'Unassigned',
+        deviceName: name,
+        room: 'Unassigned',
       );
     } else {
       switch (cfg.netType) {
         case 0: // Thread
           device = await _provider.commissionDevice(
-            rawPayload!, name, 'Unassigned',
+            rawPayload!,
+            name,
+            'Unassigned',
             threadDatasetHex: cfg.threadDatasetHex.isNotEmpty
                 ? cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '')
                 : threadDataset().replaceAll(RegExp(r'\s'), ''),
           );
         case 1: // Wi-Fi
           device = await _provider.commissionDevice(
-            rawPayload!, name, 'Unassigned',
-            wifiSsid:     cfg.wifiSsid,
+            rawPayload!,
+            name,
+            'Unassigned',
+            wifiSsid: cfg.wifiSsid,
             wifiPassword: cfg.wifiPassword,
           );
         default: // None / Ethernet
@@ -359,7 +353,7 @@ class CommissioningController extends ChangeNotifier {
 
     if (device != null) {
       result = device;
-      phase  = CommissionPhase.done;
+      phase = CommissionPhase.done;
       await QrPayloadService.clear();
     } else {
       error = _provider.errorMessage ?? 'Commissioning failed';
@@ -375,17 +369,17 @@ class CommissioningController extends ChangeNotifier {
   void reset() {
     _sessionId++; // invalidate in-flight start()
     _eventSub?.cancel();
-    _eventSub  = null;
-    phase      = CommissionPhase.idle;
-    parsed     = null;
+    _eventSub = null;
+    phase = CommissionPhase.idle;
+    parsed = null;
     rawPayload = null;
     parseError = null;
-    parsing    = false;
-    rawLog     = const [];
-    humanLog   = const [];
-    stageIdx   = -1;
-    result     = null;
-    error      = null;
+    parsing = false;
+    rawLog = const [];
+    humanLog = const [];
+    stageIdx = -1;
+    result = null;
+    error = null;
     notifyListeners();
   }
 
@@ -398,9 +392,7 @@ class CommissioningController extends ChangeNotifier {
   // ── Static helpers ────────────────────────────────────────────────────────
 
   static CommissionMethod suggestMethod(ParsedPayload p) =>
-      (p.prefersBle || p.capabilitiesUnknown)
-          ? CommissionMethod.ble
-          : CommissionMethod.ip;
+      (p.prefersBle || p.capabilitiesUnknown) ? CommissionMethod.ble : CommissionMethod.ip;
 
   /// Returns the suggested network type for [p].
   ///
@@ -408,11 +400,7 @@ class CommissioningController extends ChangeNotifier {
   /// [threadSelected] — true if the user has explicitly selected a Thread
   ///   dataset (even the "Empty dataset" option); overrides the empty-string
   ///   check so an empty dataset still defaults to Thread.
-  static int suggestNetType(
-    ParsedPayload p, {
-    String threadDataset = '',
-    bool   threadSelected = false,
-  }) {
+  static int suggestNetType(ParsedPayload p, {String threadDataset = '', bool threadSelected = false}) {
     if (p.hasOnNetwork) return 2;
     if (p.discoveryCapabilities.contains(DiscoveryCapability.wifiPaf)) return 1;
     if (threadSelected || threadDataset.trim().isNotEmpty) return 0;
@@ -424,7 +412,7 @@ class CommissioningController extends ChangeNotifier {
   String _generateName(List<String> existing) {
     final base = parsed?.suggestedName ?? 'Matter Device';
     if (!existing.contains(base)) return base;
-    for (int i = 2; i <= 99; i++) {
+    for (var i = 2; i <= 99; i++) {
       final candidate = '$base $i';
       if (!existing.contains(candidate)) return candidate;
     }
@@ -434,15 +422,15 @@ class CommissioningController extends ChangeNotifier {
   // ── Event processing ──────────────────────────────────────────────────────
 
   void _onEvent(String event) {
-    LogLevel lvl = LogLevel.info;
+    var lvl = LogLevel.info;
     if (event.startsWith('✓') || event.startsWith('🎉')) lvl = LogLevel.success;
-    if (event.startsWith('✗'))                            lvl = LogLevel.error;
-    if (event.startsWith('▶'))                            lvl = LogLevel.step;
+    if (event.startsWith('✗')) lvl = LogLevel.error;
+    if (event.startsWith('▶')) lvl = LogLevel.step;
 
     const stagePrefix = '▶ Stage: ';
     if (event.startsWith(stagePrefix)) {
       final stageName = event.substring(stagePrefix.length).trim();
-      final idx       = kCommissionStages.indexOf(stageName);
+      final idx = kCommissionStages.indexOf(stageName);
       if (idx >= 0) stageIdx = idx;
     }
 
@@ -454,7 +442,7 @@ class CommissioningController extends ChangeNotifier {
     if (human != null) {
       Color? humanColor;
       if (human == 'COMPLETE') humanColor = const Color(0xFF34A853);
-      if (human == 'FAILED')   humanColor = const Color(0xFFE53935);
+      if (human == 'FAILED') humanColor = const Color(0xFFE53935);
       humanLog = [...humanLog, HumanEntry(text: human, color: humanColor ?? _humanColorFor(lvl))];
     }
 
@@ -479,7 +467,7 @@ class CommissioningController extends ChangeNotifier {
 
   static Color? _humanColorFor(LogLevel lvl) => switch (lvl) {
     LogLevel.success => const Color(0xFF34A853),
-    _                => null,
+    _ => null,
   };
 
   // ── Human text mapping ────────────────────────────────────────────────────
@@ -490,19 +478,19 @@ class CommissioningController extends ChangeNotifier {
       final name = event.substring(stagePrefix.length).trim();
       return kCommissionStageHuman[name] ?? name.toUpperCase();
     }
-    if (event.contains('BLE scanning'))                return 'BLUETOOTH SCANNING';
-    if (event.contains('Found device'))                return 'DEVICE FOUND';
-    if (event.contains('GATT connecting'))             return 'BLE CONNECTING';
-    if (event.contains('BLE connected'))               return 'BLE CONNECTED';
-    if (event.contains('Closing previous BLE'))        return 'RECONNECTING';
+    if (event.contains('BLE scanning')) return 'BLUETOOTH SCANNING';
+    if (event.contains('Found device')) return 'DEVICE FOUND';
+    if (event.contains('GATT connecting')) return 'BLE CONNECTING';
+    if (event.contains('BLE connected')) return 'BLE CONNECTED';
+    if (event.contains('Closing previous BLE')) return 'RECONNECTING';
     if (event.contains('Starting CHIP commissioning')) return 'STARTING COMMISSIONING';
-    if (event.contains('Commissioning via IP'))        return 'IP CONNECTING';
+    if (event.contains('Commissioning via IP')) return 'IP CONNECTING';
     if (event.contains('Device:') && event.contains('VID=')) return 'DEVICE IDENTIFIED';
-    if (event.contains('ICD device detected'))         return 'ICD REGISTERING';
-    if (event.contains('Using Thread'))                return 'THREAD DATASET';
-    if (event.contains('Using Wi-Fi'))                 return 'WIFI CREDENTIALS';
-    if (event.startsWith('🎉'))                        return 'COMPLETE';
-    if (event.startsWith('✗'))                         return 'FAILED';
+    if (event.contains('ICD device detected')) return 'ICD REGISTERING';
+    if (event.contains('Using Thread')) return 'THREAD DATASET';
+    if (event.contains('Using Wi-Fi')) return 'WIFI CREDENTIALS';
+    if (event.startsWith('🎉')) return 'COMPLETE';
+    if (event.startsWith('✗')) return 'FAILED';
     return null;
   }
 }
