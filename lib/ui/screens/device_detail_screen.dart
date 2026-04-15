@@ -37,7 +37,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   // ── Basic info (not subscribed, load once per session) ────────────────────
   bool _basicInfoLoaded = false;
 
-  // ── Cluster-based readings (cached) ───────────────────────────────────────
+  // ── Thermostat: refresh limits once per screen instance ───────────────────
+  bool _thermoLimitsLoaded = false;
+
+  // ── Readings ───────────────────────────────────────────────────────────────
+  /// One-shot cluster JSON parse — never wiped once set.
+  List<ClusterReading>? _clusterReadings;
+  /// Displayed list: _clusterReadings merged with live readings.
   List<ClusterReading>? _readings;
   bool                  _readingsLoading = false;
 
@@ -63,70 +69,127 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   void _onProviderUpdate() {
     if (!mounted) return;
-    final cached = _provider.clusterCacheFor(widget.deviceId);
-    if (cached != null && _readings == null) {
-      final view = _provider.viewFor(widget.deviceId);
-      if (view != null) {
-        setState(() =>
-            _readings = extractReadings(parseClusters(cached), view.deviceType));
-      }
+    final view = _provider.viewFor(widget.deviceId);
+    if (view != null) {
+      setState(() => _readings = _merged(view));
+    } else {
+      setState(() {});
     }
-    setState(() {});
   }
 
   void _seedReadingsFromCache() {
-    final cached = _provider.clusterCacheFor(widget.deviceId);
-    if (cached == null) return;
     final view = _provider.viewFor(widget.deviceId);
     if (view == null) return;
-    setState(() =>
-        _readings = extractReadings(parseClusters(cached), view.deviceType));
+    // Seed _clusterReadings from cache if available.
+    if (_clusterReadings == null) {
+      final cached = _provider.clusterCacheFor(widget.deviceId);
+      if (cached != null) {
+        _clusterReadings =
+            extractReadings(parseClusters(cached), view.deviceType);
+      }
+    }
+    setState(() => _readings = _merged(view));
+  }
+
+  /// Merges live subscription readings into the cluster-JSON base.
+  ///
+  /// Live readings update matching entries (by label) so sensors driven by
+  /// subscriptions stay fresh.  Cluster-only readings (CO2, PM2.5, …) that
+  /// have no live counterpart are preserved untouched.
+  List<ClusterReading> _merged(DeviceView view) {
+    final live    = liveReadings(view);
+    final cluster = _clusterReadings;
+
+    if (cluster == null || cluster.isEmpty) return live;
+    if (live.isEmpty) return cluster;
+
+    // Build a mutable map of live readings keyed by label; consume each
+    // entry at most once so duplicates aren't accidentally collapsed.
+    final liveByLabel = <String, ClusterReading>{
+      for (final r in live) r.label: r,
+    };
+    return [
+      // Replace matching cluster entries with their live version.
+      for (final r in cluster) liveByLabel.remove(r.label) ?? r,
+      // Append any live readings that had no cluster equivalent.
+      ...liveByLabel.values,
+    ];
   }
 
   Future<void> _maybeLoadMissing() async {
     final view = _provider.viewFor(widget.deviceId);
     if (view == null) return;
 
-    // Always attempt; readBasicInfo returns null if the device is unreachable.
-    if (!_basicInfoLoaded) {
-      _basicInfoLoaded = true;
-      final info =
-          await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
-      if (mounted && info != null) {
-        _provider.updateBasicInfo(
-          widget.deviceId,
-          BasicInfo.nonEmpty(info.productName),
-          BasicInfo.nonEmpty(info.serialNumber),
-          BasicInfo.nonEmpty(info.softwareVersion),
-          vendorName:        BasicInfo.nonEmpty(info.vendorName),
-          vendorId:          BasicInfo.nonEmpty(info.vendorId),
-          productId:         BasicInfo.nonEmpty(info.productId),
-          hwVersion:         BasicInfo.nonEmpty(info.hwVersion),
-          manufacturingDate: BasicInfo.nonEmpty(info.manufacturingDate),
-          partNumber:        BasicInfo.nonEmpty(info.partNumber),
-          productUrl:        BasicInfo.nonEmpty(info.productUrl),
-          uniqueId:          BasicInfo.nonEmpty(info.uniqueId),
-          swVersionNum:      info.softwareVersionNum,
-        );
-        await _provider.detectAndUpdateOtaSupport(widget.deviceId);
-      }
-    }
+    // All three branches are independent — run them in parallel so readings,
+    // basic info, and thermostat limits all arrive as fast as the network allows.
+    await Future.wait([
+      _maybeLoadBasicInfo(view),
+      _maybeLoadThermoLimits(view),
+      _maybeLoadReadings(),
+    ]);
+  }
 
-    if (_provider.clusterCacheFor(widget.deviceId) == null) {
-      await _loadReadings();
+  Future<void> _maybeLoadBasicInfo(DeviceView view) async {
+    if (_basicInfoLoaded) return;
+    _basicInfoLoaded = true;
+    final info =
+        await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
+    if (mounted && info != null) {
+      _provider.updateBasicInfo(
+        widget.deviceId,
+        BasicInfo.nonEmpty(info.productName),
+        BasicInfo.nonEmpty(info.serialNumber),
+        BasicInfo.nonEmpty(info.softwareVersion),
+        vendorName:        BasicInfo.nonEmpty(info.vendorName),
+        vendorId:          BasicInfo.nonEmpty(info.vendorId),
+        productId:         BasicInfo.nonEmpty(info.productId),
+        hwVersion:         BasicInfo.nonEmpty(info.hwVersion),
+        manufacturingDate: BasicInfo.nonEmpty(info.manufacturingDate),
+        partNumber:        BasicInfo.nonEmpty(info.partNumber),
+        productUrl:        BasicInfo.nonEmpty(info.productUrl),
+        uniqueId:          BasicInfo.nonEmpty(info.uniqueId),
+        swVersionNum:      info.softwareVersionNum,
+      );
+      await _provider.detectAndUpdateOtaSupport(widget.deviceId);
     }
   }
 
-  Future<void> _setSetpointC(double tempC) async {
+  Future<void> _maybeLoadThermoLimits(DeviceView view) async {
+    if (_thermoLimitsLoaded || view.deviceType != DeviceType.thermostat) return;
+    _thermoLimitsLoaded = true;
+    await _provider.refreshDevice(widget.deviceId);
+  }
+
+  Future<void> _maybeLoadReadings() async {
+    if (_provider.clusterCacheFor(widget.deviceId) != null) return;
+    await _loadReadings();
+  }
+
+  Future<void> _setSetpointC(double? tempC) async {
     final nodeId = _provider.viewFor(widget.deviceId)?.nodeId;
     if (nodeId == null) return;
-    final centi = (tempC * 100).round().clamp(500, 3500);
+
+    if (tempC == null) {
+      setState(() => _pendingMode = 0);
+      await context.read<MatterClusterPort>().writeSystemMode(nodeId, 0);
+      if (mounted) setState(() => _pendingMode = null);
+      return;
+    }
+
+    final state = _provider.viewFor(widget.deviceId)?.thermoState;
+    final centi = (tempC * 100).round();
+    final currentMode = _pendingMode ?? state?.systemMode ?? 0;
+
+    if (currentMode == 0) {
+      setState(() => _pendingMode = 4);
+      await context.read<MatterClusterPort>().writeSystemMode(nodeId, 4);
+    }
+
     setState(() => _pendingSetpt = centi);
     await context.read<MatterClusterPort>().writeHeatingSetpoint(nodeId, centi);
     await Future.delayed(const Duration(seconds: 3));
-    if (mounted) setState(() => _pendingSetpt = null);
+    if (mounted) setState(() { _pendingSetpt = null; _pendingMode = null; });
   }
-
   Future<void> _setMode(int mode) async {
     final nodeId = _provider.viewFor(widget.deviceId)?.nodeId;
     if (nodeId == null) return;
@@ -139,22 +202,22 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _loadReadings() async {
     final view = _provider.viewFor(widget.deviceId);
     if (view == null) return;
-    final cached = _provider.clusterCacheFor(widget.deviceId);
-    if (cached != null) {
-      setState(() {
-        _readings        = extractReadings(parseClusters(cached), view.deviceType);
-        _readingsLoading = false;
-      });
+
+    // If we already have cluster readings cached, just re-merge and return.
+    if (_clusterReadings != null) {
+      setState(() => _readings = _merged(view));
       return;
     }
+
     setState(() => _readingsLoading = true);
     try {
       final jsonStr =
           await context.read<MatterClusterPort>().readClusters(view.nodeId);
       if (!mounted) return;
       if (jsonStr != null) _provider.cacheClusterJson(widget.deviceId, jsonStr);
+      _clusterReadings = extractReadings(parseClusters(jsonStr), view.deviceType);
       setState(() {
-        _readings        = extractReadings(parseClusters(jsonStr), view.deviceType);
+        _readings        = _merged(view);
         _readingsLoading = false;
       });
     } catch (_) {
@@ -221,10 +284,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            if (view.deviceType.hasOnOff && view.isOnline) ...[
-              _OnOffCard(view: view),
-              const SizedBox(height: 12),
-            ],
             if (view.deviceType.hasBrightness && view.isOnline) ...[
               _BrightnessCard(
                 brightness: view.brightness,
@@ -232,25 +291,33 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            if (view.deviceType.hasOnOff && view.isOnline) ...[
+              _OnOffCard(view: view),
+              const SizedBox(height: 12),
+            ],
             if (view.deviceType == DeviceType.thermostat && view.isOnline) ...[
               _ThermostatCard(
-                state:           view.thermoState,
-                pendingSetpt:    _pendingSetpt,
-                pendingMode:     _pendingMode,
-                humidityCenti:   view.humidityCenti,
-                battery:         view.batteryInfo,
-                serialNumber:    view.serialNumber,
-                softwareVersion: view.softwareVersion,
-                onSetSetpoint:   _setSetpointC,
-                onSetMode:       _setMode,
+                state:         view.thermoState,
+                pendingSetpt:  _pendingSetpt,
+                pendingMode:   _pendingMode,
+                onSetSetpoint: _setSetpointC,
               ),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType == DeviceType.contactSensor) ...[
-              _ContactStateCard(
-                contactState: view.contactState,
-                isStale:      view.isStale,
-              ),
+            if (view.deviceType.hasWindowCovering && view.isOnline) ...[
+              _WindowCoveringCard(view: view),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType.hasFanControl && view.isOnline) ...[
+              _FanControlCard(view: view),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType.hasColorTemp && view.isOnline) ...[
+              _ColorTemperatureCard(view: view),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType == DeviceType.smokeCOAlarm) ...[
+              _SmokeAlarmCard(view: view),
               const SizedBox(height: 12),
             ],
             _ReadingsSection(

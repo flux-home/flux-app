@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/device_type.dart';
 import '../../models/device_view.dart';
 import '../../providers/device_provider.dart';
 
@@ -31,30 +30,6 @@ class DeviceCard extends StatelessWidget {
     final view = context.watch<DeviceProvider>().viewFor(deviceId);
     if (view == null) return const SizedBox.shrink();
 
-    if (view.deviceType == DeviceType.contactSensor) {
-      final state = view.contactState;
-      final label = state == true  ? 'Closed'
-                  : state == false ? 'Open'
-                  : '—';
-      final color = state == true  ? const Color(0xFF34A853)
-                  : state == false ? const Color(0xFFF29900)
-                  : Colors.white38;
-      return _BaseTile(
-        view:     view,
-        onTap:    onTap,
-        subLabel: view.displayProductName,
-        indicator: Text(
-          label,
-          style: TextStyle(
-            fontSize:      22,
-            fontWeight:    FontWeight.w700,
-            color:         color,
-            letterSpacing: 0.5,
-          ),
-        ),
-      );
-    }
-
     return _BaseTile(view: view, onTap: onTap, subLabel: view.displayProductName);
   }
 }
@@ -65,13 +40,11 @@ class _BaseTile extends StatelessWidget {
   final DeviceView   view;
   final VoidCallback onTap;
   final String?      subLabel;
-  final Widget?      indicator;
 
   const _BaseTile({
     required this.view,
     required this.onTap,
     this.subLabel,
-    this.indicator,
   });
 
   @override
@@ -88,11 +61,7 @@ class _BaseTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Body area ──────────────────────────────────────────────
-              if (indicator != null)
-                Expanded(child: Center(child: indicator!))
-              else
-                const Spacer(),
+              const Spacer(),
 
               // ── Footer: device name + optional sub-label ───────────────
               Text(

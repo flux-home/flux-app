@@ -251,10 +251,6 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: cs.error,
                   side: BorderSide(color: cs.error.withAlpha(120)),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  minimumSize: const Size.fromHeight(48),
                 ),
               ),
 
@@ -489,11 +485,7 @@ class _OtaSectionState extends State<_OtaSection> {
                   const SizedBox(height: 8),
                   FilledButton(
                     onPressed: _startFlash,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(44),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
+
                     child: Text(
                       newVersion.isNotEmpty
                           ? 'Upgrade to $newVersion'
@@ -566,11 +558,7 @@ class _OtaSectionState extends State<_OtaSection> {
               await context.read<MatterFabricPort>().cancelOta();
               if (mounted) setState(() => _flashing = false);
             },
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(40),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
+
             child: const Text('Cancel'),
           ),
         ],

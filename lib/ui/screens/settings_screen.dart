@@ -10,8 +10,6 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -24,7 +22,6 @@ class SettingsScreen extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
-                  leading: Icon(Icons.hub_outlined, color: cs.primary),
                   title: const Text('Matter'),
                   subtitle: const Text('Fabric & device management'),
                   trailing: const Icon(Icons.chevron_right),
@@ -34,18 +31,16 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const MatterSettingsScreen())),
                 ),
-                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+                Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
                 ListTile(
-                  leading: Icon(Icons.router_outlined, color: cs.primary),
                   title: const Text('Thread'),
                   subtitle: const Text('Operational dataset'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const ThreadSettingsScreen())),
                 ),
-                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+                Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
                 ListTile(
-                  leading: Icon(Icons.network_check_outlined, color: cs.primary),
                   title: const Text('Network Check'),
                   subtitle: const Text('Diagnose IPv6 & Thread commissioning'),
                   trailing: const Icon(Icons.chevron_right),
@@ -67,7 +62,6 @@ class SettingsScreen extends StatelessWidget {
             child: SectionLabel('About'),
           ),
           const ListTile(
-            leading: Icon(Icons.info_outline),
             title: Text('Flux'),
             subtitle: Text('Flutter + CHIP SDK (connectedhomeip)'),
           ),

@@ -8,71 +8,103 @@ class _ThermostatCard extends StatelessWidget {
   final ThermostatState?               state;
   final int?                           pendingSetpt;
   final int?                           pendingMode;
-  final int?                           humidityCenti;
-  final BatteryInfo?                   battery;
-  final String?                        serialNumber;
-  final String?                        softwareVersion;
-  final Future<void> Function(double)  onSetSetpoint;
-  final Future<void> Function(int)     onSetMode;
+  final Future<void> Function(double?) onSetSetpoint;  // null = off
 
   const _ThermostatCard({
-    required this.state,           required this.pendingSetpt,
-    required this.pendingMode,     required this.humidityCenti,
-    required this.battery,         required this.serialNumber,
-    required this.softwareVersion, required this.onSetSetpoint,
-    required this.onSetMode,
+    required this.state,        required this.pendingSetpt,
+    required this.pendingMode,
+    required this.onSetSetpoint,
   });
 
   @override
   Widget build(BuildContext context) {
-    final cs        = Theme.of(context).colorScheme;
-    final setpointC = pendingSetpt != null
-        ? pendingSetpt! / 100.0
+    final effectiveMode = pendingMode ?? state?.systemMode;
+    // isOff: device mode is 0 (off) or mode is unknown
+    final isOff      = (effectiveMode ?? 0) == 0;
+    // setpointC is only meaningful when not off
+    final setpointC  = isOff ? null
+        : pendingSetpt != null ? pendingSetpt! / 100.0
         : state?.heatingSetptC;
 
+    // Dark instrument-panel background so the colored arc and white text pop.
     return Card(
-      color: cs.surface,
+      color: const Color(0xFF1A1A1A),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+
+          // ── Dial ──────────────────────────────────────────────────────────
           _ThermostatDial(
             measuredTempC:     state?.localTempC,
             setpointC:         setpointC,
+            isOff:             isOff,
             supportsCooling:   state?.supportsCooling ?? false,
             coolingSetptC:     state?.coolingSetptC,
+            systemMode:        effectiveMode,
+            tempMin:           state?.effectiveMinHeatC ?? 5.0,
+            tempMax:           state?.effectiveMaxHeatC ?? 35.0,
             onSetpointChanged: (v) {},
-            onSetpointEnd:     state != null ? onSetSetpoint : (_) {},
+            onSetpointEnd:     state != null ? onSetSetpoint : (_) async {},
           ),
-          const SizedBox(height: 16),
-          if (state != null)
-            _ModeSelector(
-              modes:    state!.availableModes,
-              current:  pendingMode ?? state!.systemMode,
-              onSelect: onSetMode,
+
+          // ── Status line ───────────────────────────────────────────────────
+          if (state != null) ...[
+            const SizedBox(height: 8),
+            _StatusLine(
+              state:           state!,
+              effectiveSetptC: setpointC,
+              effectiveMode:   effectiveMode,
             ),
-          if (humidityCenti != null || battery != null) ...[
-            const SizedBox(height: 14),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              if (humidityCenti != null)
-                _SensorPill(
-                  icon: Icons.water_drop_outlined,
-                  iconColor: Colors.lightBlue[300]!,
-                  value: '${(humidityCenti! / 100.0).toStringAsFixed(0)} %',
-                  label: 'humidity',
-                ),
-              if (humidityCenti != null && battery != null)
-                const SizedBox(width: 24),
-              if (battery != null) _BatteryPill(battery: battery!),
-            ]),
           ],
-          if (serialNumber != null || softwareVersion != null) ...[
-            const SizedBox(height: 14),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            if (serialNumber    != null) InfoRow(label: 'Serial',     value: serialNumber!,     labelWidth: 90, mono: true),
-            if (softwareVersion != null) InfoRow(label: 'SW version', value: softwareVersion!,  labelWidth: 90, mono: true),
-          ],
+
+
+
         ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status line — dot-matrix strip below the dial
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusLine extends StatelessWidget {
+  final ThermostatState state;
+  final double?         effectiveSetptC;
+  final int?            effectiveMode;
+
+  const _StatusLine({
+    required this.state,
+    required this.effectiveSetptC,
+    required this.effectiveMode,
+  });
+
+  static const _kHeatColor = Color(0xFFFFCC80);   // pastel amber
+  static const _kCoolColor = Color(0xFF81D4FA);   // pastel sky blue
+
+  (String, Color) _resolve() {
+    final mode  = effectiveMode ?? 0;
+    final temp  = state.localTempC;
+    final setpt = effectiveSetptC;
+    const idle  = Colors.white38;
+
+    if (mode == 0) return ('OFF', idle);
+
+    // Mode-agnostic: show heating state based on temp delta.
+    if (setpt != null && temp != null && setpt > temp + 0.5)
+      return ('HEATING', _kHeatColor);
+
+    return ('IDLE', idle);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = _resolve();
+    return SizedBox(
+      height: 14,
+      child: CustomPaint(
+        painter: DotMatrixPainter(text: label, litColor: color),
       ),
     );
   }
@@ -84,17 +116,24 @@ class _ThermostatCard extends StatelessWidget {
 
 const _kArcStart = 135.0 * math.pi / 180.0;
 const _kArcSweep = 270.0 * math.pi / 180.0;
-const _kTempMin  = 5.0;
-const _kTempMax  = 35.0;
 
 class _ThermostatDial extends StatefulWidget {
   final double? measuredTempC, setpointC, coolingSetptC;
   final bool    supportsCooling;
-  final void Function(double) onSetpointChanged, onSetpointEnd;
+  final bool    isOff;      // device is currently off
+  final int?    systemMode;
+  final double  tempMin;
+  final double  tempMax;
+  final void Function(double) onSetpointChanged;
+  /// null = set to off, non-null = set setpoint
+  final Future<void> Function(double?) onSetpointEnd;
 
   const _ThermostatDial({
     required this.measuredTempC, required this.setpointC,
+    required this.isOff,
     required this.supportsCooling, required this.coolingSetptC,
+    required this.systemMode,
+    required this.tempMin, required this.tempMax,
     required this.onSetpointChanged, required this.onSetpointEnd,
   });
 
@@ -102,181 +141,361 @@ class _ThermostatDial extends StatefulWidget {
   State<_ThermostatDial> createState() => _ThermostatDialState();
 }
 
-class _ThermostatDialState extends State<_ThermostatDial> {
-  double? _dragTemp;
-  double get _setpoint => _dragTemp ?? widget.setpointC ?? 20.0;
-  bool   get _hasData  => widget.setpointC != null;
+// First 18° of the 270° arc = OFF zone.  The remaining 252° is min→max temp.
+const double _kOffDeg = 18.0;
 
-  double _angleToTemp(double angleDeg) {
+class _ThermostatDialState extends State<_ThermostatDial>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+  double? _dragTemp;
+  bool    _dragIsOff = false;
+
+  // Whether the dial is currently in the off position (drag or widget state).
+  bool get _isOff     => _dragIsOff || (widget.isOff && _dragTemp == null);
+  double get _setpoint => _dragTemp ?? widget.setpointC ?? widget.tempMin;
+  bool   get _hasData  => widget.setpointC != null || widget.isOff;
+
+  bool get _isActive {
+    if (_isOff) return false;
+    final t = widget.measuredTempC;
+    final s = _dragTemp ?? widget.setpointC;
+    return t != null && s != null && s > t + 0.5;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    if (_isActive) _pulseCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_ThermostatDial old) {
+    super.didUpdateWidget(old);
+    if (_isActive && !_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!_isActive && _pulseCtrl.isAnimating) {
+      _pulseCtrl.stop();
+      _pulseCtrl.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Returns null (= OFF) when rel < _kOffDeg, otherwise the temperature.
+  double? _angleToValue(double angleDeg) {
     final startDeg = _kArcStart * 180 / math.pi;
     var rel = ((angleDeg - startDeg) % 360 + 360) % 360;
     if (rel > 270) rel = (rel - 270 < 360 - rel) ? 270 : 0;
-    return (_kTempMin + (rel / 270) * (_kTempMax - _kTempMin))
-        .clamp(_kTempMin, _kTempMax);
+    if (rel < _kOffDeg) return null;   // OFF zone
+    final fraction = (rel - _kOffDeg) / (270.0 - _kOffDeg);
+    return (widget.tempMin + fraction * (widget.tempMax - widget.tempMin))
+        .clamp(widget.tempMin, widget.tempMax);
   }
 
   void _handleDrag(Offset pos, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     var deg = math.atan2(pos.dy - c.dy, pos.dx - c.dx) * 180 / math.pi;
     if (deg < 0) deg += 360;
-    final snapped = ((_angleToTemp(deg) * 2).round() / 2.0)
-        .clamp(_kTempMin, _kTempMax);
-    setState(() => _dragTemp = snapped);
-    widget.onSetpointChanged(snapped);
+    final val = _angleToValue(deg);
+    if (val == null) {
+      setState(() { _dragIsOff = true; _dragTemp = null; });
+    } else {
+      final snapped = ((val * 2).round() / 2.0).clamp(widget.tempMin, widget.tempMax);
+      setState(() { _dragIsOff = false; _dragTemp = snapped; });
+      widget.onSetpointChanged(snapped);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (_, c) {
       final side = c.maxWidth;
-      return SizedBox(width: side, height: side,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanUpdate: (d) { if (_hasData) _handleDrag(d.localPosition, Size(side, side)); },
-          onPanEnd: (_) {
-            if (_dragTemp != null) {
-              widget.onSetpointEnd(_dragTemp!);
-              setState(() => _dragTemp = null);
-            }
-          },
-          child: CustomPaint(painter: _DialPainter(
-            measuredTempC: widget.measuredTempC,
-            setpointC:     _hasData ? _setpoint : null,
-            coolingSetptC: widget.supportsCooling ? widget.coolingSetptC : null,
-          )),
+      return AnimatedBuilder(
+        animation: _pulseCtrl,
+        builder: (_, __) => SizedBox(
+          width: side, height: side,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: (d) => _handleDrag(d.localPosition, Size(side, side)),
+            onPanEnd: (_) {
+              final wasOff  = _dragIsOff;
+              final wasTemp = _dragTemp;
+              setState(() { _dragIsOff = false; _dragTemp = null; });
+              if (wasOff) {
+                widget.onSetpointEnd(null);       // → turn off
+              } else if (wasTemp != null) {
+                widget.onSetpointEnd(wasTemp);    // → set temperature
+              }
+            },
+            child: CustomPaint(
+              painter: _DialPainter(
+                measuredTempC: widget.measuredTempC,
+                setpointC:     _isOff ? null : _setpoint,
+                isOff:         _isOff,
+                coolingSetptC: widget.supportsCooling ? widget.coolingSetptC : null,
+                systemMode:    widget.systemMode,
+                pulseValue:    _pulseCtrl.value,
+                tempMin:       widget.tempMin,
+                tempMax:       widget.tempMax,
+              ),
+            ),
+          ),
         ),
       );
     });
   }
 }
 
+// ── Dial painter ───────────────────────────────────────────────────────────────
+
 class _DialPainter extends CustomPainter {
   final double? measuredTempC, setpointC, coolingSetptC;
-  const _DialPainter({required this.measuredTempC, required this.setpointC,
-                      this.coolingSetptC});
+  final bool    isOff;
+  final int?    systemMode;
+  final double  pulseValue;
+  final double  tempMin;
+  final double  tempMax;
 
+  const _DialPainter({
+    required this.measuredTempC,
+    required this.setpointC,
+    this.isOff      = false,
+    this.coolingSetptC,
+    this.systemMode,
+    this.pulseValue = 0,
+    required this.tempMin,
+    required this.tempMax,
+  });
+
+  /// Fraction of the temperature sub-arc [0,1] for a given temperature.
   double _frac(double t) =>
-      ((t - _kTempMin) / (_kTempMax - _kTempMin)).clamp(0.0, 1.0);
+      ((t - tempMin) / (tempMax - tempMin)).clamp(0.0, 1.0);
+
+  /// Angle (radians from arc start) for a temperature, offset past the OFF zone.
+  double _tempAngle(double t) =>
+      _kArcSweep * (_kOffDeg / 270.0 + _frac(t) * (1.0 - _kOffDeg / 270.0));
+
+  static const _kHeatColor = Color(0xFFFFCC80);   // pastel amber
+  static const _kCoolColor = Color(0xFF81D4FA);   // pastel sky blue
+
+  /// Pastel gradient: sky blue (200°) → pastel yellow (55°) → pastel red (0°).
+  /// Hue descends; saturation rises slightly toward max so the hot end reads
+  /// unmistakably as pastel red rather than washed-out coral.
+  Color get _arcColor {
+    if (setpointC == null) return Colors.white.withAlpha(60);
+    final f = _frac(setpointC!);
+    final hue = f < 0.5
+        ? 200 - (f * 2) * 145           // 200° → 55°  (blue → yellow)
+        : 55  - ((f - 0.5) * 2) * 55;  // 55°  → 0°   (yellow → red)
+    // Saturation and lightness grade toward a clearly pastel red at max.
+    final sat = 0.75 + f * 0.13;        // 0.75 → 0.88
+    final lit  = 0.78 - f * 0.02;       // 0.78 → 0.76
+    return HSLColor.fromAHSL(1, hue.clamp(0, 360), sat, lit).toColor();
+  }
+
+  /// True when setpoint is meaningfully above the measured temp — device is heating.
+  bool get _isHeating =>
+      setpointC != null &&
+      measuredTempC != null &&
+      setpointC! > measuredTempC! + 0.5;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2; final cy = size.height / 2;
-    final c  = Offset(cx, cy);
-    final r  = math.min(cx, cy) - 20;
-    final rc = Rect.fromCircle(center: c, radius: r);
+    final cx  = size.width / 2;
+    final cy  = size.height / 2;
+    final c   = Offset(cx, cy);
+    final r   = math.min(cx, cy) - 20;
+    final rc  = Rect.fromCircle(center: c, radius: r);
+    final arc = _arcColor;
 
+    // ── Track ────────────────────────────────────────────────────────────────
     canvas.drawArc(rc, _kArcStart, _kArcSweep, false,
-        Paint()..color=Colors.white.withAlpha(45)..style=PaintingStyle.stroke
-               ..strokeWidth=2.5..strokeCap=StrokeCap.round);
+        Paint()
+          ..color       = Colors.white.withAlpha(28)
+          ..style       = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap   = StrokeCap.round);
 
-    if (setpointC != null) {
-      final f = _frac(setpointC!);
-      if (f > 0) canvas.drawArc(rc, _kArcStart, _kArcSweep * f, false,
-          Paint()..color=Colors.white..style=PaintingStyle.stroke
-                 ..strokeWidth=2.5..strokeCap=StrokeCap.round);
-      final ka = _kArcStart + _kArcSweep * f;
-      final kp = c + Offset(math.cos(ka)*r, math.sin(ka)*r);
-      canvas.drawCircle(kp, 9, Paint()..color=Colors.white);
-      canvas.drawCircle(kp, 9, Paint()..color=Colors.white.withAlpha(80)
-          ..style=PaintingStyle.stroke..strokeWidth=3);
+    if (isOff) {
+      // ── OFF state: dim knob at arc start, "OFF" in centre ─────────────────
+      final kp = c + Offset(math.cos(_kArcStart) * r, math.sin(_kArcStart) * r);
+      canvas.drawCircle(kp, 10, Paint()..color = Colors.white.withAlpha(40));
+      canvas.drawCircle(kp, 10,
+          Paint()
+            ..color       = Colors.white.withAlpha(60)
+            ..style       = PaintingStyle.stroke
+            ..strokeWidth = 1.5);
+
+      paintDotMatrix(canvas, c + Offset(0, -r * 0.05),
+          'OFF',
+          maxWidth: r * 0.75, maxHeight: r * 0.36,
+          color: Colors.white.withAlpha(100));
+
+      // Still show room temperature below "OFF"
+      if (measuredTempC != null) {
+        paintDotMatrix(canvas, c + Offset(0, r * 0.32),
+            '${measuredTempC!.toStringAsFixed(1)}°',
+            maxWidth: r * 0.65, maxHeight: r * 0.22,
+            color: Colors.white.withAlpha(80));
+        // Measured tick on arc
+        final ma = _kArcStart + _tempAngle(measuredTempC!);
+        final d  = Offset(math.cos(ma), math.sin(ma));
+        canvas.drawLine(c + d * (r - 9), c + d * (r + 9),
+            Paint()
+              ..color       = Colors.white.withAlpha(120)
+              ..strokeWidth = 2.5
+              ..strokeCap   = StrokeCap.round);
+      }
+    } else {
+      // ── Active state ────────────────────────────────────────────────────────
+
+      // Filled arc up to setpoint
+      if (setpointC != null) {
+        final sweep = _tempAngle(setpointC!);
+        if (sweep > 0) {
+          canvas.drawArc(rc, _kArcStart, sweep, false,
+              Paint()
+                ..color       = arc.withAlpha(190)
+                ..style       = PaintingStyle.stroke
+                ..strokeWidth = 3
+                ..strokeCap   = StrokeCap.round);
+        }
+
+        // Knob
+        final ka = _kArcStart + sweep;
+        final kp = c + Offset(math.cos(ka) * r, math.sin(ka) * r);
+
+        if (pulseValue > 0) {
+          canvas.drawCircle(kp, 11 + pulseValue * 9,
+              Paint()
+                ..color       = arc.withAlpha((70 * (1 - pulseValue)).round())
+                ..style       = PaintingStyle.stroke
+                ..strokeWidth = 1.5);
+        }
+
+        canvas.drawCircle(kp, 11, Paint()..color = arc);
+        canvas.drawCircle(kp, 11,
+            Paint()
+              ..color       = Colors.white.withAlpha(90)
+              ..style       = PaintingStyle.stroke
+              ..strokeWidth = 1.5);
+
+        canvas.save();
+        canvas.translate(kp.dx, kp.dy);
+        canvas.rotate(ka + math.pi / 2);
+        final grip = Paint()
+          ..color      = Colors.black.withAlpha(90)
+          ..strokeWidth = 1.2
+          ..strokeCap  = StrokeCap.round;
+        for (int i = -1; i <= 1; i++) {
+          canvas.drawLine(Offset(-4.5, i * 2.5), Offset(4.5, i * 2.5), grip);
+        }
+        canvas.restore();
+      }
+
+      // Measured temp tick
+      if (measuredTempC != null) {
+        final ma = _kArcStart + _tempAngle(measuredTempC!);
+        final d  = Offset(math.cos(ma), math.sin(ma));
+        canvas.drawLine(c + d * (r - 9), c + d * (r + 9),
+            Paint()
+              ..color       = Colors.white
+              ..strokeWidth = 2.5
+              ..strokeCap   = StrokeCap.round);
+      }
+
+      // Cooling setpoint tick
+      if (coolingSetptC != null) {
+        final ca = _kArcStart + _tempAngle(coolingSetptC!);
+        final d  = Offset(math.cos(ca), math.sin(ca));
+        canvas.drawLine(c + d * (r - 6), c + d * (r + 6),
+            Paint()
+              ..color       = _kCoolColor.withAlpha(200)
+              ..strokeWidth = 1.5
+              ..strokeCap   = StrokeCap.round);
+      }
+
+      // Current temperature — large, upper-centre
+      paintDotMatrix(canvas, c + Offset(0, -r * 0.12),
+          measuredTempC != null ? '${measuredTempC!.toStringAsFixed(1)}°' : '--.-',
+          maxWidth: r * 0.90, maxHeight: r * 0.36,
+          color: Colors.white);
+
+      // Setpoint — smaller, below, in arc colour
+      if (setpointC != null) {
+        paintDotMatrix(canvas, c + Offset(0, r * 0.32),
+            '${setpointC!.toStringAsFixed(1)}°',
+            maxWidth: r * 0.65, maxHeight: r * 0.22,
+            color: arc.withAlpha(220));
+      }
     }
-    if (measuredTempC != null) {
-      final ma = _kArcStart + _kArcSweep * _frac(measuredTempC!);
-      final d  = Offset(math.cos(ma), math.sin(ma));
-      canvas.drawLine(c+d*(r-9), c+d*(r+9),
-          Paint()..color=Colors.white..strokeWidth=2..strokeCap=StrokeCap.round);
-    }
-    if (coolingSetptC != null) {
-      final ca = _kArcStart + _kArcSweep * _frac(coolingSetptC!);
-      final d  = Offset(math.cos(ca), math.sin(ca));
-      canvas.drawLine(c+d*(r-6), c+d*(r+6),
-          Paint()..color=Colors.lightBlue.withAlpha(200)..strokeWidth=1.5
-                 ..strokeCap=StrokeCap.round);
-    }
-    paintDotMatrix(canvas, c + Offset(0, -r * 0.18),
-        setpointC != null ? setpointC!.toStringAsFixed(1) : '--.-',
-        maxWidth: r * 1.0, maxHeight: r * 0.30, color: Colors.white);
-    paintDotMatrix(canvas, c + Offset(0, r * 0.22),
-        measuredTempC != null ? measuredTempC!.toStringAsFixed(1) : '--.-',
-        maxWidth: r * 0.70, maxHeight: r * 0.20, color: Colors.white.withAlpha(160));
   }
 
   @override
   bool shouldRepaint(_DialPainter o) =>
-      o.measuredTempC!=measuredTempC||o.setpointC!=setpointC||o.coolingSetptC!=coolingSetptC;
+      o.measuredTempC != measuredTempC ||
+      o.setpointC     != setpointC     ||
+      o.isOff         != isOff         ||
+      o.coolingSetptC != coolingSetptC ||
+      o.systemMode    != systemMode    ||
+      o.pulseValue    != pulseValue    ||
+      o.tempMin       != tempMin       ||
+      o.tempMax       != tempMax;
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared small widgets
+// Mode selector — custom pills matching app button language
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _SensorPill extends StatelessWidget {
-  final IconData icon; final Color iconColor;
-  final String value, label;
-  const _SensorPill({required this.icon, required this.iconColor,
-                     required this.value, required this.label});
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 18, color: iconColor), const SizedBox(width: 6),
-      Text(value, style: Theme.of(context).textTheme.titleMedium
-          ?.copyWith(fontWeight: FontWeight.w600)),
-      const SizedBox(width: 5),
-      Text(label, style: Theme.of(context).textTheme.bodySmall
-          ?.copyWith(color: cs.onSurfaceVariant)),
-    ]);
-  }
-}
-
-class _BatteryPill extends StatelessWidget {
-  final BatteryInfo battery;
-  const _BatteryPill({required this.battery});
-  @override
-  Widget build(BuildContext context) {
-    if (battery.percent != null) {
-      final pct = battery.percent!;
-      final icon  = pct>75?Icons.battery_full:pct>50?Icons.battery_5_bar
-                   :pct>25?Icons.battery_3_bar:pct>10?Icons.battery_1_bar:Icons.battery_alert;
-      final color = pct>25?Colors.green.shade400:pct>10?Colors.orange.shade400:Colors.red.shade400;
-      return _SensorPill(icon:icon, iconColor:color, value:'$pct %', label:'battery');
-    }
-    if (battery.chargeLevel != null) {
-      final (icon, color, text) = switch (battery.chargeLevel!) {
-        1 => (Icons.battery_3_bar, Colors.orange.shade400, 'Warning'),
-        2 => (Icons.battery_alert,  Colors.red.shade400,   'Critical'),
-        _ => (Icons.battery_full,   Colors.green.shade400, 'OK'),
-      };
-      return _SensorPill(icon:icon, iconColor:color, value:text, label:'battery');
-    }
-    if (battery.voltageMilliV != null) {
-      return _SensorPill(icon:Icons.battery_std, iconColor:Colors.green.shade400,
-          value:'${(battery.voltageMilliV!/1000.0).toStringAsFixed(2)} V', label:'battery');
-    }
-    return const SizedBox.shrink();
-  }
-}
 
 class _ModeSelector extends StatelessWidget {
   final List<({int mode, String label})> modes;
-  final int? current;
+  final int?            current;
   final ValueChanged<int> onSelect;
-  const _ModeSelector({required this.modes, required this.current, required this.onSelect});
+
+  const _ModeSelector({
+    required this.modes,
+    required this.current,
+    required this.onSelect,
+  });
+
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
       children: modes.map((m) {
         final sel = current == m.mode;
-        return ChoiceChip(
-          label: Text(m.label), selected: sel,
-          onSelected: (_) => onSelect(m.mode),
-          selectedColor: Colors.black87, backgroundColor: Colors.transparent,
-          labelStyle: TextStyle(fontWeight: sel?FontWeight.bold:FontWeight.normal,
-                                color: sel?Colors.white:Colors.black87),
-          side: BorderSide(color: sel?Colors.black87:Colors.black26),
-          showCheckmark: false,
+        return GestureDetector(
+          onTap: () => onSelect(m.mode),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            decoration: BoxDecoration(
+              color:        sel ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(22),
+              border:       Border.all(
+                color: sel ? Colors.white : Colors.white24,
+                width: 1.5,
+              ),
+            ),
+            child: Text(
+              m.label,
+              style: TextStyle(
+                color:      sel ? Colors.black87 : Colors.white54,
+                fontSize:   13,
+                fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
         );
       }).toList(),
     );

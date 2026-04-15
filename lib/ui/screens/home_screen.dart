@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/device_provider.dart';
 import '../widgets/device_card.dart';
+import 'qr_scanner_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -22,9 +24,18 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/commission'),
-        backgroundColor: const Color(0xFFFFD600),
-        foregroundColor: Colors.black,
+        onPressed: () async {
+          final status = await Permission.camera.request();
+          if (!status.isGranted || !context.mounted) return;
+          final payload = await Navigator.of(context).push<String>(
+            MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+          );
+          if (payload != null && context.mounted) {
+            context.push('/commission', extra: payload);
+          }
+        },
+        backgroundColor: const Color(0xFF6DC9A2),
+        foregroundColor: const Color(0xFF1A4A38),
         elevation: 2,
         shape: const CircleBorder(),
         child: const Icon(Icons.add, size: 28),

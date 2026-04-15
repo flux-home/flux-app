@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/device_type.dart';
+import '../models/device_view.dart';
 
 // ── Quality ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,197 @@ List<LiveEndpoint> parseClusters(String? jsonStr) {
   ];
 }
 
+/// Derives live sensor readings directly from the subscription-driven
+/// [DeviceView] cache.  Unlike [extractReadings], these update on every
+/// subscription event without needing a fresh cluster-read.
+///
+/// Attributes not present in [_kLiveRenderers] (control attrs handled by
+/// dedicated cards: onOff, level, colorTempMireds, …) are silently skipped —
+/// no explicit exclusion list needed.
+///
+/// **To add a new sensor cluster:** add one entry to [_kLiveRenderers] and one
+/// '_render*' function.  Nothing else needs to change anywhere in the Dart code.
+List<ClusterReading> liveReadings(DeviceView view) {
+  final live = view.live;
+  if (live == null) return const [];
+  return [
+    for (final e in live.attrs.entries)
+      _kLiveRenderers[e.key]?.call(e.value),
+  ].whereType<ClusterReading>().toList();
+}
+
+// ── Live-reading registry ─────────────────────────────────────────────────────
+//
+// Maps subscription attribute keys to renderers.  Keys not listed here are
+// silently ignored — control attributes (onOff, level, …) never show up in
+// the readings grid without an explicit renderer entry.
+// Insertion order = display order.
+
+final _kLiveRenderers = <String, ClusterReading? Function(dynamic)>{
+  'contactState':  _renderContact,
+  'humidityCenti': _renderHumidity,
+  'tempMeasureCenti': _renderTempMeasure,
+  'occupancy':     _renderOccupancy,
+  'airQuality':    _renderAirQuality,
+  'pm25':          _renderPm25,
+  'co2Ppm':        _renderCo2,
+  'coPpm':         _renderCo,
+  'batPercentRaw': _renderBatteryRaw,
+  'batChargeLevel':_renderBatteryLvl,
+};
+
+// ── Per-attribute renderers ───────────────────────────────────────────────────
+
+ClusterReading? _renderContact(dynamic v) {
+  final closed = v as bool;
+  return ClusterReading(
+    icon:         closed ? Icons.sensor_door_outlined : Icons.meeting_room_outlined,
+    iconColor:    closed ? Colors.green.shade500 : Colors.orange.shade500,
+    label:        'Contact',
+    displayValue: closed ? 'Closed' : 'Open',
+    unit:         '',
+  );
+}
+
+ClusterReading? _renderHumidity(dynamic v) => ClusterReading(
+  icon:         Icons.water_drop_outlined,
+  iconColor:    Colors.lightBlue.shade300,
+  label:        'Humidity',
+  displayValue: ((v as int) / 100.0).toStringAsFixed(1),
+  unit:         '%',
+);
+
+ClusterReading? _renderTempMeasure(dynamic v) {
+  final centi = v as int;
+  if (centi == -32768) return null;
+  return ClusterReading(
+    icon:         Icons.thermostat_outlined,
+    iconColor:    Colors.orange.shade300,
+    label:        'Temperature',
+    displayValue: (centi / 100.0).toStringAsFixed(1),
+    unit:         '°C',
+  );
+}
+
+ClusterReading? _renderOccupancy(dynamic v) {
+  final occupied = ((v as int) & 0x01) == 1;
+  return ClusterReading(
+    icon:         occupied ? Icons.person : Icons.person_off_outlined,
+    iconColor:    occupied ? Colors.indigo.shade400 : Colors.grey.shade400,
+    label:        'Occupancy',
+    displayValue: occupied ? 'Occupied' : 'Vacant',
+    unit:         '',
+  );
+}
+
+ClusterReading? _renderAirQuality(dynamic v) {
+  final (label, color, quality) = switch (v as int) {
+    1 => ('Good',           Colors.green.shade500,      ClusterQuality.good),
+    2 => ('Fair',           Colors.lightGreen.shade400, ClusterQuality.moderate),
+    3 => ('Moderate',       Colors.yellow.shade600,     ClusterQuality.moderate),
+    4 => ('Poor',           Colors.orange.shade500,     ClusterQuality.bad),
+    5 => ('Very Poor',      Colors.red.shade400,        ClusterQuality.bad),
+    6 => ('Extremely Poor', Colors.red.shade700,        ClusterQuality.bad),
+    _ => ('Unknown',        Colors.grey.shade500,       null as ClusterQuality?),
+  };
+  return ClusterReading(
+    icon:         Icons.air,
+    iconColor:    color,
+    label:        'Air Quality',
+    displayValue: label,
+    unit:         '',
+    quality:      quality,
+  );
+}
+
+ClusterReading? _renderPm25(dynamic v) {
+  final val = (v as int) / 10.0;
+  final q   = val <= 12   ? ClusterQuality.good
+              : val <= 35.4 ? ClusterQuality.moderate
+              : val <= 55.4 ? ClusterQuality.poor
+              : ClusterQuality.bad;
+  return ClusterReading(
+    icon:         Icons.grain_outlined,
+    iconColor:    qualityColor(q),
+    label:        'PM2.5',
+    displayValue: val < 10 ? val.toStringAsFixed(1) : val.toStringAsFixed(0),
+    unit:         'µg/m³',
+    quality:      q,
+  );
+}
+
+ClusterReading? _renderCo2(dynamic v) {
+  final ppm = v as int;
+  final q   = ppm < 800  ? ClusterQuality.good
+              : ppm < 1500 ? ClusterQuality.moderate
+              : ppm < 2500 ? ClusterQuality.poor
+              : ClusterQuality.bad;
+  return ClusterReading(
+    icon:         Icons.co2_outlined,
+    iconColor:    qualityColor(q),
+    label:        'CO₂',
+    displayValue: '$ppm',
+    unit:         'ppm',
+    quality:      q,
+    subtitle:     switch (q) {
+      ClusterQuality.good     => 'Good',
+      ClusterQuality.moderate => 'Elevated',
+      ClusterQuality.poor     => 'High',
+      ClusterQuality.bad      => 'Very high',
+    },
+  );
+}
+
+ClusterReading? _renderCo(dynamic v) {
+  final val = (v as int) / 10.0;
+  final q   = val < 9  ? ClusterQuality.good
+              : val < 35 ? ClusterQuality.moderate
+              : val < 70 ? ClusterQuality.poor
+              : ClusterQuality.bad;
+  return ClusterReading(
+    icon:         Icons.warning_amber_outlined,
+    iconColor:    qualityColor(q),
+    label:        'Carbon Monoxide',
+    displayValue: val < 10 ? val.toStringAsFixed(1) : val.toStringAsFixed(0),
+    unit:         'ppm',
+    quality:      q,
+  );
+}
+
+ClusterReading? _renderBatteryRaw(dynamic v) {
+  final pct = (v as int) ~/ 2; // batPercentRaw is 0–200; half = percent
+  final q   = pct > 60 ? ClusterQuality.good
+              : pct > 20 ? ClusterQuality.moderate
+              : ClusterQuality.bad;
+  return ClusterReading(
+    icon:         q == ClusterQuality.bad  ? Icons.battery_alert
+                : q == ClusterQuality.good ? Icons.battery_full
+                : Icons.battery_3_bar,
+    iconColor:    qualityColor(q),
+    label:        'Battery',
+    displayValue: '$pct',
+    unit:         '%',
+    quality:      q,
+  );
+}
+
+ClusterReading? _renderBatteryLvl(dynamic v) {
+  final lvl = v as int;
+  final q   = switch (lvl) {
+    0 => ClusterQuality.good, 1 => ClusterQuality.moderate, _ => ClusterQuality.bad
+  };
+  return ClusterReading(
+    icon:         q == ClusterQuality.bad  ? Icons.battery_alert
+                : q == ClusterQuality.good ? Icons.battery_full
+                : Icons.battery_3_bar,
+    iconColor:    qualityColor(q),
+    label:        'Battery',
+    displayValue: switch (lvl) { 0 => 'OK', 1 => 'Warning', 2 => 'Critical', _ => '?' },
+    unit:         '',
+    quality:      q,
+  );
+}
+
 /// Converts [LiveEndpoint] list into display-ready [ClusterReading]s for [deviceType].
 List<ClusterReading> extractReadings(
     List<LiveEndpoint> endpoints, DeviceType deviceType) {
@@ -185,7 +377,6 @@ ClusterReading? _readingFromCluster(
 
     // ── Relative Humidity 0x0405 ────────────────────────────────────────────
     case 0x0405:
-      if (deviceType == DeviceType.thermostat) return null;
       final v = int.tryParse(raw(0x0000) ?? '');
       if (v == null || v == 0xFFFF) return null;
       final pct = v / 100.0;
@@ -313,7 +504,6 @@ ClusterReading? _readingFromCluster(
 
     // ── Boolean State 0x0045 (contact sensor) ───────────────────────────────
     case 0x0045:
-      if (deviceType == DeviceType.contactSensor) return null;
       final v = raw(0x0000);
       if (v == null) return null;
       final closed = v == 'true';
@@ -327,7 +517,6 @@ ClusterReading? _readingFromCluster(
 
     // ── Power Source 0x002F (battery) ───────────────────────────────────────
     case 0x002F:
-      if (deviceType == DeviceType.thermostat) return null;
       final pctRaw  = int.tryParse(raw(0x000C) ?? '');
       final lvlRaw  = int.tryParse(raw(0x000E) ?? '');
       final voltRaw = int.tryParse(raw(0x000B) ?? '');
@@ -442,6 +631,185 @@ ClusterReading? _readingFromCluster(
         icon: Icons.air_outlined, iconColor: qualityColor(q),
         label: 'Air Quality', displayValue: label, unit: '', quality: q,
       );
+
+    // ── Smoke CO Alarm 0x005C ───────────────────────────────────────────────
+    case 0x005C: {
+      final smoke = int.tryParse(raw(0x0001) ?? '');
+      final co    = int.tryParse(raw(0x0002) ?? '');
+      final bat   = int.tryParse(raw(0x0003) ?? '');
+      // Represent the worst active state; skip if all normal/unknown
+      final worst = [smoke, co, bat].whereType<int>().fold(0, math.max);
+      if (worst == 0 && smoke != null) return null; // all normal — no tile needed
+      final q = switch (worst) {
+        2      => ClusterQuality.bad,
+        1      => ClusterQuality.poor,
+        _      => ClusterQuality.good,
+      };
+      final desc = smoke != null && smoke > 0 ? 'Smoke'
+                 : co    != null && co    > 0 ? 'CO'
+                 : bat   != null && bat   > 0 ? 'Battery' : 'OK';
+      return ClusterReading(
+        icon: worst > 0 ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+        iconColor: qualityColor(q),
+        label: 'Alarm', displayValue: desc, unit: '', quality: q,
+      );
+    }
+
+    // ── Thermostat 0x0201 — setpoint tile for non-thermostat endpoints ──────
+    case 0x0201:
+      if (deviceType == DeviceType.thermostat) return null;
+      final setpt = int.tryParse(raw(0x0012) ?? '');
+      if (setpt == null || setpt == -32768) return null;
+      return ClusterReading(
+        icon: Icons.thermostat,
+        iconColor: Colors.orange.shade400,
+        label: 'Setpoint',
+        displayValue: (setpt / 100.0).toStringAsFixed(1),
+        unit: '°C',
+      );
+
+    // ── Window Covering 0x0102 — skip dedicated card device types ──────────
+    case 0x0102:
+      if (deviceType == DeviceType.windowCovering) return null;
+      final lift = int.tryParse(raw(0x000E) ?? '');
+      if (lift == null) return null;
+      final pct = (lift / 100).round();
+      return ClusterReading(
+        icon: Icons.blinds_outlined,
+        iconColor: Colors.blueGrey.shade400,
+        label: 'Position',
+        displayValue: pct.toString(),
+        unit: '%',
+      );
+
+    // ── Fan Control 0x0202 — skip dedicated card device types ──────────────
+    case 0x0202:
+      if (deviceType == DeviceType.fan || deviceType == DeviceType.airPurifier) return null;
+      final mode = int.tryParse(raw(0x0000) ?? '');
+      if (mode == null) return null;
+      const modeLabels = {0:'Off', 1:'Low', 2:'Med', 3:'High', 4:'On', 5:'Auto', 6:'Smart'};
+      return ClusterReading(
+        icon: Icons.wind_power_outlined,
+        iconColor: Colors.lightBlue.shade400,
+        label: 'Fan',
+        displayValue: modeLabels[mode] ?? '$mode',
+        unit: '',
+      );
+
+    // ── Color Control 0x0300 — skip dedicated card device types ────────────
+    case 0x0300:
+      if (deviceType == DeviceType.colorTemperatureLight ||
+          deviceType == DeviceType.extendedColorLight) return null;
+      final ct = int.tryParse(raw(0x0007) ?? '');
+      if (ct == null || ct == 0) return null;
+      final k = (1_000_000 / ct).round();
+      return ClusterReading(
+        icon: Icons.wb_sunny_outlined,
+        iconColor: Colors.amber.shade400,
+        label: 'Color Temp',
+        displayValue: '$k',
+        unit: 'K',
+      );
+
+    // ── Nitrogen Dioxide 0x0413 ─────────────────────────────────────────────
+    case 0x0413: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 10  ? ClusterQuality.good
+               : v < 25  ? ClusterQuality.moderate
+               : v < 50  ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.air_outlined, iconColor: qualityColor(q),
+        label: 'NO₂', displayValue: v < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0),
+        unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── Ozone 0x0415 ────────────────────────────────────────────────────────
+    case 0x0415: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 50  ? ClusterQuality.good
+               : v < 100 ? ClusterQuality.moderate
+               : v < 150 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.air_outlined, iconColor: qualityColor(q),
+        label: 'Ozone', displayValue: v.toStringAsFixed(0), unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── Formaldehyde 0x042B ─────────────────────────────────────────────────
+    case 0x042B: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 100 ? ClusterQuality.good
+               : v < 300 ? ClusterQuality.moderate
+               : v < 500 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.science_outlined, iconColor: qualityColor(q),
+        label: 'HCHO', displayValue: v.toStringAsFixed(0), unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── PM1 0x042C ──────────────────────────────────────────────────────────
+    case 0x042C: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v <= 12   ? ClusterQuality.good
+               : v <= 35.4 ? ClusterQuality.moderate
+               : v <= 55.4 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.grain_outlined, iconColor: qualityColor(q),
+        label: 'PM1', displayValue: v < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0),
+        unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── PM10 0x042D ─────────────────────────────────────────────────────────
+    case 0x042D: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 50  ? ClusterQuality.good
+               : v < 100 ? ClusterQuality.moderate
+               : v < 250 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.grain_outlined, iconColor: qualityColor(q),
+        label: 'PM10', displayValue: v.toStringAsFixed(0), unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── TVOC 0x042E ─────────────────────────────────────────────────────────
+    case 0x042E: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 300  ? ClusterQuality.good
+               : v < 1000 ? ClusterQuality.moderate
+               : v < 3000 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.science_outlined, iconColor: qualityColor(q),
+        label: 'TVOC', displayValue: v.toStringAsFixed(0), unit: 'µg/m³', quality: q,
+      );
+    }
+
+    // ── Radon 0x042F ────────────────────────────────────────────────────────
+    case 0x042F: {
+      final v = double.tryParse(raw(0x0000) ?? '');
+      if (v == null || v.isNaN || v < 0) return null;
+      final q = v < 100  ? ClusterQuality.good
+               : v < 300  ? ClusterQuality.moderate
+               : v < 1000 ? ClusterQuality.poor
+               : ClusterQuality.bad;
+      return ClusterReading(
+        icon: Icons.radio_outlined, iconColor: qualityColor(q),
+        label: 'Radon', displayValue: v.toStringAsFixed(0), unit: 'Bq/m³', quality: q,
+      );
+    }
 
     default: return null;
   }
