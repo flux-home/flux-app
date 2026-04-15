@@ -6,20 +6,18 @@ import 'package:flutter/material.dart';
 /// remaining space.  Set [mono] for monospace value text (IDs, hex strings
 /// etc.) and [link] to style the value as a tappable hyperlink colour.
 class InfoRow extends StatelessWidget {
+
+  const InfoRow({
+    required this.label, required this.value, super.key,
+    this.labelWidth = 130,
+    this.mono       = false,
+    this.link       = false,
+  });
   final String label;
   final String value;
   final double labelWidth;
   final bool   mono;
   final bool   link;
-
-  const InfoRow({
-    super.key,
-    required this.label,
-    required this.value,
-    this.labelWidth = 130,
-    this.mono       = false,
-    this.link       = false,
-  });
 
   @override
   Widget build(BuildContext context) {

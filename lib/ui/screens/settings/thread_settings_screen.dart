@@ -1,21 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:matter_home/models/thread_models.dart';
+import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/thread_settings_service.dart';
+import 'package:matter_home/ui/widgets/info_row.dart';
+import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
-
-import '../../../models/thread_models.dart';
-import '../../../services/matter_port.dart';
-import '../../../services/thread_settings_service.dart';
-import '../../widgets/info_row.dart';
-import '../../widgets/section_label.dart';
-
 
 /// locally-configured dataset that matches this PAN.
 class _ThreadNetwork {
-  final String networkName;
-  final String extPanId;         // from mDNS or decoded from dataset
-  final List<ThreadBorderRouter> borderRouters;
-  final bool   isConfigured;     // true if this matches the saved hex dataset
-  final String? configuredHex;   // raw hex if isConfigured
+  // raw hex if isConfigured
 
   const _ThreadNetwork({
     required this.networkName,
@@ -24,6 +18,11 @@ class _ThreadNetwork {
     required this.isConfigured,
     this.configuredHex,
   });
+  final String networkName;
+  final String extPanId; // from mDNS or decoded from dataset
+  final List<ThreadBorderRouter> borderRouters;
+  final bool isConfigured; // true if this matches the saved hex dataset
+  final String? configuredHex;
 }
 
 class ThreadSettingsScreen extends StatefulWidget {
@@ -47,16 +46,13 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
   /// On open: restore cached routers immediately, then let the user rescan.
   Future<void> _loadCached() async {
-    final results = await Future.wait([
-      ThreadSettingsService.load(),
-      ThreadSettingsService.loadRouters(),
-    ]);
+    final results = await Future.wait([ThreadSettingsService.load(), ThreadSettingsService.loadRouters()]);
     final savedHex = results[0] as String;
-    final cached   = results[1] as List<ThreadBorderRouter>;
+    final cached = results[1] as List<ThreadBorderRouter>;
     final networks = _buildNetworks(savedHex, cached);
     if (mounted) {
       setState(() {
-        _networks     = networks;
+        _networks = networks;
         _hasCachedData = cached.isNotEmpty;
       });
     }
@@ -64,41 +60,49 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
   /// Scan the network, persist results, refresh UI.
   Future<void> _scan() async {
-    setState(() { _scanning = true; _error = null; });
+    setState(() {
+      _scanning = true;
+      _error = null;
+    });
     try {
       final results = await Future.wait([
         ThreadSettingsService.load(),
         context.read<MatterFabricPort>().discoverThreadNetworks(),
       ]);
       final savedHex = results[0] as String;
-      final routers  = results[1] as List<ThreadBorderRouter>;
+      final routers = results[1] as List<ThreadBorderRouter>;
 
       await ThreadSettingsService.saveRouters(routers);
 
       final networks = _buildNetworks(savedHex, routers);
       if (mounted) {
         setState(() {
-          _networks      = networks;
+          _networks = networks;
           _hasCachedData = true;
-          _scanning      = false;
+          _scanning = false;
         });
       }
-    } catch (e) {
-      if (mounted) { setState(() { _error = e.toString(); _scanning = false; }); }
+    } on Exception catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _scanning = false;
+        });
+      }
     }
   }
 
-  List<_ThreadNetwork> _buildNetworks(
-      String savedHex, List<ThreadBorderRouter> routers) {
-    final savedClean  = savedHex.replaceAll(RegExp(r'\s'), '');
+  List<_ThreadNetwork> _buildNetworks(String savedHex, List<ThreadBorderRouter> routers) {
+    final savedClean = savedHex.replaceAll(RegExp(r'\s'), '');
     final savedFields = ThreadTlvDecoder.decode(savedClean);
-    String? savedName, savedXp;
+    String? savedName;
+    String? savedXp;
     for (final f in savedFields) {
       if (f.label == 'Network Name') savedName = f.value;
-      if (f.label == 'Ext PAN ID')   savedXp   = f.value;
+      if (f.label == 'Ext PAN ID') savedXp = f.value;
     }
 
-    final Map<String, List<ThreadBorderRouter>> byName = {};
+    final byName = <String, List<ThreadBorderRouter>>{};
     for (final r in routers) {
       byName.putIfAbsent(r.networkName, () => []).add(r);
     }
@@ -107,22 +111,26 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
     if (savedName != null) {
       final matchingRouters = byName.remove(savedName) ?? [];
-      networks.add(_ThreadNetwork(
-        networkName:   savedName,
-        extPanId:      savedXp ?? '',
-        borderRouters: matchingRouters,
-        isConfigured:  true,
-        configuredHex: savedHex,
-      ));
+      networks.add(
+        _ThreadNetwork(
+          networkName: savedName,
+          extPanId: savedXp ?? '',
+          borderRouters: matchingRouters,
+          isConfigured: true,
+          configuredHex: savedHex,
+        ),
+      );
     }
 
     for (final entry in byName.entries) {
-      networks.add(_ThreadNetwork(
-        networkName:   entry.key,
-        extPanId:      entry.value.first.extPanId,
-        borderRouters: entry.value,
-        isConfigured:  false,
-      ));
+      networks.add(
+        _ThreadNetwork(
+          networkName: entry.key,
+          extPanId: entry.value.first.extPanId,
+          borderRouters: entry.value,
+          isConfigured: false,
+        ),
+      );
     }
 
     return networks;
@@ -146,9 +154,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                 label: const Text('Thread credentials'),
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const _ThreadCredentialsScreen(),
-                  ),
+                  MaterialPageRoute<void>(builder: (_) => const _ThreadCredentialsScreen()),
                 ).then((_) => _loadCached()),
               ),
             ),
@@ -157,8 +163,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Text(_error!,
-                  style: TextStyle(color: cs.error, fontSize: 13)),
+              child: Text(_error!, style: TextStyle(color: cs.error, fontSize: 13)),
             ),
 
           // ── Network list ────────────────────────────────────────────
@@ -170,15 +175,13 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                           ? 'No Thread networks found'
                           : 'Tap "Scan for networks" to discover Thread networks',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 13, color: cs.onSurfaceVariant),
+                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
                     ),
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: _networks.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 8),
+                    separatorBuilder: (context, index) => const SizedBox(height: 8),
                     itemBuilder: (ctx, i) {
                       final net = _networks[i];
                       final cs2 = Theme.of(ctx).colorScheme;
@@ -186,20 +189,14 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                         child: ListTile(
                           leading: Icon(
                             Icons.router_outlined,
-                            color: net.isConfigured
-                                ? cs2.primary
-                                : cs2.onSurfaceVariant,
+                            color: net.isConfigured ? cs2.primary : cs2.onSurfaceVariant,
                           ),
-                          title: Text(net.networkName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
-                      subtitle: net.borderRouters.isNotEmpty
+                          title: Text(net.networkName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: net.borderRouters.isNotEmpty
                               ? Text(
                                   '${net.borderRouters.length} border router'
                                   '${net.borderRouters.length == 1 ? '' : 's'}',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: cs2.onSurfaceVariant),
+                                  style: TextStyle(fontSize: 12, color: cs2.onSurfaceVariant),
                                 )
                               : null,
                           trailing: Row(
@@ -207,12 +204,10 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                             children: [
                               if (net.isConfigured)
                                 Chip(
-                                  label: const Text('Configured',
-                                      style: TextStyle(fontSize: 11)),
+                                  label: const Text('Configured', style: TextStyle(fontSize: 11)),
                                   visualDensity: VisualDensity.compact,
                                   backgroundColor: cs2.primaryContainer,
-                                  labelStyle: TextStyle(
-                                      color: cs2.onPrimaryContainer),
+                                  labelStyle: TextStyle(color: cs2.onPrimaryContainer),
                                   side: BorderSide.none,
                                   padding: EdgeInsets.zero,
                                 ),
@@ -222,10 +217,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                           ),
                           onTap: () => Navigator.push(
                             ctx,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  _ThreadNetworkScreen(network: net),
-                            ),
+                            MaterialPageRoute<void>(builder: (_) => _ThreadNetworkScreen(network: net)),
                           ).then((_) => _loadCached()),
                         ),
                       );
@@ -244,9 +236,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                     ? const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
+                          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                           SizedBox(width: 10),
                           Text('Scanning…'),
                         ],
@@ -269,18 +259,17 @@ class _ThreadCredentialsScreen extends StatefulWidget {
   const _ThreadCredentialsScreen();
 
   @override
-  State<_ThreadCredentialsScreen> createState() =>
-      _ThreadCredentialsScreenState();
+  State<_ThreadCredentialsScreen> createState() => _ThreadCredentialsScreenState();
 }
 
 class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
   List<ThreadDataset> _datasets = [];
-  ThreadDataset?      _active;
-  bool                _loading  = true;
+  ThreadDataset? _active;
+  bool _loading = true;
 
   // Android import state
-  bool    _reading  = false;
-  bool    _hasRead  = false;
+  bool _reading = false;
+  bool _hasRead = false;
   List<ThreadDataset> _androidCreds = [];
   String? _readError;
 
@@ -292,15 +281,12 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
 
   Future<void> _reload() async {
     setState(() => _loading = true);
-    final results = await Future.wait([
-      ThreadSettingsService.loadDatasets(),
-      ThreadSettingsService.loadActive(),
-    ]);
+    final results = await Future.wait([ThreadSettingsService.loadDatasets(), ThreadSettingsService.loadActive()]);
     if (mounted) {
       setState(() {
-        _datasets = results[0] as List<ThreadDataset>;
-        _active   = results[1] as ThreadDataset?;
-        _loading  = false;
+        _datasets = results[0]! as List<ThreadDataset>;
+        _active = results[1] as ThreadDataset?;
+        _loading = false;
       });
     }
   }
@@ -317,12 +303,8 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
   Future<void> _addDataset() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const _ThreadDatasetDetailScreen(
-          initialHex:   '',
-          initialLabel: '',
-          isNew:        true,
-        ),
+      MaterialPageRoute<void>(
+        builder: (_) => const _ThreadDatasetDetailScreen(initialHex: '', initialLabel: '', isNew: true),
       ),
     );
     await _reload();
@@ -332,13 +314,8 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
     final isActive = _active == ds;
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => _ThreadDatasetDetailScreen(
-          initialHex:   ds.hex,
-          initialLabel: ds.label,
-          isNew:        false,
-          isActive:     isActive,
-        ),
+      MaterialPageRoute<void>(
+        builder: (_) => _ThreadDatasetDetailScreen(initialHex: ds.hex, initialLabel: ds.label, isActive: isActive),
       ),
     );
     await _reload();
@@ -353,16 +330,12 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
         title: const Text('Delete dataset'),
         content: Text('Remove "${ds.label}" from your credential set?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed ?? false) {
       await ThreadSettingsService.removeDataset(ds.hex);
       await _reload();
     }
@@ -378,9 +351,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
       _hasRead = false;
     });
     try {
-      final hex = await context
-          .read<MatterFabricPort>()
-          .readAndroidThreadCredentials();
+      final hex = await context.read<MatterFabricPort>().readAndroidThreadCredentials();
 
       if (hex == null) {
         if (mounted) {
@@ -393,12 +364,16 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
         return;
       }
       if (hex.isEmpty) {
-        if (mounted) setState(() { _reading = false; _hasRead = true; });
+        if (mounted) {
+          setState(() {
+            _reading = false;
+            _hasRead = true;
+          });
+        }
         return;
       }
 
-      final name = ThreadTlvDecoder.networkName(hex) ??
-          hex.substring(0, 8.clamp(0, hex.length));
+      final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
       if (mounted) {
         setState(() {
           _androidCreds = [ThreadDataset(label: name, hex: hex)];
@@ -406,9 +381,13 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
           _hasRead = true;
         });
       }
-    } catch (e) {
+    } on Exception catch (e) {
       if (mounted) {
-        setState(() { _readError = e.toString(); _reading = false; _hasRead = true; });
+        setState(() {
+          _readError = e.toString();
+          _reading = false;
+          _hasRead = true;
+        });
       }
     }
   }
@@ -418,9 +397,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
     await ThreadSettingsService.setActive(ds.hex);
     await _reload();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${ds.label}" imported and set as active')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${ds.label}" imported and set as active')));
     }
   }
 
@@ -437,49 +414,47 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-
                 // ── Credential set ─────────────────────────────────────
-                Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                    child: SectionLabel('Credential set')),
+                const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Credential set')),
 
                 // "Empty dataset" is always the first option.
                 _DatasetTile(
-                  dataset:  ThreadDataset.empty,
+                  dataset: ThreadDataset.empty,
                   isActive: _active?.isEmpty ?? false,
                   onSelect: () => _selectDataset(ThreadDataset.empty),
                 ),
 
                 if (_datasets.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  ..._datasets.map((ds) => Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _DatasetTile(
-                      dataset:  ds,
-                      isActive: _active == ds,
-                      onSelect: () => _selectDataset(ds),
-                      onEdit:   () => _editDataset(ds),
-                      onDelete: () => _deleteDataset(ds),
+                  ..._datasets.map(
+                    (ds) => Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _DatasetTile(
+                        dataset: ds,
+                        isActive: _active == ds,
+                        onSelect: () => _selectDataset(ds),
+                        onEdit: () => _editDataset(ds),
+                        onDelete: () => _deleteDataset(ds),
+                      ),
                     ),
-                  )),
+                  ),
                 ],
 
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  icon:     const Icon(Icons.add_outlined, size: 18),
-                  label:    const Text('Add dataset'),
+                  icon: const Icon(Icons.add_outlined, size: 18),
+                  label: const Text('Add dataset'),
                   onPressed: _addDataset,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
                 ),
 
                 const SizedBox(height: 24),
 
                 // ── Android credential store ───────────────────────────
-                Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                    child: SectionLabel('Android credential store')),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
+                  child: SectionLabel('Android credential store'),
+                ),
 
                 Card(
                   child: Column(
@@ -487,12 +462,9 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
                       ListTile(
                         leading: Icon(Icons.android, color: cs.primary),
                         title: const Text('Read from Android'),
-                        subtitle: const Text(
-                            'Load Thread credentials stored by other apps'),
+                        subtitle: const Text('Load Thread credentials stored by other apps'),
                         trailing: _reading
-                            ? const SizedBox(
-                                width: 20, height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2))
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.download_outlined),
                         onTap: _reading ? null : _readFromAndroid,
                       ),
@@ -500,8 +472,7 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
                       if (_readError != null) ...[
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                          child: Text(_readError!,
-                              style: TextStyle(color: cs.error, fontSize: 12)),
+                          child: Text(_readError!, style: TextStyle(color: cs.error, fontSize: 12)),
                         ),
                       ],
 
@@ -509,44 +480,32 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
                         Divider(height: 1, color: cs.outlineVariant),
                         ..._androidCreds.map((c) {
                           final alreadySaved = _datasets.any((d) => d == c);
-                          final isActive     = _active == c;
+                          final isActive = _active == c;
                           return ListTile(
                             dense: true,
                             leading: Icon(
-                              isActive
-                                  ? Icons.check_circle_outline
-                                  : Icons.circle_outlined,
-                              color: isActive
-                                  ? cs.primary : cs.onSurfaceVariant,
+                              isActive ? Icons.check_circle_outline : Icons.circle_outlined,
+                              color: isActive ? cs.primary : cs.onSurfaceVariant,
                               size: 20,
                             ),
-                            title: Text(c.label,
-                                style: const TextStyle(fontSize: 13)),
+                            title: Text(c.label, style: const TextStyle(fontSize: 13)),
                             trailing: isActive
                                 ? _activeChip(cs)
                                 : alreadySaved
-                                    ? TextButton(
-                                        onPressed: () => _selectDataset(c),
-                                        child: const Text('Set active'),
-                                      )
-                                    : TextButton(
-                                        onPressed: () => _importFromAndroid(c),
-                                        child: const Text('Import'),
-                                      ),
+                                ? TextButton(onPressed: () => _selectDataset(c), child: const Text('Set active'))
+                                : TextButton(onPressed: () => _importFromAndroid(c), child: const Text('Import')),
                           );
                         }),
                       ],
 
-                      if (!_reading && _androidCreds.isEmpty &&
-                          _readError == null) ...[
+                      if (!_reading && _androidCreds.isEmpty && _readError == null) ...[
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                           child: Text(
                             _hasRead
                                 ? 'Picker was cancelled or no credential was selected.'
                                 : 'Tap "Read from Android" — a system picker will let you choose which Thread network to share.',
-                            style: TextStyle(
-                                fontSize: 12, color: cs.onSurfaceVariant),
+                            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                           ),
                         ),
                       ],
@@ -561,24 +520,18 @@ class _ThreadCredentialsScreenState extends State<_ThreadCredentialsScreen> {
   }
 
   Widget _activeChip(ColorScheme cs) => Chip(
-        label: const Text('Active', style: TextStyle(fontSize: 11)),
-        visualDensity: VisualDensity.compact,
-        backgroundColor: cs.primaryContainer,
-        labelStyle: TextStyle(color: cs.onPrimaryContainer),
-        side: BorderSide.none,
-        padding: EdgeInsets.zero,
-      );
+    label: const Text('Active', style: TextStyle(fontSize: 11)),
+    visualDensity: VisualDensity.compact,
+    backgroundColor: cs.primaryContainer,
+    labelStyle: TextStyle(color: cs.onPrimaryContainer),
+    side: BorderSide.none,
+    padding: EdgeInsets.zero,
+  );
 }
 
 // ── Dataset tile ──────────────────────────────────────────────────────────────
 
 class _DatasetTile extends StatelessWidget {
-  final ThreadDataset dataset;
-  final bool          isActive;
-  final VoidCallback  onSelect;
-  final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
-
   const _DatasetTile({
     required this.dataset,
     required this.isActive,
@@ -586,6 +539,11 @@ class _DatasetTile extends StatelessWidget {
     this.onEdit,
     this.onDelete,
   });
+  final ThreadDataset dataset;
+  final bool isActive;
+  final VoidCallback onSelect;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -594,26 +552,21 @@ class _DatasetTile extends StatelessWidget {
     final subtitle = dataset.isEmpty
         ? 'No credentials — device joins via MeshCoP'
         : dataset.hex.length > 24
-            ? '${dataset.hex.substring(0, 24)}…'
-            : dataset.hex;
+        ? '${dataset.hex.substring(0, 24)}…'
+        : dataset.hex;
 
     return Card(
       color: isActive ? cs.primaryContainer.withAlpha(80) : null,
       child: ListTile(
         leading: Icon(
-          isActive
-              ? Icons.radio_button_checked
-              : Icons.radio_button_off,
+          isActive ? Icons.radio_button_checked : Icons.radio_button_off,
           color: isActive ? cs.primary : cs.onSurfaceVariant,
         ),
-        title: Text(dataset.label,
-            style: TextStyle(
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal)),
-        subtitle: Text(subtitle,
-            style: TextStyle(
-                fontFamily: dataset.isEmpty ? null : 'monospace',
-                fontSize: 11,
-                color: cs.onSurfaceVariant)),
+        title: Text(dataset.label, style: TextStyle(fontWeight: isActive ? FontWeight.w600 : FontWeight.normal)),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(fontFamily: dataset.isEmpty ? null : 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+        ),
         trailing: dataset.isEmpty
             ? null
             : Row(
@@ -628,8 +581,7 @@ class _DatasetTile extends StatelessWidget {
                     ),
                   if (onDelete != null)
                     IconButton(
-                      icon: Icon(Icons.delete_outline,
-                          size: 18, color: cs.error),
+                      icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
                       tooltip: 'Delete',
                       visualDensity: VisualDensity.compact,
                       onPressed: onDelete,
@@ -642,95 +594,78 @@ class _DatasetTile extends StatelessWidget {
   }
 }
 
-
 // ---------------------------------------------------------------------------
 // Thread network detail — border routers + dataset
 // ---------------------------------------------------------------------------
 
 class _ThreadNetworkScreen extends StatelessWidget {
-  final _ThreadNetwork network;
   const _ThreadNetworkScreen({required this.network});
+  final _ThreadNetwork network;
 
   @override
   Widget build(BuildContext context) {
-    final cs     = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final fields = network.isConfigured && network.configuredHex != null
-        ? ThreadTlvDecoder.decode(
-            network.configuredHex!.replaceAll(RegExp(r'\s'), ''))
+        ? ThreadTlvDecoder.decode(network.configuredHex!.replaceAll(RegExp(r'\s'), ''))
         : <({String label, String value})>[];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(network.networkName,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(network.networkName, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-
           // ── Border routers ─────────────────────────────────────────────
-          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Border routers')),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Border routers')),
           if (network.borderRouters.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Text('No border routers discovered on this network',
-                  style: TextStyle(fontSize: 13)),
+              child: Text('No border routers discovered on this network', style: TextStyle(fontSize: 13)),
             )
           else
             Card(
               child: Column(
-                children: network.borderRouters
-                    .asMap()
-                    .entries
-                    .map((e) {
-                  final r     = e.value;
-                  final last  = e.key == network.borderRouters.length - 1;
+                children: network.borderRouters.asMap().entries.map((e) {
+                  final r = e.value;
+                  final last = e.key == network.borderRouters.length - 1;
                   return Column(
                     children: [
                       ListTile(
-                        leading: Icon(Icons.device_hub,
-                            color: cs.primary),
+                        leading: Icon(Icons.device_hub, color: cs.primary),
                         title: Text(
                           r.vendorName.isNotEmpty && r.modelName.isNotEmpty
                               ? '${r.vendorName} ${r.modelName}'
                               : r.serviceName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w500),
+                          style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                         subtitle: r.host.isNotEmpty || r.txt['tv'] != null
                             ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (r.host.isNotEmpty)
-                                    Text('${r.host}:${r.port}',
-                                        style: const TextStyle(
-                                            fontFamily: 'monospace',
-                                            fontSize: 12)),
+                                    Text(
+                                      '${r.host}:${r.port}',
+                                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                                    ),
                                   if (r.txt['tv'] != null)
-                                    Text('Thread ${r.txt['tv']}',
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant)),
+                                    Text(
+                                      'Thread ${r.txt['tv']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
                                 ],
                               )
                             : null,
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                _BorderRouterDetailScreen(router: r),
-                          ),
+                          MaterialPageRoute<void>(builder: (_) => _BorderRouterDetailScreen(router: r)),
                         ),
                       ),
-                      if (!last)
-                        Divider(
-                            height: 1,
-                            indent: 16,
-                            endIndent: 16,
-                            color: cs.outlineVariant),
+                      if (!last) Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
                     ],
                   );
                 }).toList(),
@@ -740,16 +675,12 @@ class _ThreadNetworkScreen extends StatelessWidget {
           // ── Dataset details (configured network only) ─────────────────
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 20),
-            Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Dataset')),
+            const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Dataset')),
             Card(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Column(
-                  children: fields
-                      .map((f) =>
-                          InfoRow(label: f.label, value: f.value))
-                      .toList(),
+                  children: fields.map((f) => InfoRow(label: f.label, value: f.value)).toList(),
                 ),
               ),
             ),
@@ -757,19 +688,13 @@ class _ThreadNetworkScreen extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => _ThreadDatasetDetailScreen(
-                    initialHex:   network.configuredHex!,
-                    initialLabel: network.networkName,
-                    isActive:     true,
-                  ),
+                MaterialPageRoute<void>(
+                  builder: (_) => const _ThreadDatasetDetailScreen(initialHex: '', initialLabel: '', isNew: true),
                 ),
               ),
               icon: const Icon(Icons.edit_outlined, size: 18),
               label: const Text('Edit dataset'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
             ),
           ],
 
@@ -785,47 +710,40 @@ class _ThreadNetworkScreen extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 const _kTxtFieldInfo = <String, ({String name, String description})>{
-  'rv': (name: 'Revision',          description: 'The Thread version. Usually 1 or higher.'),
-  'nn': (name: 'Network Name',      description: 'Human-readable name of the Thread mesh.'),
-  'xp': (name: 'Extended PAN ID',   description: '64-bit hex ID that uniquely identifies this mesh.'),
-  'tv': (name: 'Thread Version',    description: 'Specific stack version (e.g. 1.3.0).'),
-  'vn': (name: 'Vendor Name',       description: 'Manufacturer of the border router device.'),
-  'mn': (name: 'Model Name',        description: 'Model of the border router device.'),
-  'at': (name: 'Active Timestamp',  description: '64-bit value ensuring all devices have the latest settings.'),
-  'sq': (name: 'Sequence Number',   description: 'Increments every time the network configuration changes.'),
-  'sb': (name: 'State Bitmap',      description: 'Connectivity and service flags for this border router.'),
-  'bb': (name: 'BBR Sequence',      description: 'Backbone Border Router sequence number.'),
-  'dn': (name: 'Domain Name',       description: 'Thread domain name (Thread 1.2+).'),
-  'id': (name: 'Border Agent ID',   description: '128-bit unique identifier for this border agent.'),
+  'rv': (name: 'Revision', description: 'The Thread version. Usually 1 or higher.'),
+  'nn': (name: 'Network Name', description: 'Human-readable name of the Thread mesh.'),
+  'xp': (name: 'Extended PAN ID', description: '64-bit hex ID that uniquely identifies this mesh.'),
+  'tv': (name: 'Thread Version', description: 'Specific stack version (e.g. 1.3.0).'),
+  'vn': (name: 'Vendor Name', description: 'Manufacturer of the border router device.'),
+  'mn': (name: 'Model Name', description: 'Model of the border router device.'),
+  'at': (name: 'Active Timestamp', description: '64-bit value ensuring all devices have the latest settings.'),
+  'sq': (name: 'Sequence Number', description: 'Increments every time the network configuration changes.'),
+  'sb': (name: 'State Bitmap', description: 'Connectivity and service flags for this border router.'),
+  'bb': (name: 'BBR Sequence', description: 'Backbone Border Router sequence number.'),
+  'dn': (name: 'Domain Name', description: 'Thread domain name (Thread 1.2+).'),
+  'id': (name: 'Border Agent ID', description: '128-bit unique identifier for this border agent.'),
 };
 
 class _BorderRouterDetailScreen extends StatelessWidget {
-  final ThreadBorderRouter router;
   const _BorderRouterDetailScreen({required this.router});
+  final ThreadBorderRouter router;
 
   @override
   Widget build(BuildContext context) {
-    final cs    = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final title = router.vendorName.isNotEmpty && router.modelName.isNotEmpty
         ? '${router.vendorName} ${router.modelName}'
         : router.serviceName;
 
     // Build ordered field list: known fields first (in _kTxtFieldInfo order),
     // then any unknown keys alphabetically.
-    final knownKeys   = _kTxtFieldInfo.keys.toList();
-    final unknownKeys = router.txt.keys
-        .where((k) => !knownKeys.contains(k))
-        .toList()
-      ..sort();
-    final orderedKeys = [
-      ...knownKeys.where(router.txt.containsKey),
-      ...unknownKeys,
-    ];
+    final knownKeys = _kTxtFieldInfo.keys.toList();
+    final unknownKeys = router.txt.keys.where((k) => !knownKeys.contains(k)).toList()..sort();
+    final orderedKeys = [...knownKeys.where(router.txt.containsKey), ...unknownKeys];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),
           child: Padding(
@@ -833,13 +751,8 @@ class _BorderRouterDetailScreen extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                router.host.isNotEmpty
-                    ? '${router.host}:${router.port}'
-                    : router.serviceName,
-                style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: cs.onSurfaceVariant),
+                router.host.isNotEmpty ? '${router.host}:${router.port}' : router.serviceName,
+                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: cs.onSurfaceVariant),
               ),
             ),
           ),
@@ -852,8 +765,8 @@ class _BorderRouterDetailScreen extends StatelessWidget {
               itemCount: orderedKeys.length,
               separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (ctx, i) {
-                final key  = orderedKeys[i];
-                final val  = router.txt[key] ?? '';
+                final key = orderedKeys[i];
+                final val = router.txt[key] ?? '';
                 final info = _kTxtFieldInfo[key];
                 return Card(
                   child: Padding(
@@ -863,12 +776,8 @@ class _BorderRouterDetailScreen extends StatelessWidget {
                       children: [
                         // Key badge
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: cs.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: BorderRadius.circular(6)),
                           child: Text(
                             key,
                             style: TextStyle(
@@ -885,15 +794,9 @@ class _BorderRouterDetailScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (info != null) ...[
-                                Text(info.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14)),
+                                Text(info.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                                 const SizedBox(height: 2),
-                                Text(info.description,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: cs.onSurfaceVariant)),
+                                Text(info.description, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                                 const SizedBox(height: 6),
                               ],
                               SelectableText(
@@ -902,9 +805,7 @@ class _BorderRouterDetailScreen extends StatelessWidget {
                                   fontFamily: 'monospace',
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
-                                  color: val.isNotEmpty
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
+                                  color: val.isNotEmpty ? cs.primary : cs.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -925,25 +826,22 @@ class _BorderRouterDetailScreen extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ThreadDatasetDetailScreen extends StatefulWidget {
-  final String initialHex;
-  final String initialLabel;
-  final bool   isNew;
-  final bool   isActive;
-
   const _ThreadDatasetDetailScreen({
     required this.initialHex,
     required this.initialLabel,
-    this.isNew     = false,
-    this.isActive  = false,
+    this.isNew = false,
+    this.isActive = false,
   });
+  final String initialHex;
+  final String initialLabel;
+  final bool isNew;
+  final bool isActive;
 
   @override
-  State<_ThreadDatasetDetailScreen> createState() =>
-      _ThreadDatasetDetailScreenState();
+  State<_ThreadDatasetDetailScreen> createState() => _ThreadDatasetDetailScreenState();
 }
 
-class _ThreadDatasetDetailScreenState
-    extends State<_ThreadDatasetDetailScreen> {
+class _ThreadDatasetDetailScreenState extends State<_ThreadDatasetDetailScreen> {
   late TextEditingController _hexCtrl;
   late TextEditingController _labelCtrl;
   bool _saved = false;
@@ -951,7 +849,7 @@ class _ThreadDatasetDetailScreenState
   @override
   void initState() {
     super.initState();
-    _hexCtrl   = TextEditingController(text: widget.initialHex);
+    _hexCtrl = TextEditingController(text: widget.initialHex);
     _labelCtrl = TextEditingController(text: widget.initialLabel);
     _hexCtrl.addListener(() => setState(() {}));
   }
@@ -965,56 +863,47 @@ class _ThreadDatasetDetailScreenState
 
   Future<void> _save() async {
     final clean = _hexCtrl.text.replaceAll(RegExp(r'\s'), '');
-    final name  = _labelCtrl.text.trim().isNotEmpty
+    final name = _labelCtrl.text.trim().isNotEmpty
         ? _labelCtrl.text.trim()
         : ThreadTlvDecoder.networkName(clean) ??
-          (clean.isNotEmpty
-              ? clean.substring(0, 8.clamp(0, clean.length))
-              : 'Unnamed dataset');
+              (clean.isNotEmpty ? clean.substring(0, 8.clamp(0, clean.length)) : 'Unnamed dataset');
     final updated = ThreadDataset(label: name, hex: clean);
 
     if (widget.isNew) {
       if (clean.isNotEmpty) await ThreadSettingsService.addDataset(updated);
     } else {
-      await ThreadSettingsService.updateDataset(
-          widget.initialHex.replaceAll(RegExp(r'\s'), ''), updated);
+      await ThreadSettingsService.updateDataset(widget.initialHex.replaceAll(RegExp(r'\s'), ''), updated);
     }
 
     if (mounted) {
       setState(() => _saved = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Thread dataset saved'),
-            duration: Duration(seconds: 2)),
-      );
-      Future.delayed(const Duration(seconds: 2),
-          () { if (mounted) setState(() => _saved = false); });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Thread dataset saved'), duration: Duration(seconds: 2)));
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _saved = false);
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final cleanHex = _hexCtrl.text.replaceAll(RegExp(r'\s'), '');
-    final fields   = ThreadTlvDecoder.decode(cleanHex);
+    final fields = ThreadTlvDecoder.decode(cleanHex);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isNew ? 'Add dataset' : 'Edit dataset'),
         actions: [
-          IconButton(
-            icon: Icon(_saved ? Icons.check : Icons.save_outlined),
-            tooltip: 'Save',
-            onPressed: _save,
-          ),
+          IconButton(icon: Icon(_saved ? Icons.check : Icons.save_outlined), tooltip: 'Save', onPressed: _save),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-
           // ── Name ──────────────────────────────────────────────────────
-          Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Name')),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Name')),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -1023,8 +912,7 @@ class _ThreadDatasetDetailScreenState
                 decoration: InputDecoration(
                   labelText: 'Dataset name',
                   hintText: 'e.g. Home Thread Network',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   filled: true,
                   fillColor: cs.surfaceContainerHighest,
                   helperText: 'Leave blank to use the name decoded from the TLV',
@@ -1037,16 +925,13 @@ class _ThreadDatasetDetailScreenState
 
           // ── Decoded fields ─────────────────────────────────────────────
           if (fields.isNotEmpty) ...[
-            Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Decoded fields')),
+            const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Decoded fields')),
             Card(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: fields
-                      .map((f) => InfoRow(label: f.label, value: f.value))
-                      .toList(),
+                  children: fields.map((f) => InfoRow(label: f.label, value: f.value)).toList(),
                 ),
               ),
             ),
@@ -1054,7 +939,7 @@ class _ThreadDatasetDetailScreenState
           ],
 
           // ── Hex input ──────────────────────────────────────────────────
-          Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Hex (TLV)')),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 6), child: SectionLabel('Hex (TLV)')),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -1063,24 +948,23 @@ class _ThreadDatasetDetailScreenState
                 children: [
                   Row(
                     children: [
-                      Text('Operational dataset',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: cs.onSurfaceVariant)),
+                      Text(
+                        'Operational dataset',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.copy_outlined, size: 18),
                         tooltip: 'Copy hex',
                         visualDensity: VisualDensity.compact,
-                        onPressed: cleanHex.isEmpty ? null : () {
-                          Clipboard.setData(ClipboardData(text: cleanHex));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Dataset copied'),
-                                duration: Duration(seconds: 1)),
-                          );
-                        },
+                        onPressed: cleanHex.isEmpty
+                            ? null
+                            : () {
+                                Clipboard.setData(ClipboardData(text: cleanHex));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Dataset copied'), duration: Duration(seconds: 1)),
+                                );
+                              },
                       ),
                     ],
                   ),
@@ -1088,23 +972,15 @@ class _ThreadDatasetDetailScreenState
                   TextField(
                     controller: _hexCtrl,
                     maxLines: null,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                    ),
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12, letterSpacing: 0.5),
                     decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       hintText: 'Paste hex dataset…',
                       filled: true,
                       fillColor: cs.surfaceContainerHighest,
                     ),
                     keyboardType: TextInputType.multiline,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                          RegExp(r'[0-9a-fA-F\s]')),
-                    ],
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F\s]'))],
                   ),
                 ],
               ),
@@ -1122,9 +998,7 @@ class _ThreadDatasetDetailScreenState
               },
               icon: const Icon(Icons.restore),
               label: const Text('Reset to default (NEST-PAN-26BA)'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
             ),
 
           const SizedBox(height: 40),
@@ -1133,5 +1007,3 @@ class _ThreadDatasetDetailScreenState
     );
   }
 }
-
-

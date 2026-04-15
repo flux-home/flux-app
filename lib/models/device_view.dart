@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
-
-import 'device_live_data.dart';
-import 'device_type.dart';
-import 'matter_device.dart';
-import 'thermostat_models.dart';
+import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/models/thermostat_models.dart';
+import 'package:matter_home/ui/screens/cluster_inspector_screen.dart' show ClusterInspectorScreen;
+import 'package:matter_home/ui/screens/device_settings_screen.dart' show DeviceSettingsScreen;
+import 'package:matter_home/ui/screens/thread_diag_screen.dart' show ThreadDiagScreen;
 
 /// Read-only merged view of a commissioned device's state.
 ///
@@ -15,12 +17,12 @@ import 'thermostat_models.dart';
 /// [MatterDevice] and a [DeviceLiveData] and implement their own merge.
 @immutable
 class DeviceView {
-  final MatterDevice    _device;
-  final DeviceLiveData? _live;
 
   const DeviceView(MatterDevice device, DeviceLiveData? live)
       : _device = device,
         _live   = live;
+  final MatterDevice    _device;
+  final DeviceLiveData? _live;
 
   // ── Commissioning identity (stable, never updated by subscriptions) ────────
 
@@ -60,7 +62,7 @@ class DeviceView {
 
   /// Product name from the BasicInformation cluster, or null if not yet loaded.
   String? get displayProductName =>
-      _live?.productName?.isNotEmpty == true ? _live!.productName : null;
+      _live?.productName?.isNotEmpty ?? false ? _live!.productName : null;
 
   String? get vendorName         => _live?.vendorName;
   String? get vendorId           => _live?.vendorId;

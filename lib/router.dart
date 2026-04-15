@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'ui/screens/commission_screen.dart';
-import 'ui/screens/device_detail_screen.dart';
-import 'ui/screens/home_screen.dart';
-import 'ui/screens/qr_payload_detail_screen.dart';
-import 'ui/screens/settings_screen.dart';
+import 'package:matter_home/ui/screens/commission_screen.dart';
+import 'package:matter_home/ui/screens/device_detail_screen.dart';
+import 'package:matter_home/ui/screens/home_screen.dart';
+import 'package:matter_home/ui/screens/qr_payload_detail_screen.dart';
+import 'package:matter_home/ui/screens/settings_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -55,7 +55,7 @@ CustomTransitionPage<void> _slide(GoRouterState state, Widget child) =>
       transitionDuration: const Duration(milliseconds: 280),
       transitionsBuilder: (context, animation, secondaryAnimation, c) {
         final tween = Tween(
-          begin: const Offset(1.0, 0.0),
+          begin: const Offset(1, 0),
           end: Offset.zero,
         ).chain(CurveTween(curve: Curves.easeInOutCubic));
         return SlideTransition(position: animation.drive(tween), child: c);

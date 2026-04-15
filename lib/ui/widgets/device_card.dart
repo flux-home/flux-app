@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
-
-import '../../models/device_view.dart';
-import '../../providers/device_provider.dart';
 
 // ─── Shared tile style ────────────────────────────────────────────────────────
 
@@ -20,10 +19,10 @@ const _kCardShape = RoundedRectangleBorder(
 /// subscription notification without depending on parent sliver delegate
 /// propagation.
 class DeviceCard extends StatelessWidget {
+
+  const DeviceCard({required this.deviceId, required this.onTap, super.key});
   final String       deviceId;
   final VoidCallback onTap;
-
-  const DeviceCard({super.key, required this.deviceId, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -37,15 +36,15 @@ class DeviceCard extends StatelessWidget {
 // ─── Base tile ───────────────────────────────────────────────────────────────
 
 class _BaseTile extends StatelessWidget {
-  final DeviceView   view;
-  final VoidCallback onTap;
-  final String?      subLabel;
 
   const _BaseTile({
     required this.view,
     required this.onTap,
     this.subLabel,
   });
+  final DeviceView   view;
+  final VoidCallback onTap;
+  final String?      subLabel;
 
   @override
   Widget build(BuildContext context) {

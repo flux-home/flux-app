@@ -1,18 +1,16 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/thermostat_models.dart';
+import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/cluster_parser.dart';
+import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/ui/screens/device_settings_screen.dart';
+import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:provider/provider.dart';
-
-import '../../models/basic_info.dart';
-import '../../models/device_type.dart';
-import '../../models/device_view.dart';
-import '../../models/thermostat_models.dart';
-import '../../providers/device_provider.dart';
-import '../../services/cluster_parser.dart';
-import '../../services/matter_port.dart';
-import '../widgets/dot_matrix_painter.dart';
-import '../widgets/info_row.dart';
-import 'device_settings_screen.dart';
 
 part 'device_detail/device_cards.dart';
 part 'device_detail/thermostat_card.dart';
@@ -22,8 +20,8 @@ part 'device_detail/thermostat_card.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DeviceDetailScreen extends StatefulWidget {
+  const DeviceDetailScreen({required this.deviceId, super.key});
   final String deviceId;
-  const DeviceDetailScreen({super.key, required this.deviceId});
 
   @override
   State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
@@ -43,9 +41,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   // ── Readings ───────────────────────────────────────────────────────────────
   /// One-shot cluster JSON parse — never wiped once set.
   List<ClusterReading>? _clusterReadings;
+
   /// Displayed list: _clusterReadings merged with live readings.
   List<ClusterReading>? _readings;
-  bool                  _readingsLoading = false;
+  bool _readingsLoading = false;
 
   // ── Cached provider ref (safe to use in dispose) ──────────────────────────
   late final DeviceProvider _provider;
@@ -84,8 +83,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (_clusterReadings == null) {
       final cached = _provider.clusterCacheFor(widget.deviceId);
       if (cached != null) {
-        _clusterReadings =
-            extractReadings(parseClusters(cached), view.deviceType);
+        _clusterReadings = extractReadings(parseClusters(cached), view.deviceType);
       }
     }
     setState(() => _readings = _merged(view));
@@ -97,7 +95,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// subscriptions stay fresh.  Cluster-only readings (CO2, PM2.5, …) that
   /// have no live counterpart are preserved untouched.
   List<ClusterReading> _merged(DeviceView view) {
-    final live    = liveReadings(view);
+    final live = liveReadings(view);
     final cluster = _clusterReadings;
 
     if (cluster == null || cluster.isEmpty) return live;
@@ -105,9 +103,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     // Build a mutable map of live readings keyed by label; consume each
     // entry at most once so duplicates aren't accidentally collapsed.
-    final liveByLabel = <String, ClusterReading>{
-      for (final r in live) r.label: r,
-    };
+    final liveByLabel = <String, ClusterReading>{for (final r in live) r.label: r};
     return [
       // Replace matching cluster entries with their live version.
       for (final r in cluster) liveByLabel.remove(r.label) ?? r,
@@ -122,33 +118,28 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     // All three branches are independent — run them in parallel so readings,
     // basic info, and thermostat limits all arrive as fast as the network allows.
-    await Future.wait([
-      _maybeLoadBasicInfo(view),
-      _maybeLoadThermoLimits(view),
-      _maybeLoadReadings(),
-    ]);
+    await Future.wait([_maybeLoadBasicInfo(view), _maybeLoadThermoLimits(view), _maybeLoadReadings()]);
   }
 
   Future<void> _maybeLoadBasicInfo(DeviceView view) async {
     if (_basicInfoLoaded) return;
     _basicInfoLoaded = true;
-    final info =
-        await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
+    final info = await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
     if (mounted && info != null) {
       _provider.updateBasicInfo(
         widget.deviceId,
         BasicInfo.nonEmpty(info.productName),
         BasicInfo.nonEmpty(info.serialNumber),
         BasicInfo.nonEmpty(info.softwareVersion),
-        vendorName:        BasicInfo.nonEmpty(info.vendorName),
-        vendorId:          BasicInfo.nonEmpty(info.vendorId),
-        productId:         BasicInfo.nonEmpty(info.productId),
-        hwVersion:         BasicInfo.nonEmpty(info.hwVersion),
+        vendorName: BasicInfo.nonEmpty(info.vendorName),
+        vendorId: BasicInfo.nonEmpty(info.vendorId),
+        productId: BasicInfo.nonEmpty(info.productId),
+        hwVersion: BasicInfo.nonEmpty(info.hwVersion),
         manufacturingDate: BasicInfo.nonEmpty(info.manufacturingDate),
-        partNumber:        BasicInfo.nonEmpty(info.partNumber),
-        productUrl:        BasicInfo.nonEmpty(info.productUrl),
-        uniqueId:          BasicInfo.nonEmpty(info.uniqueId),
-        swVersionNum:      info.softwareVersionNum,
+        partNumber: BasicInfo.nonEmpty(info.partNumber),
+        productUrl: BasicInfo.nonEmpty(info.productUrl),
+        uniqueId: BasicInfo.nonEmpty(info.uniqueId),
+        swVersionNum: info.softwareVersionNum,
       );
       await _provider.detectAndUpdateOtaSupport(widget.deviceId);
     }
@@ -183,20 +174,18 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (currentMode == 0) {
       setState(() => _pendingMode = 4);
       await context.read<MatterClusterPort>().writeSystemMode(nodeId, 4);
+      if (!mounted) return;
     }
 
     setState(() => _pendingSetpt = centi);
     await context.read<MatterClusterPort>().writeHeatingSetpoint(nodeId, centi);
-    await Future.delayed(const Duration(seconds: 3));
-    if (mounted) setState(() { _pendingSetpt = null; _pendingMode = null; });
-  }
-  Future<void> _setMode(int mode) async {
-    final nodeId = _provider.viewFor(widget.deviceId)?.nodeId;
-    if (nodeId == null) return;
-    setState(() => _pendingMode = mode);
-    await context.read<MatterClusterPort>().writeSystemMode(nodeId, mode);
-    await Future.delayed(const Duration(seconds: 3));
-    if (mounted) setState(() => _pendingMode = null);
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (mounted) {
+      setState(() {
+        _pendingSetpt = null;
+        _pendingMode = null;
+      });
+    }
   }
 
   Future<void> _loadReadings() async {
@@ -211,16 +200,15 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     setState(() => _readingsLoading = true);
     try {
-      final jsonStr =
-          await context.read<MatterClusterPort>().readClusters(view.nodeId);
+      final jsonStr = await context.read<MatterClusterPort>().readClusters(view.nodeId);
       if (!mounted) return;
       if (jsonStr != null) _provider.cacheClusterJson(widget.deviceId, jsonStr);
       _clusterReadings = extractReadings(parseClusters(jsonStr), view.deviceType);
       setState(() {
-        _readings        = _merged(view);
+        _readings = _merged(view);
         _readingsLoading = false;
       });
-    } catch (_) {
+    } on Exception catch (_) {
       if (mounted) setState(() => _readingsLoading = false);
     }
   }
@@ -232,48 +220,46 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         final view = provider.viewFor(widget.deviceId);
         if (view == null) {
           return Scaffold(
-              appBar: AppBar(),
-              body: const Center(child: Text('Device not found')));
+            appBar: AppBar(),
+            body: const Center(child: Text('Device not found')),
+          );
         }
         return _buildScaffold(context, view, provider);
       },
     );
   }
 
-  Widget _buildScaffold(
-      BuildContext context, DeviceView view, DeviceProvider provider) {
-    final cs          = Theme.of(context).colorScheme;
+  Widget _buildScaffold(BuildContext context, DeviceView view, DeviceProvider provider) {
+    final cs = Theme.of(context).colorScheme;
     final productName = view.displayProductName;
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(view.name,
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          Row(children: [
-            Text(
-              productName ?? view.deviceType.displayName,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: cs.onSurfaceVariant),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(view.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Text(
+                  productName ?? view.deviceType.displayName,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+                if (view.isStale) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.cloud_off_outlined, size: 12, color: cs.onSurfaceVariant.withAlpha(150)),
+                ],
+              ],
             ),
-            if (view.isStale) ...[
-              const SizedBox(width: 6),
-              Icon(Icons.cloud_off_outlined,
-                  size: 12,
-                  color: cs.onSurfaceVariant.withAlpha(150)),
-            ],
-          ]),
-        ]),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Device settings',
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => DeviceSettingsScreen(device: view.device)),
+              MaterialPageRoute<void>(builder: (_) => DeviceSettingsScreen(device: view.device)),
             ),
           ),
         ],
@@ -285,21 +271,15 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           children: [
             const SizedBox(height: 12),
             if (view.deviceType.hasBrightness && view.isOnline) ...[
-              _BrightnessCard(
-                brightness: view.brightness,
-                onChanged:  (v) => provider.setBrightness(view.id, v),
-              ),
+              _BrightnessCard(brightness: view.brightness, onChanged: (v) => provider.setBrightness(view.id, v)),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasOnOff && view.isOnline) ...[
-              _OnOffCard(view: view),
-              const SizedBox(height: 12),
-            ],
+            if (view.deviceType.hasOnOff && view.isOnline) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
             if (view.deviceType == DeviceType.thermostat && view.isOnline) ...[
               _ThermostatCard(
-                state:         view.thermoState,
-                pendingSetpt:  _pendingSetpt,
-                pendingMode:   _pendingMode,
+                state: view.thermoState,
+                pendingSetpt: _pendingSetpt,
+                pendingMode: _pendingMode,
                 onSetSetpoint: _setSetpointC,
               ),
               const SizedBox(height: 12),
@@ -320,10 +300,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               _SmokeAlarmCard(view: view),
               const SizedBox(height: 12),
             ],
-            _ReadingsSection(
-              readings: _readings,
-              loading:  _readingsLoading,
-            ),
+            _ReadingsSection(readings: _readings, loading: _readingsLoading),
           ],
         ),
       ),

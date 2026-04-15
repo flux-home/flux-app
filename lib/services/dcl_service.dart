@@ -7,6 +7,14 @@ import 'package:http/http.dart' as http;
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DclUpdateResult {
+
+  const DclUpdateResult({
+    required this.isUpdateAvailable,
+    this.latestVersion,
+    this.latestVersionString,
+    this.otaUrl          = '',
+    this.releaseNotesUrl = '',
+  });
   /// True if a newer valid version exists for this device on the DCL.
   final bool    isUpdateAvailable;
 
@@ -22,14 +30,6 @@ class DclUpdateResult {
   /// Release notes URL from the DCL, empty string if not provided.
   final String  releaseNotesUrl;
 
-  const DclUpdateResult({
-    required this.isUpdateAvailable,
-    this.latestVersion,
-    this.latestVersionString,
-    this.otaUrl          = '',
-    this.releaseNotesUrl = '',
-  });
-
   static const DclUpdateResult upToDate =
       DclUpdateResult(isUpdateAvailable: false);
 }
@@ -40,16 +40,16 @@ class DclUpdateResult {
 
 /// Device (VID/PID) not found in the DCL.
 class DclNotFoundError implements Exception {
-  final String message;
   const DclNotFoundError(this.message);
+  final String message;
   @override
   String toString() => message;
 }
 
 /// Network or HTTP error while contacting the DCL.
 class DclNetworkError implements Exception {
-  final String message;
   const DclNetworkError(this.message);
+  final String message;
   @override
   String toString() => message;
 }
@@ -59,10 +59,10 @@ class DclNetworkError implements Exception {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DclService {
+  DclService({http.Client? client}) : _client = client ?? http.Client();
   static const _base = 'https://on.dcl.csa-iot.org';
 
   final http.Client _client;
-  DclService({http.Client? client}) : _client = client ?? http.Client();
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -122,7 +122,8 @@ class DclService {
     final uri = Uri.parse('$_base/dcl/model/versions/$vid/$pid');
     final response = await _get(uri);
     final body     = json.decode(response) as Map<String, dynamic>;
-    final versions = body['modelVersions']?['softwareVersions'] as List<dynamic>?;
+    final modelVersions = body['modelVersions'] as Map<String, dynamic>?;
+    final versions = modelVersions?['softwareVersions'] as List<dynamic>?;
     return versions?.map((e) => (e as num).toInt()).toList() ?? [];
   }
 
@@ -144,7 +145,7 @@ class DclService {
     try {
       final response = await _client.get(uri).timeout(
         const Duration(seconds: 15),
-        onTimeout: () => throw DclNetworkError('DCL request timed out'),
+        onTimeout: () => throw const DclNetworkError('DCL request timed out'),
       );
       if (response.statusCode == 404) {
         throw DclNotFoundError('Not found on DCL: $uri');

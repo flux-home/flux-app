@@ -1,23 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/ui/widgets/info_row.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-
-import '../../models/commission_models.dart';
-import '../widgets/info_row.dart';
 
 // ── Route args ────────────────────────────────────────────────────────────────
 
 class QrPayloadDetailArgs {
+  const QrPayloadDetailArgs({required this.rawPayload, required this.parsed});
   final String       rawPayload;
   final ParsedPayload parsed;
-  const QrPayloadDetailArgs({required this.rawPayload, required this.parsed});
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class QrPayloadDetailScreen extends StatelessWidget {
+  const QrPayloadDetailScreen({required this.args, super.key});
   final QrPayloadDetailArgs args;
-  const QrPayloadDetailScreen({super.key, required this.args});
 
   @override
   Widget build(BuildContext context) {
@@ -50,16 +49,7 @@ class QrPayloadDetailScreen extends StatelessWidget {
                 ),
                 child: QrImageView(
                   data: args.rawPayload,
-                  version: QrVersions.auto,
                   size: 220,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: Colors.black,
-                  ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: Colors.black,
-                  ),
                 ),
               ),
             ),
@@ -122,7 +112,7 @@ class QrPayloadDetailScreen extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 6,
                       children: p.discoveryCapabilities
-                          .map((c) => _CapabilityChip(c))
+                          .map(_CapabilityChip.new)
                           .toList(),
                     ),
             ),
@@ -148,9 +138,9 @@ class QrPayloadDetailScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Section extends StatelessWidget {
+  const _Section({required this.label, required this.child});
   final String label;
   final Widget child;
-  const _Section({required this.label, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -181,9 +171,9 @@ class _Section extends StatelessWidget {
 // ── Copyable row (raw payload) ────────────────────────────────────────────────
 
 class _CopyableRow extends StatelessWidget {
+  const _CopyableRow({required this.value, this.style});
   final String value;
   final TextStyle? style;
-  const _CopyableRow({required this.value, this.style});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -209,8 +199,8 @@ class _CopyableRow extends StatelessWidget {
 // ── Setup PIN row (masked / reveal) ──────────────────────────────────────────
 
 class _PinRow extends StatefulWidget {
-  final int pin;
   const _PinRow({required this.pin});
+  final int pin;
   @override
   State<_PinRow> createState() => _PinRowState();
 }
@@ -261,8 +251,8 @@ class _PinRowState extends State<_PinRow> {
 // ── Discovery capability chip ─────────────────────────────────────────────────
 
 class _CapabilityChip extends StatelessWidget {
-  final DiscoveryCapability cap;
   const _CapabilityChip(this.cap);
+  final DiscoveryCapability cap;
 
   static const _labels = <DiscoveryCapability, String>{
     DiscoveryCapability.ble:         'BLE',
@@ -302,8 +292,8 @@ class _CapabilityChip extends StatelessWidget {
 // ── Commissioning method hint ─────────────────────────────────────────────────
 
 class _CommissionHint extends StatelessWidget {
-  final ParsedPayload parsed;
   const _CommissionHint({required this.parsed});
+  final ParsedPayload parsed;
 
   @override
   Widget build(BuildContext context) {

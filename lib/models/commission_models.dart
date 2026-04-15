@@ -1,4 +1,4 @@
-import '../services/matter_vendors.dart';
+import 'package:matter_home/services/matter_vendors.dart';
 
 // ── Discovery capability ───────────────────────────────────────────────────
 
@@ -7,14 +7,6 @@ enum DiscoveryCapability { ble, onNetwork, softAp, wifiPaf, nfc, unknown }
 // ── Parsed setup payload ───────────────────────────────────────────────────
 
 class ParsedPayload {
-  final int vendorId;
-  final int productId;
-  final int discriminator;
-  final bool hasShortDiscriminator;
-  final List<DiscoveryCapability> discoveryCapabilities;
-
-  /// Setup PIN code encoded in the QR payload (up to 27 bits).
-  final int setupPinCode;
 
   const ParsedPayload({
     required this.vendorId,
@@ -24,6 +16,14 @@ class ParsedPayload {
     required this.discoveryCapabilities,
     required this.setupPinCode,
   });
+  final int vendorId;
+  final int productId;
+  final int discriminator;
+  final bool hasShortDiscriminator;
+  final List<DiscoveryCapability> discoveryCapabilities;
+
+  /// Setup PIN code encoded in the QR payload (up to 27 bits).
+  final int setupPinCode;
 
   bool get hasBle       => discoveryCapabilities.contains(DiscoveryCapability.ble);
   bool get hasOnNetwork => discoveryCapabilities.contains(DiscoveryCapability.onNetwork);
@@ -44,10 +44,6 @@ class ParsedPayload {
 // ── Commission result ──────────────────────────────────────────────────────
 
 class CommissionResult {
-  final bool    success;
-  final int?    nodeId;
-  final int?    deviceTypeId;
-  final String? error;
 
   const CommissionResult._({
     required this.success,
@@ -61,18 +57,22 @@ class CommissionResult {
 
   factory CommissionResult.err(String error) =>
       CommissionResult._(success: false, error: error);
+  final bool    success;
+  final int?    nodeId;
+  final int?    deviceTypeId;
+  final String? error;
 }
 
 // ── Device state result ────────────────────────────────────────────────────
 
 class DeviceStateResult {
-  final bool isOnline;
-  final bool? isOn;
-  final int?  brightnessLevel;
 
   const DeviceStateResult({
     required this.isOnline,
     this.isOn,
     this.brightnessLevel,
   });
+  final bool isOnline;
+  final bool? isOn;
+  final int?  brightnessLevel;
 }

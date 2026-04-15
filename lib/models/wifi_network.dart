@@ -1,8 +1,7 @@
+import 'package:matter_home/services/matter_channel.dart' show MatterChannel;
+
 /// A nearby Wi-Fi network returned by [MatterChannel.scanWifiNetworks].
 class WifiNetwork {
-  final String ssid;
-  final int    rssi;
-  final bool   isConnected;
 
   const WifiNetwork({
     required this.ssid,
@@ -11,10 +10,13 @@ class WifiNetwork {
   });
 
   factory WifiNetwork.fromMap(Map<Object?, Object?> m) => WifiNetwork(
-        ssid:        m['ssid']        as String,
-        rssi:        (m['rssi']       as num).toInt(),
-        isConnected: m['isConnected'] as bool,
+        ssid:        m['ssid']!        as String,
+        rssi:        (m['rssi']!       as num).toInt(),
+        isConnected: m['isConnected']! as bool,
       );
+  final String ssid;
+  final int    rssi;
+  final bool   isConnected;
 
   /// Maps RSSI (dBm) to a 0–4 signal bar count.
   int get bars {

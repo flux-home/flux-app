@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
-
-import '../../../providers/device_provider.dart';
-import '../../../services/matter_port.dart';
-import '../../widgets/section_label.dart';
 
 // ---------------------------------------------------------------------------
 // Matter sub-screen
@@ -59,7 +58,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
+    if ((confirmed ?? false) && mounted) {
       await context.read<DeviceProvider>().clearAllDevices();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +76,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
       body: ListView(
         children: [
           const SizedBox(height: 8),
-          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Fabric')),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Fabric')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -133,7 +132,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
           ),
 
           const SizedBox(height: 24),
-          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: ListTile(

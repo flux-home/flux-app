@@ -1,8 +1,7 @@
 import 'dart:convert';
 
+import 'package:matter_home/models/thread_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../models/thread_models.dart';
 
 // ── TLV decoder ───────────────────────────────────────────────────────────────
 
@@ -16,15 +15,15 @@ class ThreadTlvDecoder {
     if (clean.length < 4 || clean.length.isOdd) return [];
 
     final bytes = <int>[];
-    for (int i = 0; i + 1 < clean.length; i += 2) {
+    for (var i = 0; i + 1 < clean.length; i += 2) {
       bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
     }
 
-    final Map<int, List<int>> tlvs = {};
-    int i = 0;
+    final tlvs = <int, List<int>>{};
+    var i = 0;
     while (i + 1 < bytes.length) {
       final type = bytes[i];
-      final len  = bytes[i + 1];
+      final len = bytes[i + 1];
       if (i + 2 + len > bytes.length) break;
       tlvs[type] = bytes.sublist(i + 2, i + 2 + len);
       i += 2 + len;
@@ -55,8 +54,7 @@ class ThreadTlvDecoder {
         final page = v[0];
         final maskLen = v[1];
         if (v.length >= 2 + maskLen) {
-          add('Channel Masks',
-              '{Page: $page, Mask: ${_hex(v.sublist(2, 2 + maskLen)).toUpperCase()}}');
+          add('Channel Masks', '{Page: $page, Mask: ${_hex(v.sublist(2, 2 + maskLen)).toUpperCase()}}');
         }
       }
     }
@@ -80,8 +78,7 @@ class ThreadTlvDecoder {
     if (tlvs.containsKey(0x0C)) {
       final v = tlvs[0x0C]!;
       if (v.length >= 4) {
-        add('Security Policy',
-            '{Rotation: ${(v[0] << 8) | v[1]}h, Flags: ${_hexUpper(v.sublist(2, 4))}}');
+        add('Security Policy', '{Rotation: ${(v[0] << 8) | v[1]}h, Flags: ${_hexUpper(v.sublist(2, 4))}}');
       }
     }
 
@@ -89,11 +86,12 @@ class ThreadTlvDecoder {
     if (tlvs.containsKey(0x0E)) {
       final v = tlvs[0x0E]!;
       if (v.length >= 8) {
-        int secs = 0;
-        for (int j = 0; j < 6; j++) secs = (secs << 8) | v[j];
+        var secs = 0;
+        for (var j = 0; j < 6; j++) {
+          secs = (secs << 8) | v[j];
+        }
         final last2 = (v[6] << 8) | v[7];
-        add('Active Timestamp',
-            '{Seconds: $secs, Ticks: ${last2 >> 1}, IsAuthoritativeSource: ${(last2 & 1) == 1}}');
+        add('Active Timestamp', '{Seconds: $secs, Ticks: ${last2 >> 1}, IsAuthoritativeSource: ${(last2 & 1) == 1}}');
       }
     }
 
@@ -101,8 +99,10 @@ class ThreadTlvDecoder {
     if (tlvs.containsKey(0x0F)) {
       final v = tlvs[0x0F]!;
       if (v.length >= 8) {
-        int secs = 0;
-        for (int j = 0; j < 6; j++) secs = (secs << 8) | v[j];
+        var secs = 0;
+        for (var j = 0; j < 6; j++) {
+          secs = (secs << 8) | v[j];
+        }
         add('Pending Timestamp', 'Seconds: $secs');
       }
     }
@@ -114,8 +114,7 @@ class ThreadTlvDecoder {
   static String? networkName(String hex) =>
       decode(hex).where((f) => f.label == 'Network Name').map((f) => f.value).firstOrNull;
 
-  static String _hex(List<int> b) =>
-      b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+  static String _hex(List<int> b) => b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
   static String _hexUpper(List<int> b) => _hex(b).toUpperCase();
 }
 
@@ -135,9 +134,9 @@ class ThreadTlvDecoder {
 /// The "Empty dataset" option (empty hex) is always implicitly available and
 /// is never stored in `thread_datasets_v2`.
 class ThreadSettingsService {
-  static const _keyDataset   = 'thread_dataset_hex';        // legacy
-  static const _keyRouters   = 'thread_discovered_routers';
-  static const _keyDatasets  = 'thread_datasets_v2';
+  static const _keyDataset = 'thread_dataset_hex'; // legacy
+  static const _keyRouters = 'thread_discovered_routers';
+  static const _keyDatasets = 'thread_datasets_v2';
   static const _keyActiveHex = 'thread_active_hex_v2';
 
   static const defaultDataset =
@@ -194,13 +193,11 @@ class ThreadSettingsService {
 
     // Try to find by hex in the list so we return the user's label.
     final datasets = await loadDatasets();
-    try {
-      return datasets.firstWhere((d) => d.hex == hex);
-    } catch (_) {
-      final name = ThreadTlvDecoder.networkName(hex) ??
-          hex.substring(0, 8.clamp(0, hex.length));
-      return ThreadDataset(label: name, hex: hex);
-    }
+    final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
+    return datasets.firstWhere(
+      (d) => d.hex == hex,
+      orElse: () => ThreadDataset(label: name, hex: hex),
+    );
   }
 
   /// Sets the active dataset.
@@ -236,11 +233,8 @@ class ThreadSettingsService {
     }
     try {
       final list = json.decode(raw) as List<dynamic>;
-      return list
-          .map((e) =>
-              ThreadDataset.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {
+      return list.map((e) => ThreadDataset.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    } on Exception catch (_) {
       return [];
     }
   }
@@ -248,10 +242,7 @@ class ThreadSettingsService {
   /// Persists the full dataset list (non-empty entries only).
   static Future<void> saveDatasets(List<ThreadDataset> datasets) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _keyDatasets,
-      json.encode(datasets.map((d) => d.toJson()).toList()),
-    );
+    await prefs.setString(_keyDatasets, json.encode(datasets.map((d) => d.toJson()).toList()));
   }
 
   /// Adds [dataset] to the list if not already present (matched by hex).
@@ -279,9 +270,8 @@ class ThreadSettingsService {
 
   /// Updates an existing dataset in place (matched by [originalHex]).
   /// If [originalHex] was the active dataset, the active hex is updated to
-  /// [updated.hex].
-  static Future<void> updateDataset(
-      String originalHex, ThreadDataset updated) async {
+  /// `updated.hex`.
+  static Future<void> updateDataset(String originalHex, ThreadDataset updated) async {
     final datasets = await loadDatasets();
     final idx = datasets.indexWhere((d) => d.hex == originalHex);
     if (idx == -1) {
@@ -307,8 +297,7 @@ class ThreadSettingsService {
     if (clean.isNotEmpty) {
       final datasets = await loadDatasets();
       if (datasets.every((d) => d.hex != clean)) {
-        final name = ThreadTlvDecoder.networkName(clean) ??
-            clean.substring(0, 8.clamp(0, clean.length));
+        final name = ThreadTlvDecoder.networkName(clean) ?? clean.substring(0, 8.clamp(0, clean.length));
         datasets.add(ThreadDataset(label: name, hex: clean));
         await saveDatasets(datasets);
       }
@@ -320,18 +309,22 @@ class ThreadSettingsService {
 
   static Future<void> saveRouters(List<ThreadBorderRouter> routers) async {
     final prefs = await SharedPreferences.getInstance();
-    final encoded = json.encode(routers
-        .map((r) => {
+    final encoded = json.encode(
+      routers
+          .map(
+            (r) => {
               'serviceName': r.serviceName,
               'networkName': r.networkName,
-              'extPanId':    r.extPanId,
-              'vendorName':  r.vendorName,
-              'modelName':   r.modelName,
-              'host':        r.host,
-              'port':        r.port,
-              'txt':         r.txt,
-            })
-        .toList());
+              'extPanId': r.extPanId,
+              'vendorName': r.vendorName,
+              'modelName': r.modelName,
+              'host': r.host,
+              'port': r.port,
+              'txt': r.txt,
+            },
+          )
+          .toList(),
+    );
     await prefs.setString(_keyRouters, encoded);
   }
 
@@ -341,11 +334,8 @@ class ThreadSettingsService {
     if (raw == null) return [];
     try {
       final list = json.decode(raw) as List<dynamic>;
-      return list
-          .map((e) =>
-              ThreadBorderRouter.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
+      return list.map((e) => ThreadBorderRouter.fromJson(e as Map<String, dynamic>)).toList();
+    } on Exception catch (_) {
       return [];
     }
   }
@@ -354,12 +344,8 @@ class ThreadSettingsService {
 
   static Future<void> _migrate(SharedPreferences prefs, String hex) async {
     final clean = hex.replaceAll(RegExp(r'\s'), '');
-    final name = ThreadTlvDecoder.networkName(clean) ??
-        clean.substring(0, 8.clamp(0, clean.length));
-    await prefs.setString(
-      _keyDatasets,
-      json.encode([ThreadDataset(label: name, hex: clean).toJson()]),
-    );
+    final name = ThreadTlvDecoder.networkName(clean) ?? clean.substring(0, 8.clamp(0, clean.length));
+    await prefs.setString(_keyDatasets, json.encode([ThreadDataset(label: name, hex: clean).toJson()]));
     await prefs.setString(_keyActiveHex, clean);
   }
 }

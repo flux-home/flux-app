@@ -12,7 +12,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
   final cs = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
 
   // Shared shape used by every button type.
-  final _shape = RoundedRectangleBorder(
+  final shape = RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(kButtonRadius),
   );
 
@@ -38,7 +38,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: cs.primary,
       foregroundColor: cs.onPrimary,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(kButtonRadius)),
       ),
     ),
@@ -46,7 +46,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Filled (primary action) ───────────────────────────────────────────
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape:       _shape,
+        shape:       shape,
         minimumSize: const Size(0, _kButtonH),
         padding:     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
         elevation:   0,
@@ -56,7 +56,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Outlined (secondary / destructive) ───────────────────────────────
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        shape:       _shape,
+        shape:       shape,
         minimumSize: const Size(0, _kButtonH),
         padding:     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
         side:        BorderSide(color: cs.outline, width: 1.5),
@@ -66,7 +66,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Text (low-emphasis / dialog cancel) ──────────────────────────────
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        shape:       _shape,
+        shape:       shape,
         minimumSize: const Size(0, 44),
         padding:     const EdgeInsets.symmetric(horizontal: 16),
       ),
@@ -75,7 +75,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Elevated (not used in core UI, kept for completeness) ────────────
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        shape:       _shape,
+        shape:       shape,
         minimumSize: const Size(0, _kButtonH),
         elevation:   0,
       ),

@@ -92,7 +92,7 @@ const dotMatrixGlyphs = <String, List<int>>{
   '!': [0x04,0x04,0x04,0x04,0x04,0x00,0x04],
   '?': [0x0E,0x11,0x01,0x06,0x04,0x00,0x04],
   '/': [0x01,0x01,0x02,0x04,0x08,0x10,0x10],
-  '\\': [0x10,0x10,0x08,0x04,0x02,0x01,0x01],
+  r'\': [0x10,0x10,0x08,0x04,0x02,0x01,0x01],
   '(': [0x02,0x04,0x08,0x08,0x08,0x04,0x02],
   ')': [0x08,0x04,0x02,0x02,0x02,0x04,0x08],
   '[': [0x0E,0x08,0x08,0x08,0x08,0x08,0x0E],
@@ -107,7 +107,7 @@ const dotMatrixGlyphs = <String, List<int>>{
   '&': [0x0C,0x12,0x12,0x0C,0x15,0x12,0x0D],
   '%': [0x0C,0x0C,0x02,0x04,0x08,0x03,0x03],
   '"': [0x0A,0x0A,0x00,0x00,0x00,0x00,0x00],
-  '\'': [0x04,0x04,0x00,0x00,0x00,0x00,0x00],
+  "'": [0x04,0x04,0x00,0x00,0x00,0x00,0x00],
   '`': [0x08,0x04,0x00,0x00,0x00,0x00,0x00],
   '^': [0x04,0x0A,0x11,0x00,0x00,0x00,0x00],
   '~': [0x00,0x00,0x00,0x0D,0x12,0x00,0x00],
@@ -158,12 +158,12 @@ void paintDotMatrix(
   final ox   = centre.dx - matW / 2;
   final oy   = centre.dy - matH / 2;
   final p    = Paint()..color = color..style = PaintingStyle.fill;
-  double cx  = ox;
+  var cx  = ox;
   for (final ch in chars) {
     final g    = dotMatrixGlyphs[ch] ?? dotMatrixGlyphs['-']!;
     final cols = dotMatrixCharCols(ch);
-    for (int row = 0; row < 7; row++) {
-      for (int col = 0; col < cols; col++) {
+    for (var row = 0; row < 7; row++) {
+      for (var col = 0; col < cols; col++) {
         if (((g[row] >> ((cols - 1) - col)) & 1) == 1) {
           canvas.drawCircle(
             Offset(cx + col * step + step / 2, oy + row * step + step / 2),
@@ -186,15 +186,15 @@ void paintDotMatrix(
 /// [litColor]  – colour of lit (foreground) dots.
 /// [dimColor]  – optional colour of unlit (background) dots; omitted if null.
 class DotMatrixPainter extends CustomPainter {
-  final String text;
-  final Color  litColor;
-  final Color? dimColor;
 
   const DotMatrixPainter({
     required this.text,
     required this.litColor,
     this.dimColor,
   });
+  final String text;
+  final Color  litColor;
+  final Color? dimColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -221,13 +221,13 @@ class DotMatrixPainter extends CustomPainter {
         ? (Paint()..color = dimColor!..style = PaintingStyle.fill)
         : null;
 
-    double cx = ox;
+    var cx = ox;
     for (final ch in chars) {
       final glyph = dotMatrixGlyphs[ch] ?? dotMatrixGlyphs['-']!;
       final cols  = dotMatrixCharCols(ch);
-      for (int row = 0; row < 7; row++) {
+      for (var row = 0; row < 7; row++) {
         final bits = glyph[row];
-        for (int col = 0; col < cols; col++) {
+        for (var col = 0; col < cols; col++) {
           final lit = ((bits >> ((cols - 1) - col)) & 1) == 1;
           if (lit) {
             canvas.drawCircle(

@@ -2,10 +2,6 @@ List<String> _strList(dynamic v) =>
     (v as List<dynamic>?)?.map((e) => e as String).toList() ?? [];
 
 class PhoneIpv6Check {
-  final bool         hasRoutableIpv6;
-  final List<String> guaAddresses;
-  final List<String> ulaAddresses;
-  final List<String> linkLocalAddresses;
 
   const PhoneIpv6Check({
     required this.hasRoutableIpv6,
@@ -20,17 +16,13 @@ class PhoneIpv6Check {
         ulaAddresses:       _strList(j['ulaAddresses']),
         linkLocalAddresses: _strList(j['linkLocalAddresses']),
       );
+  final bool         hasRoutableIpv6;
+  final List<String> guaAddresses;
+  final List<String> ulaAddresses;
+  final List<String> linkLocalAddresses;
 }
 
 class StateBitmapInfo {
-  final int    raw;
-  final int    connectionMode;
-  final String connectionModeLabel;
-  final int    threadInterfaceStatus;
-  final String threadInterfaceLabel;
-  final int    availability;
-  final bool   bbrActive;
-  final bool   bbrIsPrimary;
 
   const StateBitmapInfo({
     required this.raw,
@@ -43,9 +35,6 @@ class StateBitmapInfo {
     required this.bbrIsPrimary,
   });
 
-  bool get threadInterfaceActive   => threadInterfaceStatus == 2;
-  bool get hasExternalConnectivity => connectionMode != 0;
-
   factory StateBitmapInfo.fromJson(Map<String, dynamic> j) => StateBitmapInfo(
         raw:                    (j['raw'] as num).toInt(),
         connectionMode:         j['connectionMode']        as int?    ?? 0,
@@ -56,13 +45,20 @@ class StateBitmapInfo {
         bbrActive:              j['bbrActive']             as bool?   ?? false,
         bbrIsPrimary:           j['bbrIsPrimary']          as bool?   ?? false,
       );
+  final int    raw;
+  final int    connectionMode;
+  final String connectionModeLabel;
+  final int    threadInterfaceStatus;
+  final String threadInterfaceLabel;
+  final int    availability;
+  final bool   bbrActive;
+  final bool   bbrIsPrimary;
+
+  bool get threadInterfaceActive   => threadInterfaceStatus == 2;
+  bool get hasExternalConnectivity => connectionMode != 0;
 }
 
 class WifiBandInfo {
-  final int    frequencyMhz;
-  final String band;
-  final String ssid;
-  final bool   hasBandSuffix;
 
   const WifiBandInfo({
     required this.frequencyMhz,
@@ -71,41 +67,31 @@ class WifiBandInfo {
     required this.hasBandSuffix,
   });
 
-  bool get is24Ghz     => band == '2.4 GHz';
-  bool get is5Ghz      => band == '5 GHz';
-  bool get is6Ghz      => band == '6 GHz';
-  bool get isHigherBand => is5Ghz || is6Ghz;
-
   factory WifiBandInfo.fromJson(Map<String, dynamic> j) => WifiBandInfo(
         frequencyMhz:  j['frequencyMhz']  as int?    ?? -1,
         band:          j['band']          as String? ?? 'unknown',
         ssid:          j['ssid']          as String? ?? '',
         hasBandSuffix: j['hasBandSuffix'] as bool?   ?? false,
       );
+  final int    frequencyMhz;
+  final String band;
+  final String ssid;
+  final bool   hasBandSuffix;
+
+  bool get is24Ghz     => band == '2.4 GHz';
+  bool get is5Ghz      => band == '5 GHz';
+  bool get is6Ghz      => band == '6 GHz';
+  bool get isHigherBand => is5Ghz || is6Ghz;
 }
 
 class VpnInfo {
-  final bool isActive;
   const VpnInfo({required this.isActive});
   factory VpnInfo.fromJson(Map<String, dynamic> j) =>
       VpnInfo(isActive: j['isActive'] as bool? ?? false);
+  final bool isActive;
 }
 
 class BorderRouterDiagnostic {
-  final String  serviceName;
-  final String  networkName;
-  final String  extPanId;
-  final String  vendorName;
-  final String  modelName;
-  final int     port;
-  final List<String> hostsV4;
-  final List<String> hostsV6LinkLocal;
-  final List<String> hostsV6Ula;
-  final List<String> hostsV6Gua;
-  final StateBitmapInfo? stateBitmap;
-  final bool?   tcpReachable;
-  final bool?   sameSubnetAsPhone;
-  final bool?   ipv6PrefixMatchesPhone;
 
   const BorderRouterDiagnostic({
     required this.serviceName,
@@ -123,10 +109,6 @@ class BorderRouterDiagnostic {
     required this.sameSubnetAsPhone,
     required this.ipv6PrefixMatchesPhone,
   });
-
-  bool get hasIpv4         => hostsV4.isNotEmpty;
-  bool get hasRoutableIpv6 => hostsV6Ula.isNotEmpty || hostsV6Gua.isNotEmpty;
-  bool get hasAnyIpv6      => hostsV6LinkLocal.isNotEmpty || hasRoutableIpv6;
 
   factory BorderRouterDiagnostic.fromJson(Map<String, dynamic> j) =>
       BorderRouterDiagnostic(
@@ -148,15 +130,27 @@ class BorderRouterDiagnostic {
                 Map<String, dynamic>.from(j['stateBitmap'] as Map))
             : null,
       );
+  final String  serviceName;
+  final String  networkName;
+  final String  extPanId;
+  final String  vendorName;
+  final String  modelName;
+  final int     port;
+  final List<String> hostsV4;
+  final List<String> hostsV6LinkLocal;
+  final List<String> hostsV6Ula;
+  final List<String> hostsV6Gua;
+  final StateBitmapInfo? stateBitmap;
+  final bool?   tcpReachable;
+  final bool?   sameSubnetAsPhone;
+  final bool?   ipv6PrefixMatchesPhone;
+
+  bool get hasIpv4         => hostsV4.isNotEmpty;
+  bool get hasRoutableIpv6 => hostsV6Ula.isNotEmpty || hostsV6Gua.isNotEmpty;
+  bool get hasAnyIpv6      => hostsV6LinkLocal.isNotEmpty || hasRoutableIpv6;
 }
 
 class NetworkDiagnosticsReport {
-  final PhoneIpv6Check               phoneIpv6;
-  final bool                         multicastLockAcquired;
-  final WifiBandInfo                 wifi;
-  final VpnInfo                      vpn;
-  final List<BorderRouterDiagnostic> borderRouters;
-  final List<String>                 matterTcpServices;
 
   const NetworkDiagnosticsReport({
     required this.phoneIpv6,
@@ -183,4 +177,10 @@ class NetworkDiagnosticsReport {
             [],
         matterTcpServices: _strList(j['matterTcpServices']),
       );
+  final PhoneIpv6Check               phoneIpv6;
+  final bool                         multicastLockAcquired;
+  final WifiBandInfo                 wifi;
+  final VpnInfo                      vpn;
+  final List<BorderRouterDiagnostic> borderRouters;
+  final List<String>                 matterTcpServices;
 }

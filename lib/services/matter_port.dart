@@ -1,9 +1,19 @@
-import 'dart:typed_data';
-import '../models/basic_info.dart';import '../models/commission_models.dart';
-import '../models/network_diagnostics.dart';
-import '../models/thermostat_models.dart';
-import '../models/thread_models.dart';
-import '../models/wifi_network.dart';
+import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/network_diagnostics.dart';
+import 'package:matter_home/models/thermostat_models.dart';
+import 'package:matter_home/models/thread_models.dart';
+import 'package:matter_home/models/wifi_network.dart';
+import 'package:matter_home/providers/device_provider.dart' show DeviceProvider;
+import 'package:matter_home/services/matter_channel.dart' show MatterChannel;
+import 'package:matter_home/ui/screens/cluster_inspector_screen.dart' show ClusterInspectorScreen;
+import 'package:matter_home/ui/screens/commission_screen.dart' show CommissionScreen;
+import 'package:matter_home/ui/screens/device_detail_screen.dart' show DeviceDetailScreen;
+import 'package:matter_home/ui/screens/device_settings_screen.dart' show DeviceSettingsScreen;
+import 'package:matter_home/ui/screens/network_check_screen.dart' show NetworkCheckScreen;
+import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart' show MatterSettingsScreen;
+import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart' show ThreadSettingsScreen;
+import 'package:matter_home/ui/screens/thread_diag_screen.dart' show ThreadDiagScreen;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Four focused port interfaces — each caller depends only on what it uses
@@ -37,9 +47,7 @@ abstract interface class MatterCommissionPort {
 
   Future<CommissionResult> commissionViaIp({
     required String ipAddress,
-    int port,
-    required int discriminator,
-    required int setupPinCode,
+    required int discriminator, required int setupPinCode, int port,
   });
 
   Future<List<WifiNetwork>> scanWifiNetworks();

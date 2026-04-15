@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-
-import '../widgets/section_label.dart';
-import 'network_check_screen.dart';
-import 'settings/matter_settings_screen.dart';
-import 'settings/thread_settings_screen.dart';
+import 'package:matter_home/ui/screens/network_check_screen.dart';
+import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
+import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart';
+import 'package:matter_home/ui/widgets/section_label.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -29,7 +28,7 @@ class SettingsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                   ),
                   onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const MatterSettingsScreen())),
+                      MaterialPageRoute<void>(builder: (_) => const MatterSettingsScreen())),
                 ),
                 Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
                 ListTile(
@@ -37,7 +36,7 @@ class SettingsScreen extends StatelessWidget {
                   subtitle: const Text('Operational dataset'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ThreadSettingsScreen())),
+                      MaterialPageRoute<void>(builder: (_) => const ThreadSettingsScreen())),
                 ),
                 Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
                 ListTile(
@@ -48,7 +47,7 @@ class SettingsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
                   ),
                   onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const NetworkCheckScreen())),
+                      MaterialPageRoute<void>(builder: (_) => const NetworkCheckScreen())),
                 ),
               ],
             ),
@@ -57,8 +56,8 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
 
           // ── About ──────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
             child: SectionLabel('About'),
           ),
           const ListTile(

@@ -1,18 +1,16 @@
 import 'dart:convert';
 
+import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../models/matter_device.dart';
-import '../models/persisted_snapshot.dart';
 
 /// Persists the device list and live-state snapshots to SharedPreferences.
 class DeviceStore {
-  static const _kDevices   = 'matter_devices';
+  DeviceStore._(this._prefs);
+  static const _kDevices = 'matter_devices';
   static const _kSnapshots = 'device_snapshots';
 
   final SharedPreferences _prefs;
-
-  DeviceStore._(this._prefs);
 
   static Future<DeviceStore> open() async {
     final prefs = await SharedPreferences.getInstance();
@@ -26,10 +24,8 @@ class DeviceStore {
     return raw
         .map((s) {
           try {
-            return MatterDevice.fromJson(
-              jsonDecode(s) as Map<String, dynamic>,
-            );
-          } catch (_) {
+            return MatterDevice.fromJson(jsonDecode(s) as Map<String, dynamic>);
+          } on Exception catch (_) {
             return null;
           }
         })
@@ -50,11 +46,9 @@ class DeviceStore {
     final result = <String, PersistedSnapshot>{};
     for (final s in raw) {
       try {
-        final snap = PersistedSnapshot.fromJson(
-          jsonDecode(s) as Map<String, dynamic>,
-        );
+        final snap = PersistedSnapshot.fromJson(jsonDecode(s) as Map<String, dynamic>);
         result[snap.deviceId] = snap;
-      } catch (_) {
+      } on Exception catch (_) {
         // Corrupt entry — skip silently.
       }
     }

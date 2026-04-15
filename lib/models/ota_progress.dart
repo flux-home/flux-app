@@ -1,6 +1,12 @@
 /// In-progress OTA update state for a single device.
 /// Populated from "otaProgress" events on the device-state stream.
 class OtaProgressState {
+
+  const OtaProgressState({
+    required this.phase,
+    this.progress,
+    this.message,
+  });
   /// Current phase of the update pipeline.
   ///
   /// Possible values emitted by native:
@@ -17,12 +23,6 @@ class OtaProgressState {
 
   /// Human-readable error description when [phase] == "error".
   final String? message;
-
-  const OtaProgressState({
-    required this.phase,
-    this.progress,
-    this.message,
-  });
 
   bool get isTerminal => phase == 'complete' || phase == 'error' || phase == 'dryrun';
 }

@@ -1,4 +1,6 @@
-import 'device_live_data.dart';
+import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/matter_device.dart' show MatterDevice;
+import 'package:matter_home/providers/device_provider.dart' show DeviceProvider;
 
 /// Thin snapshot of last-known live state persisted alongside [MatterDevice].
 ///
@@ -19,13 +21,6 @@ import 'device_live_data.dart';
 /// Read once at app startup to seed [DeviceLiveData] before any subscription
 /// arrives, so tiles show the last-known state immediately.
 class PersistedSnapshot {
-  final String              deviceId;
-  final String?             productName;
-
-  /// Merge-compatible attribute map — pass directly to [DeviceLiveData.merge].
-  /// Keys match the subscription event keys (e.g. 'onOff', 'level',
-  /// 'contactState', 'fanMode', …).
-  final Map<String, dynamic> state;
 
   const PersistedSnapshot({
     required this.deviceId,
@@ -43,14 +38,6 @@ class PersistedSnapshot {
         productName: live.productName,
         state:       live.attrs,
       );
-
-  // ── Serialisation ─────────────────────────────────────────────────────────
-
-  Map<String, dynamic> toJson() => {
-    'deviceId':    deviceId,
-    if (productName != null) 'productName': productName,
-    'state':       state,
-  };
 
   factory PersistedSnapshot.fromJson(Map<String, dynamic> json) {
     Map<String, dynamic> state;
@@ -72,4 +59,19 @@ class PersistedSnapshot {
       state:       state,
     );
   }
+  final String              deviceId;
+  final String?             productName;
+
+  /// Merge-compatible attribute map — pass directly to [DeviceLiveData.merge].
+  /// Keys match the subscription event keys (e.g. 'onOff', 'level',
+  /// 'contactState', 'fanMode', …).
+  final Map<String, dynamic> state;
+
+  // ── Serialisation ─────────────────────────────────────────────────────────
+
+  Map<String, dynamic> toJson() => {
+    'deviceId':    deviceId,
+    if (productName != null) 'productName': productName,
+    'state':       state,
+  };
 }

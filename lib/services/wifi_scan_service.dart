@@ -1,18 +1,13 @@
+import 'package:flutter/cupertino.dart' show BuildContext;
+import 'package:flutter/material.dart' show BuildContext;
+import 'package:flutter/widgets.dart' show BuildContext;
+import 'package:matter_home/models/wifi_network.dart';
+import 'package:matter_home/services/matter_port.dart';
 import 'package:permission_handler/permission_handler.dart';
-
-import '../models/wifi_network.dart';
-import 'matter_port.dart';
 
 // ── Result ────────────────────────────────────────────────────────────────────
 
 class WifiScanResult {
-  final List<WifiNetwork> networks;
-
-  /// First network where [WifiNetwork.isConnected] is true, or null if none.
-  final WifiNetwork? autoSelected;
-
-  final bool permissionDenied;
-  final bool permanentlyDenied;
 
   const WifiScanResult({
     required this.networks,
@@ -20,6 +15,13 @@ class WifiScanResult {
     this.permissionDenied  = false,
     this.permanentlyDenied = false,
   });
+  final List<WifiNetwork> networks;
+
+  /// First network where [WifiNetwork.isConnected] is true, or null if none.
+  final WifiNetwork? autoSelected;
+
+  final bool permissionDenied;
+  final bool permanentlyDenied;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

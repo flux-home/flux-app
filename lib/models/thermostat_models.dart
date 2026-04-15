@@ -2,6 +2,8 @@
 
 /// Data returned by the Power Source subscription / cluster read.
 class BatteryInfo {
+
+  const BatteryInfo({this.percent, this.chargeLevel, this.voltageMilliV});
   /// 0–100 % derived from BatPercentRemaining, or null if not reported.
   final int? percent;
 
@@ -11,8 +13,6 @@ class BatteryInfo {
   /// BatVoltage in mV, or null if not reported.
   final int? voltageMilliV;
 
-  const BatteryInfo({this.percent, this.chargeLevel, this.voltageMilliV});
-
   bool get hasData =>
       percent != null || chargeLevel != null || voltageMilliV != null;
 }
@@ -20,6 +20,22 @@ class BatteryInfo {
 // ── Thermostat state ───────────────────────────────────────────────────────
 
 class ThermostatState {
+
+  const ThermostatState({
+    this.localTempCenti,
+    this.heatingSetptCenti,
+    this.coolingSetptCenti,
+    this.minHeatSetptCenti,
+    this.maxHeatSetptCenti,
+    this.minCoolSetptCenti,
+    this.maxCoolSetptCenti,
+    this.absMinHeatSetptCenti,
+    this.absMaxHeatSetptCenti,
+    this.absMinCoolSetptCenti,
+    this.absMaxCoolSetptCenti,
+    this.systemMode,
+    this.controlSequence,
+  });
   /// All temperatures in centidegrees (0.01 °C). Null = not available.
   final int? localTempCenti;
   final int? heatingSetptCenti;
@@ -44,22 +60,6 @@ class ThermostatState {
   ///   0/1 = CoolingOnly, 2/3 = HeatingOnly, 4/5 = CoolingAndHeating
   final int? controlSequence;
 
-  const ThermostatState({
-    this.localTempCenti,
-    this.heatingSetptCenti,
-    this.coolingSetptCenti,
-    this.minHeatSetptCenti,
-    this.maxHeatSetptCenti,
-    this.minCoolSetptCenti,
-    this.maxCoolSetptCenti,
-    this.absMinHeatSetptCenti,
-    this.absMaxHeatSetptCenti,
-    this.absMinCoolSetptCenti,
-    this.absMaxCoolSetptCenti,
-    this.systemMode,
-    this.controlSequence,
-  });
-
   double? get localTempC =>
       localTempCenti != null ? localTempCenti! / 100.0 : null;
   double? get heatingSetptC =>
@@ -72,13 +72,15 @@ class ThermostatState {
   /// falling back to safe defaults when neither is reported.
   /// Tighter of two optional centidegree values, converted to °C.
   static double _tighterMin(int? cfg, int? abs, int fallbackCenti) {
-    final a = cfg, b = abs;
+    final a = cfg;
+    final b = abs;
     if (a != null && b != null) return (a > b ? a : b) / 100.0;
     return (a ?? b ?? fallbackCenti) / 100.0;
   }
 
   static double _tighterMax(int? cfg, int? abs, int fallbackCenti) {
-    final a = cfg, b = abs;
+    final a = cfg;
+    final b = abs;
     if (a != null && b != null) return (a < b ? a : b) / 100.0;
     return (a ?? b ?? fallbackCenti) / 100.0;
   }

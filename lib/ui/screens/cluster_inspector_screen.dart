@@ -2,10 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/services/matter_port.dart';
 import 'package:provider/provider.dart';
-
-import '../../models/matter_device.dart';
-import '../../services/matter_port.dart';
 
 // ---------------------------------------------------------------------------
 // Well-known Matter device type names (spec §7 + Node types §2)
@@ -24,7 +23,7 @@ const _kDeviceTypeNames = <int, String>{
   0x0101: 'Dimmable Light',
   0x010C: 'Color Temp. Light',
   0x010D: 'Extended Color Light',
-  0x0109: 'Light Sensor',           // reuse (also in sensors below)
+  0x0109: 'Light Sensor', // reuse (also in sensors below)
   // ── Switches ─────────────────────────────────────────────────────────────
   0x0103: 'On/Off Switch',
   0x0104: 'Dimmer Switch',
@@ -73,9 +72,7 @@ const _kDeviceTypeNames = <int, String>{
   0x0074: 'Robotic Vacuum',
 };
 
-String _deviceTypeName(int id) =>
-    _kDeviceTypeNames[id] ??
-    '0x${id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+String _deviceTypeName(int id) => _kDeviceTypeNames[id] ?? '0x${id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
 const _kClusterNames = <int, String>{
   0x0003: 'Identify',
@@ -149,16 +146,98 @@ const _kClusterNames = <int, String>{
 };
 
 const _kAttrNames = <int, Map<int, String>>{
-  0x0006: {0x0000: 'OnOff', 0x4000: 'GlobalSceneControl', 0x4001: 'OnTime', 0x4002: 'OffWaitTime', 0x4003: 'StartUpOnOff'},
-  0x0008: {0x0000: 'CurrentLevel', 0x0001: 'RemainingTime', 0x000F: 'Options', 0x0010: 'OnOffTransitionTime', 0x0011: 'OnLevel', 0x0012: 'OnTransitionTime', 0x0013: 'OffTransitionTime'},
+  0x0006: {
+    0x0000: 'OnOff',
+    0x4000: 'GlobalSceneControl',
+    0x4001: 'OnTime',
+    0x4002: 'OffWaitTime',
+    0x4003: 'StartUpOnOff',
+  },
+  0x0008: {
+    0x0000: 'CurrentLevel',
+    0x0001: 'RemainingTime',
+    0x000F: 'Options',
+    0x0010: 'OnOffTransitionTime',
+    0x0011: 'OnLevel',
+    0x0012: 'OnTransitionTime',
+    0x0013: 'OffTransitionTime',
+  },
   0x001D: {0x0000: 'DeviceTypeList', 0x0001: 'ServerList', 0x0002: 'ClientList', 0x0003: 'PartsList'},
-  0x0028: {0x0000: 'DataModelRevision', 0x0001: 'VendorName', 0x0002: 'VendorID', 0x0003: 'ProductName', 0x0004: 'ProductID', 0x0005: 'NodeLabel', 0x0006: 'Location', 0x0007: 'HardwareVersion', 0x0008: 'HardwareVersionString', 0x0009: 'SoftwareVersion', 0x000A: 'SoftwareVersionString', 0x000B: 'ManufacturingDate', 0x000C: 'PartNumber', 0x000E: 'SerialNumber', 0x000F: 'LocalConfigDisabled', 0x0010: 'Reachable', 0x0011: 'UniqueID'},
-  0x0030: {0x0000: 'Breadcrumb', 0x0001: 'BasicCommissioningInfo', 0x0002: 'RegulatoryConfig', 0x0003: 'LocationCapability', 0x0004: 'SupportsConcurrentConnection'},
-  0x0031: {0x0000: 'MaxNetworks', 0x0001: 'Networks', 0x0002: 'ScanMaxTimeSeconds', 0x0003: 'ConnectMaxTimeSeconds', 0x0004: 'InterfaceEnabled', 0x0005: 'LastNetworkingStatus', 0x0006: 'LastNetworkID', 0x0007: 'LastConnectErrorValue'},
-  0x0033: {0x0000: 'NetworkInterfaces', 0x0001: 'RebootCount', 0x0002: 'UpTime', 0x0003: 'TotalOperationalHours', 0x0004: 'BootReason', 0x0008: 'TestEventTriggersEnabled'},
-  0x003E: {0x0000: 'NOCs', 0x0001: 'Fabrics', 0x0002: 'SupportedFabrics', 0x0003: 'CommissionedFabrics', 0x0004: 'TrustedRootCertificates', 0x0005: 'CurrentFabricIndex'},
+  0x0028: {
+    0x0000: 'DataModelRevision',
+    0x0001: 'VendorName',
+    0x0002: 'VendorID',
+    0x0003: 'ProductName',
+    0x0004: 'ProductID',
+    0x0005: 'NodeLabel',
+    0x0006: 'Location',
+    0x0007: 'HardwareVersion',
+    0x0008: 'HardwareVersionString',
+    0x0009: 'SoftwareVersion',
+    0x000A: 'SoftwareVersionString',
+    0x000B: 'ManufacturingDate',
+    0x000C: 'PartNumber',
+    0x000E: 'SerialNumber',
+    0x000F: 'LocalConfigDisabled',
+    0x0010: 'Reachable',
+    0x0011: 'UniqueID',
+  },
+  0x0030: {
+    0x0000: 'Breadcrumb',
+    0x0001: 'BasicCommissioningInfo',
+    0x0002: 'RegulatoryConfig',
+    0x0003: 'LocationCapability',
+    0x0004: 'SupportsConcurrentConnection',
+  },
+  0x0031: {
+    0x0000: 'MaxNetworks',
+    0x0001: 'Networks',
+    0x0002: 'ScanMaxTimeSeconds',
+    0x0003: 'ConnectMaxTimeSeconds',
+    0x0004: 'InterfaceEnabled',
+    0x0005: 'LastNetworkingStatus',
+    0x0006: 'LastNetworkID',
+    0x0007: 'LastConnectErrorValue',
+  },
+  0x0033: {
+    0x0000: 'NetworkInterfaces',
+    0x0001: 'RebootCount',
+    0x0002: 'UpTime',
+    0x0003: 'TotalOperationalHours',
+    0x0004: 'BootReason',
+    0x0008: 'TestEventTriggersEnabled',
+  },
+  0x003E: {
+    0x0000: 'NOCs',
+    0x0001: 'Fabrics',
+    0x0002: 'SupportedFabrics',
+    0x0003: 'CommissionedFabrics',
+    0x0004: 'TrustedRootCertificates',
+    0x0005: 'CurrentFabricIndex',
+  },
   0x0046: {0x0000: 'IdleModeDuration', 0x0001: 'ActiveModeDuration', 0x0002: 'ActiveModeThreshold'},
-  0x0201: {0x0000: 'LocalTemperature', 0x0001: 'OutdoorTemperature', 0x0003: 'AbsMinHeatSetpointLimit', 0x0004: 'AbsMaxHeatSetpointLimit', 0x0005: 'AbsMinCoolSetpointLimit', 0x0006: 'AbsMaxCoolSetpointLimit', 0x0010: 'LocalTemperatureCalibration', 0x0011: 'OccupiedCoolingSetpoint', 0x0012: 'OccupiedHeatingSetpoint', 0x0015: 'MinHeatSetpointLimit', 0x0016: 'MaxHeatSetpointLimit', 0x0017: 'MinCoolSetpointLimit', 0x0018: 'MaxCoolSetpointLimit', 0x001B: 'ControlSequenceOfOperation', 0x001C: 'SystemMode', 0x001E: 'ThermostatRunningMode', 0x0025: 'HVACSystemTypeConfiguration', 0x0029: 'SetpointChangeSource', 0x002A: 'SetpointChangeAmount', 0x002B: 'SetpointChangeSourceTimestamp'},
+  0x0201: {
+    0x0000: 'LocalTemperature',
+    0x0001: 'OutdoorTemperature',
+    0x0003: 'AbsMinHeatSetpointLimit',
+    0x0004: 'AbsMaxHeatSetpointLimit',
+    0x0005: 'AbsMinCoolSetpointLimit',
+    0x0006: 'AbsMaxCoolSetpointLimit',
+    0x0010: 'LocalTemperatureCalibration',
+    0x0011: 'OccupiedCoolingSetpoint',
+    0x0012: 'OccupiedHeatingSetpoint',
+    0x0015: 'MinHeatSetpointLimit',
+    0x0016: 'MaxHeatSetpointLimit',
+    0x0017: 'MinCoolSetpointLimit',
+    0x0018: 'MaxCoolSetpointLimit',
+    0x001B: 'ControlSequenceOfOperation',
+    0x001C: 'SystemMode',
+    0x001E: 'ThermostatRunningMode',
+    0x0025: 'HVACSystemTypeConfiguration',
+    0x0029: 'SetpointChangeSource',
+    0x002A: 'SetpointChangeAmount',
+    0x002B: 'SetpointChangeSourceTimestamp',
+  },
   0x0402: {0x0000: 'MeasuredValue', 0x0001: 'MinMeasuredValue', 0x0002: 'MaxMeasuredValue', 0x0003: 'Tolerance'},
   0x0405: {0x0000: 'MeasuredValue', 0x0001: 'MinMeasuredValue', 0x0002: 'MaxMeasuredValue', 0x0003: 'Tolerance'},
 };
@@ -176,37 +255,106 @@ const _kGlobalAttrs = <int, String>{
 // ── Command names per cluster ─────────────────────────────────────────────
 const _kCommandNames = <int, Map<int, String>>{
   0x0003: {0: 'Identify', 1: 'TriggerEffect'},
-  0x0004: {0: 'AddGroup', 1: 'ViewGroup', 2: 'GetGroupMembership', 3: 'RemoveGroup', 4: 'RemoveAllGroups', 5: 'AddGroupIfIdentifying'},
+  0x0004: {
+    0: 'AddGroup',
+    1: 'ViewGroup',
+    2: 'GetGroupMembership',
+    3: 'RemoveGroup',
+    4: 'RemoveAllGroups',
+    5: 'AddGroupIfIdentifying',
+  },
   0x0006: {0: 'Off', 1: 'On', 2: 'Toggle', 64: 'OffWithEffect', 65: 'OnWithRecallGlobalScene', 66: 'OnWithTimedOff'},
-  0x0008: {0: 'MoveToLevel', 1: 'Move', 2: 'Step', 3: 'Stop', 4: 'MoveToLevelWithOnOff', 5: 'MoveWithOnOff', 6: 'StepWithOnOff', 7: 'StopWithOnOff'},
+  0x0008: {
+    0: 'MoveToLevel',
+    1: 'Move',
+    2: 'Step',
+    3: 'Stop',
+    4: 'MoveToLevelWithOnOff',
+    5: 'MoveWithOnOff',
+    6: 'StepWithOnOff',
+    7: 'StopWithOnOff',
+  },
   0x001E: {0: 'Bind', 1: 'Unbind'},
   0x0028: {0: 'MfgSpecificPing'},
-  0x002A: {0: 'AnnounceOTAProvider'},    // OTA Requestor — the key one
-  0x0029: {0: 'QueryImage', 1: 'ApplyUpdateRequest', 2: 'NotifyUpdateApplied'},  // OTA Provider
+  0x002A: {0: 'AnnounceOTAProvider'}, // OTA Requestor — the key one
+  0x0029: {0: 'QueryImage', 1: 'ApplyUpdateRequest', 2: 'NotifyUpdateApplied'}, // OTA Provider
   0x0030: {0: 'ArmFailSafe', 2: 'SetRegulatoryConfig', 4: 'CommissioningComplete'},
-  0x0031: {0: 'ScanNetworks', 2: 'AddOrUpdateWiFiNetwork', 4: 'AddOrUpdateThreadNetwork', 6: 'RemoveNetwork', 8: 'ConnectNetwork', 10: 'ReorderNetwork'},
+  0x0031: {
+    0: 'ScanNetworks',
+    2: 'AddOrUpdateWiFiNetwork',
+    4: 'AddOrUpdateThreadNetwork',
+    6: 'RemoveNetwork',
+    8: 'ConnectNetwork',
+    10: 'ReorderNetwork',
+  },
   0x003C: {0: 'OpenCommissioningWindow', 1: 'OpenBasicCommissioningWindow', 2: 'RevokeCommissioning'},
-  0x003E: {0: 'AttestationRequest', 2: 'CertificateChainRequest', 4: 'CSRRequest', 6: 'AddNOC', 7: 'UpdateNOC', 9: 'UpdateFabricLabel', 10: 'RemoveFabric', 11: 'AddTrustedRootCertificate'},
+  0x003E: {
+    0: 'AttestationRequest',
+    2: 'CertificateChainRequest',
+    4: 'CSRRequest',
+    6: 'AddNOC',
+    7: 'UpdateNOC',
+    9: 'UpdateFabricLabel',
+    10: 'RemoveFabric',
+    11: 'AddTrustedRootCertificate',
+  },
   0x003F: {0: 'KeySetWrite', 1: 'KeySetRead', 3: 'KeySetRemove', 4: 'KeySetReadAllIndices'},
   0x0046: {0: 'RegisterClient', 2: 'UnregisterClient', 3: 'StayActiveRequest', 4: 'GetOperatingInfo'},
   0x0050: {0: 'ChangeToMode'},
   0x0101: {0: 'LockDoor', 1: 'UnlockDoor', 3: 'UnlockWithTimeout'},
-  0x0102: {0: 'UpOrOpen', 1: 'DownOrClose', 2: 'StopMotion', 4: 'GoToLiftValue', 5: 'GoToLiftPercentage', 7: 'GoToTiltValue', 8: 'GoToTiltPercentage'},
+  0x0102: {
+    0: 'UpOrOpen',
+    1: 'DownOrClose',
+    2: 'StopMotion',
+    4: 'GoToLiftValue',
+    5: 'GoToLiftPercentage',
+    7: 'GoToTiltValue',
+    8: 'GoToTiltPercentage',
+  },
   0x0201: {0: 'SetpointRaiseLower', 1: 'SetWeeklySchedule', 2: 'GetWeeklySchedule', 3: 'ClearWeeklySchedule'},
-  0x0300: {0: 'MoveToHue', 1: 'MoveHue', 2: 'StepHue', 3: 'MoveToSaturation', 4: 'MoveSaturation', 5: 'StepSaturation', 6: 'MoveToHueAndSaturation', 7: 'MoveToColor', 8: 'MoveColor', 9: 'StepColor', 10: 'MoveToColorTemperature'},
+  0x0300: {
+    0: 'MoveToHue',
+    1: 'MoveHue',
+    2: 'StepHue',
+    3: 'MoveToSaturation',
+    4: 'MoveSaturation',
+    5: 'StepSaturation',
+    6: 'MoveToHueAndSaturation',
+    7: 'MoveToColor',
+    8: 'MoveColor',
+    9: 'StepColor',
+    10: 'MoveToColorTemperature',
+  },
 };
 
 // ── Feature-map bit names per cluster ────────────────────────────────────
 const _kFeatureMapBits = <int, Map<int, String>>{
   0x0006: {0: 'Lighting', 2: 'DeadFrontBehavior', 3: 'OffOnly'},
   0x0008: {0: 'OnOff', 1: 'Lighting', 2: 'Frequency'},
-  0x002A: {0: 'UpdateToken'},   // OTA Requestor
+  0x002A: {0: 'UpdateToken'}, // OTA Requestor
   0x0031: {0: 'WiFi', 1: 'Thread', 2: 'Ethernet'},
   0x003B: {0: 'LatchingSwitch', 1: 'MomentarySwitch', 2: 'MSRelease', 3: 'MSLongPress', 4: 'MSMultiPress'},
   0x0046: {0: 'CheckInProtocol', 1: 'UserActiveModeTrigger', 2: 'LongIdleTime', 3: 'MaximumCheckInBackOff'},
   0x0050: {0: 'OnOff'},
-  0x0101: {0: 'PINCredential', 1: 'RFIDCredential', 2: 'FingerCredential', 7: 'Logging', 8: 'WeekDayAccess', 9: 'YearDayAccess', 10: 'HolidaySchedules', 11: 'Unbolting'},
-  0x0201: {0: 'Heating', 1: 'Cooling', 2: 'Occupancy', 3: 'ScheduleConfiguration', 4: 'Setback', 5: 'AutoMode', 6: 'LocalTemperatureNotExposed'},
+  0x0101: {
+    0: 'PINCredential',
+    1: 'RFIDCredential',
+    2: 'FingerCredential',
+    7: 'Logging',
+    8: 'WeekDayAccess',
+    9: 'YearDayAccess',
+    10: 'HolidaySchedules',
+    11: 'Unbolting',
+  },
+  0x0201: {
+    0: 'Heating',
+    1: 'Cooling',
+    2: 'Occupancy',
+    3: 'ScheduleConfiguration',
+    4: 'Setback',
+    5: 'AutoMode',
+    6: 'LocalTemperatureNotExposed',
+  },
   0x0300: {0: 'HueSaturation', 1: 'EnhancedHue', 2: 'ColorLoop', 3: 'XY', 4: 'ColorTemperature'},
 };
 
@@ -215,8 +363,8 @@ const _kFeatureMapBits = <int, Map<int, String>>{
 // ---------------------------------------------------------------------------
 
 class ClusterInspectorScreen extends StatefulWidget {
+  const ClusterInspectorScreen({required this.device, super.key});
   final MatterDevice device;
-  const ClusterInspectorScreen({super.key, required this.device});
 
   @override
   State<ClusterInspectorScreen> createState() => _ClusterInspectorScreenState();
@@ -239,46 +387,41 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
     final raw = json.decode(jsonStr) as List<dynamic>;
 
     // Group by endpoint → clusterId
-    final Map<int, Map<int, _ClusterData>> byEpCluster = {};
-    for (final entry in raw) {
-      final ep  = (entry['endpoint'] as num).toInt();
+    final byEpCluster = <int, Map<int, _ClusterData>>{};
+    for (final rawEntry in raw) {
+      final entry = rawEntry as Map<String, dynamic>;
+      final ep = (entry['endpoint'] as num).toInt();
       final cid = (entry['clusterId'] as num).toInt();
       final attrs = (entry['attributes'] as List<dynamic>)
-          .map((a) => _AttrData(
-                id: (a['id'] as num).toInt(),
-                value: a['value']?.toString() ?? 'null',
-              ))
+          .map((a) {
+            final attr = a as Map<String, dynamic>;
+            return _AttrData(id: (attr['id'] as num).toInt(), value: attr['value']?.toString() ?? 'null');
+          })
           .toList();
       // Parse device types from the Descriptor cluster entry
       List<int>? deviceTypeIds;
       if (cid == 0x001D && entry['deviceTypes'] != null) {
-        deviceTypeIds = (entry['deviceTypes'] as List<dynamic>)
-            .map((e) => (e as num).toInt())
-            .toList();
+        deviceTypeIds = (entry['deviceTypes'] as List<dynamic>).map((e) => (e as num).toInt()).toList();
       }
       byEpCluster.putIfAbsent(ep, () => {})[cid] = _ClusterData(
-        endpoint:      ep,
-        clusterId:     cid,
-        attributes:    attrs,
+        endpoint: ep,
+        clusterId: cid,
+        attributes: attrs,
         deviceTypeIds: deviceTypeIds,
       );
     }
 
     // Build device-type map per endpoint (from Descriptor cluster)
-    final Map<int, List<int>> epDeviceTypes = {
-      for (final ep in byEpCluster.keys)
-        ep: byEpCluster[ep]![0x001D]?.deviceTypeIds ?? [],
+    final epDeviceTypes = <int, List<int>>{
+      for (final ep in byEpCluster.keys) ep: byEpCluster[ep]![0x001D]?.deviceTypeIds ?? [],
     };
 
     // Flatten into mixed list: _EndpointHeader + _ClusterData, sorted
     final items = <Object>[];
     final sortedEps = byEpCluster.keys.toList()..sort();
     for (final ep in sortedEps) {
-      items.add(_EndpointHeader(
-        endpoint:      ep,
-        deviceTypeIds: epDeviceTypes[ep] ?? [],
-      ));
-      final clusters    = byEpCluster[ep]!;
+      items.add(_EndpointHeader(endpoint: ep, deviceTypeIds: epDeviceTypes[ep] ?? []));
+      final clusters = byEpCluster[ep]!;
       final sortedClusters = clusters.keys.toList()..sort();
       for (final cid in sortedClusters) {
         items.add(clusters[cid]!);
@@ -294,15 +437,14 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.device.name,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(widget.device.name, style: const TextStyle(fontWeight: FontWeight.bold)),
             Text(
               'Cluster Inspector · '
               '0x${widget.device.nodeId.toRadixString(16).padLeft(16, '0').toUpperCase()}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontFamily: 'monospace',
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontFamily: 'monospace',
+              ),
             ),
           ],
         ),
@@ -310,7 +452,9 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Reload',
-            onPressed: () => setState(() { _future = _load(); }),
+            onPressed: () => setState(() {
+              _future = _load();
+            }),
           ),
         ],
       ),
@@ -321,11 +465,7 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
             return const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Reading all clusters…'),
-                ],
+                children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Reading all clusters…')],
               ),
             );
           }
@@ -362,31 +502,24 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
 // ---------------------------------------------------------------------------
 
 class _AttrData {
+  const _AttrData({required this.id, required this.value});
   final int id;
   final String value;
-  const _AttrData({required this.id, required this.value});
 }
 
 class _ClusterData {
+  const _ClusterData({required this.endpoint, required this.clusterId, required this.attributes, this.deviceTypeIds});
   final int endpoint;
   final int clusterId;
   final List<_AttrData> attributes;
+
   /// Non-null only for the Descriptor cluster (0x001D) — the parsed device type IDs.
   final List<int>? deviceTypeIds;
 
-  const _ClusterData({
-    required this.endpoint,
-    required this.clusterId,
-    required this.attributes,
-    this.deviceTypeIds,
-  });
-
   String get clusterName =>
-      _kClusterNames[clusterId] ??
-      '0x${clusterId.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+      _kClusterNames[clusterId] ?? '0x${clusterId.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
-  String get hexId =>
-      '0x${clusterId.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+  String get hexId => '0x${clusterId.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
   String attrName(int attrId) {
     final clusterMap = _kAttrNames[clusterId];
@@ -400,9 +533,9 @@ class _ClusterData {
 
 /// A synthetic list item that introduces a new endpoint section.
 class _EndpointHeader {
+  const _EndpointHeader({required this.endpoint, required this.deviceTypeIds});
   final int endpoint;
   final List<int> deviceTypeIds;
-  const _EndpointHeader({required this.endpoint, required this.deviceTypeIds});
 }
 
 // ---------------------------------------------------------------------------
@@ -410,8 +543,8 @@ class _EndpointHeader {
 // ---------------------------------------------------------------------------
 
 class _EndpointHeaderTile extends StatelessWidget {
-  final _EndpointHeader header;
   const _EndpointHeaderTile({required this.header});
+  final _EndpointHeader header;
 
   @override
   Widget build(BuildContext context) {
@@ -428,11 +561,7 @@ class _EndpointHeaderTile extends StatelessWidget {
             children: [
               Text(
                 'ENDPOINT ${header.endpoint}',
-                style: tt.labelSmall?.copyWith(
-                  color: cs.primary,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
+                style: tt.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w800, letterSpacing: 1.2),
               ),
               const SizedBox(width: 8),
               Expanded(child: Divider(color: cs.outlineVariant, thickness: 1)),
@@ -449,41 +578,27 @@ class _EndpointHeaderTile extends StatelessWidget {
                 final name = _deviceTypeName(id);
                 final hexId = '0x${id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
                 // Use a more prominent colour for application types, muted for infra types
-                final isInfra = const {0x0011, 0x0016, 0x0014, 0x0012, 0x0013, 0x000E}
-                    .contains(id);
-                final bg = isInfra
-                    ? cs.surfaceContainerHighest
-                    : cs.primaryContainer;
-                final fg = isInfra
-                    ? cs.onSurfaceVariant
-                    : cs.onPrimaryContainer;
+                final isInfra = const {0x0011, 0x0016, 0x0014, 0x0012, 0x0013, 0x000E}.contains(id);
+                final bg = isInfra ? cs.surfaceContainerHighest : cs.primaryContainer;
+                final fg = isInfra ? cs.onSurfaceVariant : cs.onPrimaryContainer;
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: bg,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isInfra ? cs.outlineVariant : cs.primary.withAlpha(60),
-                    ),
+                    border: Border.all(color: isInfra ? cs.outlineVariant : cs.primary.withAlpha(60)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         name,
-                        style: tt.labelSmall?.copyWith(
-                          color: fg,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: tt.labelSmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(width: 5),
                       Text(
                         hexId,
-                        style: tt.labelSmall?.copyWith(
-                          color: fg.withAlpha(150),
-                          fontFamily: 'monospace',
-                          fontSize: 10,
-                        ),
+                        style: tt.labelSmall?.copyWith(color: fg.withAlpha(150), fontFamily: 'monospace', fontSize: 10),
                       ),
                     ],
                   ),
@@ -502,8 +617,8 @@ class _EndpointHeaderTile extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ClusterCard extends StatefulWidget {
-  final _ClusterData data;
   const _ClusterCard({required this.data});
+  final _ClusterData data;
 
   @override
   State<_ClusterCard> createState() => _ClusterCardState();
@@ -514,16 +629,12 @@ class _ClusterCardState extends State<_ClusterCard> {
 
   @override
   Widget build(BuildContext context) {
-    final cs   = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final data = widget.data;
 
     // Non-global attributes first, then global
-    final appAttrs = data.attributes
-        .where((a) => !_kGlobalAttrs.containsKey(a.id))
-        .toList();
-    final globalAttrs = data.attributes
-        .where((a) => _kGlobalAttrs.containsKey(a.id))
-        .toList();
+    final appAttrs = data.attributes.where((a) => !_kGlobalAttrs.containsKey(a.id)).toList();
+    final globalAttrs = data.attributes.where((a) => _kGlobalAttrs.containsKey(a.id)).toList();
 
     return Card(
       color: cs.surfaceContainerHighest,
@@ -539,10 +650,7 @@ class _ClusterCardState extends State<_ClusterCard> {
                   // Endpoint badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: cs.secondaryContainer,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                    decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(4)),
                     child: Text(
                       'EP${data.endpoint}',
                       style: TextStyle(
@@ -557,10 +665,7 @@ class _ClusterCardState extends State<_ClusterCard> {
                   // Cluster ID badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+                    decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: BorderRadius.circular(6)),
                     child: Text(
                       data.hexId,
                       style: TextStyle(
@@ -573,13 +678,9 @@ class _ClusterCardState extends State<_ClusterCard> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(data.clusterName,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    child: Text(data.clusterName, style: const TextStyle(fontWeight: FontWeight.w600)),
                   ),
-                  Text(
-                    '${appAttrs.length} attr.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text('${appAttrs.length} attr.', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(width: 4),
                   Icon(
                     _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
@@ -592,19 +693,20 @@ class _ClusterCardState extends State<_ClusterCard> {
           ),
           if (_expanded) ...[
             const Divider(height: 1),
-            ...appAttrs.map((a) => _AttrRow(
-                attr: a, name: data.attrName(a.id),
-                highlight: true, clusterId: data.clusterId)),
+            ...appAttrs.map(
+              (a) => _AttrRow(attr: a, name: data.attrName(a.id), highlight: true, clusterId: data.clusterId),
+            ),
             if (globalAttrs.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-                child: Text('Global attributes',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant)),
+                child: Text(
+                  'Global attributes',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
               ),
-              ...globalAttrs.map((a) => _AttrRow(
-                  attr: a, name: data.attrName(a.id),
-                  highlight: false, clusterId: data.clusterId)),
+              ...globalAttrs.map(
+                (a) => _AttrRow(attr: a, name: data.attrName(a.id), highlight: false, clusterId: data.clusterId),
+              ),
             ],
           ],
         ],
@@ -614,39 +716,28 @@ class _ClusterCardState extends State<_ClusterCard> {
 }
 
 class _AttrRow extends StatelessWidget {
+  const _AttrRow({required this.attr, required this.name, required this.highlight, required this.clusterId});
   final _AttrData attr;
-  final String    name;
-  final bool      highlight;
-  final int       clusterId;
-
-  const _AttrRow({
-    required this.attr,
-    required this.name,
-    required this.highlight,
-    required this.clusterId,
-  });
+  final String name;
+  final bool highlight;
+  final int clusterId;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /// Parse a Java list toString like "[0, 1, 4]" into integers.
   static List<int> _parseIntList(String raw) {
-    return RegExp(r'\d+')
-        .allMatches(raw)
-        .map((m) => int.parse(m.group(0)!))
-        .toList();
+    return RegExp(r'\d+').allMatches(raw).map((m) => int.parse(m.group(0)!)).toList();
   }
 
   /// True when this attribute should get the command-chip rendering.
-  bool get _isCommandList =>
-      attr.id == 0xFFF8 || attr.id == 0xFFF9;   // Generated / Accepted
+  bool get _isCommandList => attr.id == 0xFFF8 || attr.id == 0xFFF9; // Generated / Accepted
 
   bool get _isFeatureMap => attr.id == 0xFFFC;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final hexAttr =
-        '0x${attr.id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+    final hexAttr = '0x${attr.id.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
     Widget valueWidget;
 
@@ -670,11 +761,9 @@ class _AttrRow extends StatelessWidget {
     return InkWell(
       onLongPress: () {
         Clipboard.setData(ClipboardData(text: '$name: ${attr.value}'));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Copied to clipboard'),
-              duration: Duration(seconds: 1)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 1)));
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -683,52 +772,48 @@ class _AttrRow extends StatelessWidget {
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [
-                    SizedBox(
-                      width: 60,
-                      child: Text(hexAttr,
-                          style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 11,
-                              color: cs.onSurfaceVariant)),
-                    ),
-                    Text(name,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: highlight ? cs.onSurface : cs.onSurfaceVariant)),
-                  ]),
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 60),
-                    child: valueWidget,
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 60,
+                        child: Text(
+                          hexAttr,
+                          style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                      Text(name, style: TextStyle(fontSize: 13, color: highlight ? cs.onSurface : cs.onSurfaceVariant)),
+                    ],
                   ),
+                  const SizedBox(height: 6),
+                  Padding(padding: const EdgeInsets.only(left: 60), child: valueWidget),
                 ],
               )
             // Plain attributes stay on one row
-            : Row(children: [
-                SizedBox(
-                  width: 60,
-                  child: Text(hexAttr,
-                      style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: cs.onSurfaceVariant)),
-                ),
-                Expanded(
-                  child: Text(name,
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: highlight ? cs.onSurface : cs.onSurfaceVariant)),
-                ),
-                const SizedBox(width: 8),
-                Flexible(child: valueWidget),
-              ]),
+            : Row(
+                children: [
+                  SizedBox(
+                    width: 60,
+                    child: Text(
+                      hexAttr,
+                      style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(fontSize: 13, color: highlight ? cs.onSurface : cs.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(child: valueWidget),
+                ],
+              ),
       ),
     );
   }
 
   Widget _buildCommandChips(BuildContext context, ColorScheme cs) {
-    final ids   = _parseIntList(attr.value);
+    final ids = _parseIntList(attr.value);
     final names = _kCommandNames[clusterId];
     if (ids.isEmpty) {
       return Text('(none)', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant));
@@ -737,63 +822,57 @@ class _AttrRow extends StatelessWidget {
       spacing: 6,
       runSpacing: 4,
       children: ids.map((id) {
-        final label = names?[id]
-            ?? '0x${id.toRadixString(16).toUpperCase().padLeft(2, '0')}';
+        final label = names?[id] ?? '0x${id.toRadixString(16).toUpperCase().padLeft(2, '0')}';
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: cs.secondaryContainer,
-            borderRadius: BorderRadius.circular(12),
+          decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(12)),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cs.onSecondaryContainer),
           ),
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSecondaryContainer)),
         );
       }).toList(),
     );
   }
 
   Widget _buildFeatureMapChips(BuildContext context, ColorScheme cs) {
-    final raw  = int.tryParse(attr.value) ?? 0;
+    final raw = int.tryParse(attr.value) ?? 0;
     final bits = _kFeatureMapBits[clusterId];
     if (raw == 0) {
-      return Text('0x00000000 (none)',
-          style: TextStyle(
-              fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant));
+      return Text(
+        '0x00000000 (none)',
+        style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+      );
     }
-    final chips = <Widget>[];
-    // Show hex value first
-    chips.add(Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Text(
-        '0x${raw.toRadixString(16).toUpperCase().padLeft(8, '0')}',
-        style: TextStyle(
-            fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
-      ),
-    ));
-    // Then one chip per set bit
-    for (int b = 0; b < 32; b++) {
-      if ((raw >> b) & 1 == 0) continue;
-      final label = bits?[b] ?? 'bit$b';
-      chips.add(Container(
+    final chips = <Widget>[
+      // Show hex value first
+      Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: cs.primaryContainer,
+          color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: cs.outlineVariant),
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: cs.onPrimaryContainer)),
-      ));
+        child: Text(
+          '0x${raw.toRadixString(16).toUpperCase().padLeft(8, '0')}',
+          style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ),
+    ];
+    // Then one chip per set bit
+    for (var b = 0; b < 32; b++) {
+      if ((raw >> b) & 1 == 0) continue;
+      final label = bits?[b] ?? 'bit$b';
+      chips.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: BorderRadius.circular(12)),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cs.onPrimaryContainer),
+          ),
+        ),
+      );
     }
     return Wrap(spacing: 6, runSpacing: 4, children: chips);
   }

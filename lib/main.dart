@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/router.dart';
+import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/matter_channel.dart';
+import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/wifi_scan_service.dart';
+import 'package:matter_home/ui/theme.dart';
 import 'package:provider/provider.dart';
-
-import 'providers/device_provider.dart';
-import 'router.dart';
-import 'services/device_store.dart';
-import 'services/matter_channel.dart';
-import 'services/matter_port.dart';
-import 'services/wifi_scan_service.dart';
-import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,9 +46,8 @@ class MatterHomeApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Flux Home',
       debugShowCheckedModeBanner: false,
-      theme:      buildAppTheme(brightness: Brightness.light),
+      theme:      buildAppTheme(),
       darkTheme:  buildAppTheme(brightness: Brightness.dark),
-      themeMode:  ThemeMode.system,
       routerConfig: appRouter,
     );
   }

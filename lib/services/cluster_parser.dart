@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-
-import '../models/device_type.dart';
-import '../models/device_view.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/services/matter_port.dart' show MatterClusterPort;
 
 // ── Quality ───────────────────────────────────────────────────────────────────
 
@@ -20,13 +20,6 @@ Color qualityColor(ClusterQuality q) => switch (q) {
 // ── Reading model ─────────────────────────────────────────────────────────────
 
 class ClusterReading {
-  final IconData       icon;
-  final Color          iconColor;
-  final String         label;
-  final String         displayValue;
-  final String         unit;
-  final ClusterQuality? quality;
-  final String?        subtitle;
 
   const ClusterReading({
     required this.icon,
@@ -37,47 +30,54 @@ class ClusterReading {
     this.quality,
     this.subtitle,
   });
+  final IconData       icon;
+  final Color          iconColor;
+  final String         label;
+  final String         displayValue;
+  final String         unit;
+  final ClusterQuality? quality;
+  final String?        subtitle;
 }
 
 // ── Parsed endpoint / cluster models ─────────────────────────────────────────
 
 class LiveAttr {
+  const LiveAttr({required this.id, required this.raw});
   final int    id;
   final String raw;
-  const LiveAttr({required this.id, required this.raw});
 }
 
 class LiveCluster {
-  final int            endpoint;
-  final int            clusterId;
-  final List<int>?     deviceTypeIds;
-  final List<LiveAttr> attrs;
   const LiveCluster({
     required this.endpoint,
     required this.clusterId,
     required this.attrs,
     this.deviceTypeIds,
   });
+  final int            endpoint;
+  final int            clusterId;
+  final List<int>?     deviceTypeIds;
+  final List<LiveAttr> attrs;
 }
 
 class SemanticTag {
+  const SemanticTag(this.namespaceId, this.tag, this.label);
   final int     namespaceId;
   final int     tag;
   final String? label;
-  const SemanticTag(this.namespaceId, this.tag, this.label);
 }
 
 class LiveEndpoint {
-  final int               endpoint;
-  final List<int>         deviceTypeIds;
-  final List<LiveCluster> clusters;
-  final List<SemanticTag> semanticTags;
   const LiveEndpoint({
     required this.endpoint,
     required this.deviceTypeIds,
     required this.clusters,
     this.semanticTags = const [],
   });
+  final int               endpoint;
+  final List<int>         deviceTypeIds;
+  final List<LiveCluster> clusters;
+  final List<SemanticTag> semanticTags;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -87,8 +87,9 @@ class LiveEndpoint {
 List<LiveEndpoint> parseClusters(String? jsonStr) {
   if (jsonStr == null || jsonStr == '[]') return [];
   final raw = json.decode(jsonStr) as List<dynamic>;
-  final Map<int, Map<int, LiveCluster>> byEpCluster = {};
-  for (final entry in raw) {
+  final byEpCluster = <int, Map<int, LiveCluster>>{};
+  for (final rawEntry in raw) {
+    final entry = rawEntry as Map<String, dynamic>;
     final ep  = (entry['endpoint'] as num).toInt();
     final cid = (entry['clusterId'] as num).toInt();
     List<int>? deviceTypeIds;
@@ -98,7 +99,8 @@ List<LiveEndpoint> parseClusters(String? jsonStr) {
           .toList();
     }
     final attrs = <LiveAttr>[];
-    for (final a in (entry['attributes'] as List<dynamic>)) {
+    for (final rawAttr in (entry['attributes'] as List<dynamic>)) {
+      final a = rawAttr as Map<String, dynamic>;
       final attrId = (a['id'] as num).toInt();
       if (_kGlobalAttrIds.contains(attrId)) continue;
       attrs.add(LiveAttr(id: attrId, raw: a['value']?.toString() ?? 'null'));
@@ -699,7 +701,9 @@ ClusterReading? _readingFromCluster(
     // ── Color Control 0x0300 — skip dedicated card device types ────────────
     case 0x0300:
       if (deviceType == DeviceType.colorTemperatureLight ||
-          deviceType == DeviceType.extendedColorLight) return null;
+          deviceType == DeviceType.extendedColorLight) {
+        return null;
+      }
       final ct = int.tryParse(raw(0x0007) ?? '');
       if (ct == null || ct == 0) return null;
       final k = (1_000_000 / ct).round();

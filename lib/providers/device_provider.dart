@@ -1,23 +1,29 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/models/ota_progress.dart';
+import 'package:matter_home/models/persisted_snapshot.dart';
+import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/matter_port.dart';
 import 'package:uuid/uuid.dart';
-
-import '../models/device_live_data.dart';
-import '../models/device_type.dart';
-import '../models/device_view.dart';
-import '../models/matter_device.dart';
-import '../models/ota_progress.dart';
-import '../models/persisted_snapshot.dart';
-import '../services/device_store.dart';
-import '../models/commission_models.dart';
-import '../services/matter_port.dart';
 
 enum DeviceProviderState { idle, loading, error }
 
 class DeviceProvider extends ChangeNotifier {
+  // ── Constructor ───────────────────────────────────────────────────────────
+
+  DeviceProvider(this._store, this._channel) {
+    _load();
+    _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
+    Future.microtask(_startAllSubscriptions);
+  }
   final DeviceStore _store;
-  final MatterPort  _channel;
+  final MatterPort _channel;
   final _uuid = const Uuid();
 
   DeviceProviderState state = DeviceProviderState.idle;
@@ -25,10 +31,10 @@ class DeviceProvider extends ChangeNotifier {
   List<MatterDevice> _devices = [];
 
   // ── In-memory caches ──────────────────────────────────────────────────────
-  final Map<String, DeviceLiveData>     _liveCache     = {};
-  final Map<String, String>             _clusterCache  = {}; // deviceId → JSON
-  final Map<String, OtaProgressState>   _otaProgress   = {};
-  final Map<String, PersistedSnapshot>  _snapshots     = {};
+  final Map<String, DeviceLiveData> _liveCache = {};
+  final Map<String, String> _clusterCache = {}; // deviceId → JSON
+  final Map<String, OtaProgressState> _otaProgress = {};
+  final Map<String, PersistedSnapshot> _snapshots = {};
 
   final Set<int> _subscribedNodeIds = {};
 
@@ -51,8 +57,7 @@ class DeviceProvider extends ChangeNotifier {
   List<MatterDevice> get devices => List.unmodifiable(_devices);
 
   /// All devices as merged [DeviceView] objects (commissioning record + live).
-  List<DeviceView> get deviceViews =>
-      _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
+  List<DeviceView> get deviceViews => _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.
   DeviceView? viewFor(String id) {
@@ -61,18 +66,12 @@ class DeviceProvider extends ChangeNotifier {
     return DeviceView(_devices[idx], _liveCache[_devices[idx].id]);
   }
 
-  // ── Constructor ───────────────────────────────────────────────────────────
-
-  DeviceProvider(this._store, this._channel) {
-    _load();
-    _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
-    Future.microtask(_startAllSubscriptions);
-  }
-
   @override
   void dispose() {
     _disposed = true;
-    for (final t in _establishTimeouts.values) t?.cancel();
+    for (final t in _establishTimeouts.values) {
+      t?.cancel();
+    }
     _establishTimeouts.clear();
     _deviceStateSub?.cancel();
     super.dispose();
@@ -107,7 +106,7 @@ class DeviceProvider extends ChangeNotifier {
             : BasicInfoCache.empty;
         _liveCache[device.id] = DeviceLiveData(
           updatedAt: DateTime.now(),
-          isStale:   false, // merge() resets this; markStale() restores it
+          isStale: false, // merge() resets this; markStale() restores it
           basicInfo: basicInfo,
         ).merge(snap.state).markStale();
       }
@@ -139,7 +138,7 @@ class DeviceProvider extends ChangeNotifier {
   /// Prefer [viewFor] when you also need commissioning fields.
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
 
-  String?          clusterCacheFor(String deviceId) => _clusterCache[deviceId];
+  String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
   void clearOtaProgress(String deviceId) {
@@ -154,12 +153,8 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Applies [transform] to the live cache entry for [deviceId], creating a
   /// blank entry if none exists.  Always calls [notifyListeners].
-  void _mergeLiveCache(
-      String deviceId, DeviceLiveData Function(DeviceLiveData) transform) {
-    _liveCache[deviceId] = transform(
-      _liveCache[deviceId] ??
-          DeviceLiveData(updatedAt: DateTime.now(), isStale: false),
-    );
+  void _mergeLiveCache(String deviceId, DeviceLiveData Function(DeviceLiveData) transform) {
+    _liveCache[deviceId] = transform(_liveCache[deviceId] ?? DeviceLiveData(updatedAt: DateTime.now(), isStale: false));
     notifyListeners();
   }
 
@@ -176,28 +171,33 @@ class DeviceProvider extends ChangeNotifier {
     String? partNumber,
     String? productUrl,
     String? uniqueId,
-    int?    swVersionNum,
+    int? swVersionNum,
   }) {
     _mergeLiveCache(
-        deviceId,
-        (e) => e.withBasicInfo(serial, swVersion, productName,
-            vendorName:        vendorName,
-            vendorId:          vendorId,
-            productId:         productId,
-            hwVersion:         hwVersion,
-            manufacturingDate: manufacturingDate,
-            partNumber:        partNumber,
-            productUrl:        productUrl,
-            uniqueId:          uniqueId,
-            swVersionNum:      swVersionNum));
+      deviceId,
+      (e) => e.withBasicInfo(
+        serial,
+        swVersion,
+        productName,
+        vendorName: vendorName,
+        vendorId: vendorId,
+        productId: productId,
+        hwVersion: hwVersion,
+        manufacturingDate: manufacturingDate,
+        partNumber: partNumber,
+        productUrl: productUrl,
+        uniqueId: uniqueId,
+        swVersionNum: swVersionNum,
+      ),
+    );
     // Persist the product name into the snapshot so it survives cold restarts.
     if (productName != null && productName.isNotEmpty) {
       unawaited(_flushSnapshot(deviceId));
     }
   }
 
-  void updateOtaSupport(String deviceId, bool supported, {int endpoint = 0}) {
-    _mergeLiveCache(deviceId, (e) => e.withOtaSupported(supported, endpoint));
+  void updateOtaSupport(String deviceId, {required bool supported, int endpoint = 0}) {
+    _mergeLiveCache(deviceId, (e) => e.withOtaSupported(value: supported, endpoint: endpoint));
   }
 
   /// Searches for the OTA Requestor cluster (0x002A) across all endpoints.
@@ -209,28 +209,26 @@ class DeviceProvider extends ChangeNotifier {
     const otaClusterId = 0x002A;
     int? foundEndpoint;
 
-    final ep0 = await _channel.readServerClusterList(device.nodeId, endpoint: 0);
+    final ep0 = await _channel.readServerClusterList(device.nodeId);
     if (ep0.contains(otaClusterId)) {
       foundEndpoint = 0;
     } else {
       for (final ep in await _channel.readPartsList(device.nodeId)) {
-        final clusters =
-            await _channel.readServerClusterList(device.nodeId, endpoint: ep);
+        final clusters = await _channel.readServerClusterList(device.nodeId, endpoint: ep);
         if (clusters.contains(otaClusterId)) {
           foundEndpoint = ep;
           break;
         }
       }
     }
-    updateOtaSupport(deviceId, foundEndpoint != null,
-        endpoint: foundEndpoint ?? 0);
+    updateOtaSupport(deviceId, supported: foundEndpoint != null, endpoint: foundEndpoint ?? 0);
   }
 
   // ── Subscription event handler ────────────────────────────────────────────
 
   void _onDeviceStateEvent(Map<String, dynamic> event) {
     final nodeId = event['nodeId'] as int?;
-    final type   = event['type']   as String? ?? 'update';
+    final type = event['type'] as String? ?? 'update';
     if (nodeId == null) return;
 
     final candidates = _devices.where((d) => d.nodeId == nodeId);
@@ -240,9 +238,9 @@ class DeviceProvider extends ChangeNotifier {
     switch (type) {
       case 'otaProgress':
         _otaProgress[device.id] = OtaProgressState(
-          phase:    event['phase']    as String? ?? 'error',
+          phase: event['phase'] as String? ?? 'error',
           progress: event['progress'] as int?,
-          message:  event['message']  as String?,
+          message: event['message'] as String?,
         );
         notifyListeners();
 
@@ -276,15 +274,12 @@ class DeviceProvider extends ChangeNotifier {
   /// Shared merge logic for both `established` and `update` events.
   void _applyStateUpdate(MatterDevice device, Map<String, dynamic> event) {
     final existing = _liveCache[device.id];
-    _liveCache[device.id] = existing != null
-        ? existing.merge(event)
-        : DeviceLiveData.fromUpdate(event);
+    _liveCache[device.id] = existing != null ? existing.merge(event) : DeviceLiveData.fromUpdate(event);
 
     // Infer device type from subscription attributes when the stored type
     // is unknown or is a stale commissioning fallback.
     final storedType = device.deviceType;
-    if (storedType == DeviceType.unknown ||
-        storedType == DeviceType.onOffLight) {
+    if (storedType == DeviceType.unknown || storedType == DeviceType.onOffLight) {
       final inferred = _inferTypeFromEvent(event);
       if (inferred != null) {
         final idx2 = _indexById(device.id);
@@ -310,9 +305,7 @@ class DeviceProvider extends ChangeNotifier {
   Future<void> _startAllSubscriptions() async {
     // Start all subscriptions in parallel so every device gets its first
     // established event at roughly the same time regardless of device count.
-    await Future.wait([
-      for (final device in _devices) _startSubscription(device),
-    ]);
+    await Future.wait([for (final device in _devices) _startSubscription(device)]);
     for (final device in _devices) {
       if (device.deviceType == DeviceType.unknown) {
         unawaited(_resolveUnknownDeviceType(device));
@@ -321,13 +314,15 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   DeviceType? _inferTypeFromEvent(Map<String, dynamic> event) {
-    if (event.containsKey('contactState'))  return DeviceType.contactSensor;
-    if (event.containsKey('occupancy'))     return DeviceType.occupancySensor;
-    if (event.containsKey('airQuality'))    return DeviceType.airQualitySensor;
-    if (event.containsKey('humidityCenti') &&
-        !event.containsKey('onOff'))        return DeviceType.humiditySensor;
-    if (event.containsKey('tempMeasureCenti') &&
-        !event.containsKey('onOff'))        return DeviceType.temperatureSensor;
+    if (event.containsKey('contactState')) return DeviceType.contactSensor;
+    if (event.containsKey('occupancy')) return DeviceType.occupancySensor;
+    if (event.containsKey('airQuality')) return DeviceType.airQualitySensor;
+    if (event.containsKey('humidityCenti') && !event.containsKey('onOff')) {
+      return DeviceType.humiditySensor;
+    }
+    if (event.containsKey('tempMeasureCenti') && !event.containsKey('onOff')) {
+      return DeviceType.temperatureSensor;
+    }
     return null;
   }
 
@@ -342,7 +337,7 @@ class DeviceProvider extends ChangeNotifier {
       _devices[idx] = _devices[idx].copyWith(deviceType: resolved);
       await _persist();
       notifyListeners();
-    } catch (_) {}
+    } on Exception catch (_) {}
   }
 
   Future<void> _startSubscription(MatterDevice device) async {
@@ -382,23 +377,22 @@ class DeviceProvider extends ChangeNotifier {
     final networkType = threadDatasetHex != null && threadDatasetHex.isNotEmpty
         ? NetworkType.thread
         : wifiSsid != null && wifiSsid.isNotEmpty
-            ? NetworkType.wifi
-            : NetworkType.ethernet;
+        ? NetworkType.wifi
+        : NetworkType.ethernet;
 
     final result = await _channel.commissionDevice(
       payload,
-      wifiSsid:         wifiSsid,
-      wifiPassword:     wifiPassword,
+      wifiSsid: wifiSsid,
+      wifiPassword: wifiPassword,
       threadDatasetHex: threadDatasetHex,
     );
-    return _handleCommissionResult(result, deviceName, room,
-        networkType: networkType);
+    return _handleCommissionResult(result, deviceName, room, networkType: networkType);
   }
 
   Future<MatterDevice?> commissionViaIp({
     required String ipAddress,
-    required int    discriminator,
-    required int    setupPinCode,
+    required int discriminator,
+    required int setupPinCode,
     required String deviceName,
     required String room,
     int port = 5540,
@@ -407,13 +401,12 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
 
     final result = await _channel.commissionViaIp(
-      ipAddress:     ipAddress,
-      port:          port,
+      ipAddress: ipAddress,
+      port: port,
       discriminator: discriminator,
-      setupPinCode:  setupPinCode,
+      setupPinCode: setupPinCode,
     );
-    return _handleCommissionResult(result, deviceName, room,
-        networkType: NetworkType.ethernet);
+    return _handleCommissionResult(result, deviceName, room, networkType: NetworkType.ethernet);
   }
 
   Future<MatterDevice?> _handleCommissionResult(
@@ -423,7 +416,7 @@ class DeviceProvider extends ChangeNotifier {
     NetworkType networkType = NetworkType.unknown,
   }) async {
     if (!result.success) {
-      state        = DeviceProviderState.error;
+      state = DeviceProviderState.error;
       errorMessage = result.error ?? 'Commissioning failed';
       notifyListeners();
       return null;
@@ -434,14 +427,13 @@ class DeviceProvider extends ChangeNotifier {
         : DeviceType.onOffLight;
 
     final device = MatterDevice(
-      id:             _uuid.v4(),
-      name:           name,
-      deviceType:     deviceType,
-      nodeId:         result.nodeId!,
-      room:           room,
-      isOnline:       true,
+      id: _uuid.v4(),
+      name: name,
+      deviceType: deviceType,
+      nodeId: result.nodeId!,
+      room: room,
       commissionedAt: DateTime.now(),
-      networkType:    networkType,
+      networkType: networkType,
     );
 
     _devices.add(device);
@@ -466,7 +458,7 @@ class DeviceProvider extends ChangeNotifier {
 
     // Use live cache as source of truth so toggle direction is always correct.
     final currentOn = _liveCache[deviceId]?.isOn ?? false;
-    final newOn     = !currentOn;
+    final newOn = !currentOn;
 
     // Optimistic update — immediate UI feedback before the round-trip.
     _mergeLiveCache(deviceId, (e) => e.merge({'onOff': newOn}));
@@ -490,40 +482,47 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> coveringUp(String deviceId) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     await _channel.coveringUp(_devices[idx].nodeId);
   }
 
   Future<void> coveringDown(String deviceId) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     await _channel.coveringDown(_devices[idx].nodeId);
   }
 
   Future<void> coveringStop(String deviceId) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     await _channel.coveringStop(_devices[idx].nodeId);
   }
 
   Future<void> coveringGoToLift(String deviceId, int percent100ths) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'liftPercent100ths': percent100ths}));
     await _channel.coveringGoToLift(_devices[idx].nodeId, percent100ths);
   }
 
   Future<void> setFanMode(String deviceId, int mode) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'fanMode': mode}));
     await _channel.setFanMode(_devices[idx].nodeId, mode);
   }
 
   Future<void> setFanPercent(String deviceId, int percent) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'fanPercent': percent}));
     await _channel.setFanPercent(_devices[idx].nodeId, percent);
   }
 
   Future<void> setColorTemperature(String deviceId, int mireds) async {
-    final idx = _indexById(deviceId); if (idx == -1) return;
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'colorTempMireds': mireds}));
     await _channel.setColorTemperature(_devices[idx].nodeId, mireds);
   }
@@ -545,43 +544,44 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     final typeIdRaw = await _channel.readDeviceTypeId(device.nodeId);
-    final newType   = typeIdRaw != null
-        ? DeviceType.fromMatterDeviceTypeId(typeIdRaw)
-        : device.deviceType;
+    final newType = typeIdRaw != null ? DeviceType.fromMatterDeviceTypeId(typeIdRaw) : device.deviceType;
 
     if (newType == DeviceType.thermostat) {
       final thermo = await _channel.readThermostat(device.nodeId);
       if (thermo != null) {
-        _mergeLiveCache(deviceId, (e) => e.merge({
-          if (deviceState.isOn              != null) 'onOff':               deviceState.isOn,
-          if (deviceState.brightnessLevel   != null) 'level':               deviceState.brightnessLevel,
-          if (thermo.localTempCenti         != null) 'localTempCenti':      thermo.localTempCenti,
-          if (thermo.heatingSetptCenti      != null) 'heatingSetptCenti':   thermo.heatingSetptCenti,
-          if (thermo.coolingSetptCenti      != null) 'coolingSetptCenti':   thermo.coolingSetptCenti,
-          if (thermo.systemMode             != null) 'systemMode':          thermo.systemMode,
-          if (thermo.controlSequence        != null) 'controlSequence':     thermo.controlSequence,
-          if (thermo.minHeatSetptCenti      != null) 'minHeatSetptCenti':   thermo.minHeatSetptCenti,
-          if (thermo.maxHeatSetptCenti      != null) 'maxHeatSetptCenti':   thermo.maxHeatSetptCenti,
-          if (thermo.minCoolSetptCenti      != null) 'minCoolSetptCenti':   thermo.minCoolSetptCenti,
-          if (thermo.maxCoolSetptCenti      != null) 'maxCoolSetptCenti':   thermo.maxCoolSetptCenti,
-          if (thermo.absMinHeatSetptCenti   != null) 'absMinHeatSetptCenti':thermo.absMinHeatSetptCenti,
-          if (thermo.absMaxHeatSetptCenti   != null) 'absMaxHeatSetptCenti':thermo.absMaxHeatSetptCenti,
-          if (thermo.absMinCoolSetptCenti   != null) 'absMinCoolSetptCenti':thermo.absMinCoolSetptCenti,
-          if (thermo.absMaxCoolSetptCenti   != null) 'absMaxCoolSetptCenti':thermo.absMaxCoolSetptCenti,
-        }));
+        _mergeLiveCache(
+          deviceId,
+          (e) => e.merge({
+            if (deviceState.isOn != null) 'onOff': deviceState.isOn,
+            if (deviceState.brightnessLevel != null) 'level': deviceState.brightnessLevel,
+            if (thermo.localTempCenti != null) 'localTempCenti': thermo.localTempCenti,
+            if (thermo.heatingSetptCenti != null) 'heatingSetptCenti': thermo.heatingSetptCenti,
+            if (thermo.coolingSetptCenti != null) 'coolingSetptCenti': thermo.coolingSetptCenti,
+            if (thermo.systemMode != null) 'systemMode': thermo.systemMode,
+            if (thermo.controlSequence != null) 'controlSequence': thermo.controlSequence,
+            if (thermo.minHeatSetptCenti != null) 'minHeatSetptCenti': thermo.minHeatSetptCenti,
+            if (thermo.maxHeatSetptCenti != null) 'maxHeatSetptCenti': thermo.maxHeatSetptCenti,
+            if (thermo.minCoolSetptCenti != null) 'minCoolSetptCenti': thermo.minCoolSetptCenti,
+            if (thermo.maxCoolSetptCenti != null) 'maxCoolSetptCenti': thermo.maxCoolSetptCenti,
+            if (thermo.absMinHeatSetptCenti != null) 'absMinHeatSetptCenti': thermo.absMinHeatSetptCenti,
+            if (thermo.absMaxHeatSetptCenti != null) 'absMaxHeatSetptCenti': thermo.absMaxHeatSetptCenti,
+            if (thermo.absMinCoolSetptCenti != null) 'absMinCoolSetptCenti': thermo.absMinCoolSetptCenti,
+            if (thermo.absMaxCoolSetptCenti != null) 'absMaxCoolSetptCenti': thermo.absMaxCoolSetptCenti,
+          }),
+        );
       }
     } else {
-      _mergeLiveCache(deviceId, (e) => e.merge({
-        if (deviceState.isOn            != null) 'onOff': deviceState.isOn,
-        if (deviceState.brightnessLevel != null) 'level': deviceState.brightnessLevel,
-      }));
+      _mergeLiveCache(
+        deviceId,
+        (e) => e.merge({
+          if (deviceState.isOn != null) 'onOff': deviceState.isOn,
+          if (deviceState.brightnessLevel != null) 'level': deviceState.brightnessLevel,
+        }),
+      );
     }
 
     // Update commissioning record with the resolved device type and online state.
-    _devices[idx] = device.copyWith(
-      isOnline:   true,
-      deviceType: newType,
-    );
+    _devices[idx] = device.copyWith(isOnline: true, deviceType: newType);
 
     // Checkpoint: flush live state to snapshot so it survives a cold restart.
     await _flushSnapshot(deviceId);
@@ -663,7 +663,9 @@ class DeviceProvider extends ChangeNotifier {
 
   List<String> get rooms {
     final set = <String>{};
-    for (final d in _devices) set.add(d.room);
+    for (final d in _devices) {
+      set.add(d.room);
+    }
     return set.toList()..sort();
   }
 }
