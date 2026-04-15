@@ -32,6 +32,16 @@ class DeviceProvider extends ChangeNotifier {
 
   final Set<int> _subscribedNodeIds = {};
 
+  /// Timers that fire a fallback [refreshDevice] if a subscription does not
+  /// deliver an `established` event within [_kEstablishTimeout].
+  final Map<String, Timer?> _establishTimeouts = {};
+
+  /// Tracks which devices have already had their snapshot flushed after the
+  /// first `established` event this session.  Prevents redundant disk writes.
+  final Set<String> _establishedThisSession = {};
+
+  bool _disposed = false;
+
   StreamSubscription<Map<String, dynamic>>? _deviceStateSub;
 
   // ── Public device list ────────────────────────────────────────────────────
@@ -61,6 +71,9 @@ class DeviceProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    for (final t in _establishTimeouts.values) t?.cancel();
+    _establishTimeouts.clear();
     _deviceStateSub?.cancel();
     super.dispose();
   }
@@ -75,7 +88,7 @@ class DeviceProvider extends ChangeNotifier {
       // onOffLight as a stale commissioning fallback for thermostats.
       if (d.deviceType == DeviceType.onOffLight) {
         final snap = _snapshots[d.id];
-        if (snap?.localTempCenti != null) {
+        if (snap?.state['localTempCenti'] != null) {
           return d.copyWith(deviceType: DeviceType.thermostat);
         }
       }
@@ -87,16 +100,16 @@ class DeviceProvider extends ChangeNotifier {
     for (final device in _devices) {
       final snap = _snapshots[device.id];
       if (snap != null) {
+        // Merge the full persisted attribute map (same keys as subscription
+        // events) then mark stale so the UI dims until a live update arrives.
+        final basicInfo = snap.productName != null
+            ? BasicInfoCache(productName: snap.productName)
+            : BasicInfoCache.empty;
         _liveCache[device.id] = DeviceLiveData(
-          updatedAt:      DateTime.now(),
-          isStale:        true, // cold-start seed — replaced when subscription fires
-          isOn:           snap.isOn,
-          levelRaw:       snap.levelRaw,
-          localTempCenti: snap.localTempCenti,
-          basicInfo:      snap.productName != null
-              ? BasicInfoCache(productName: snap.productName)
-              : BasicInfoCache.empty,
-        );
+          updatedAt: DateTime.now(),
+          isStale:   false, // merge() resets this; markStale() restores it
+          basicInfo: basicInfo,
+        ).merge(snap.state).markStale();
       }
     }
 
@@ -111,15 +124,12 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Captures the current live cache for [deviceId] into [_snapshots] and
   /// writes both stores to disk.  Called only at explicit checkpoints
-  /// (user action, successful poll) — never from the subscription hot path.
+  /// (first established event, user action, successful poll) — never from
+  /// the subscription hot path.
   Future<void> _flushSnapshot(String deviceId) async {
-    _snapshots[deviceId] = PersistedSnapshot(
-      deviceId:       deviceId,
-      isOn:           _liveCache[deviceId]?.isOn,
-      levelRaw:       _liveCache[deviceId]?.levelRaw,
-      localTempCenti: _liveCache[deviceId]?.localTempCenti,
-      productName:    _liveCache[deviceId]?.productName,
-    );
+    final live = _liveCache[deviceId];
+    if (live == null) return;
+    _snapshots[deviceId] = PersistedSnapshot.capture(deviceId, live);
     await _persist();
   }
 
@@ -246,47 +256,66 @@ class DeviceProvider extends ChangeNotifier {
         }
 
       case 'established':
+        // Cancel the fallback-read timer — the subscription is healthy.
+        _establishTimeouts[device.id]?.cancel();
+        _establishTimeouts[device.id] = null;
+        _applyStateUpdate(device, event);
+        // Flush snapshot once per session on the first established event so
+        // the next cold start has a complete, accurate attribute map.
+        if (_establishedThisSession.add(device.id)) {
+          unawaited(_flushSnapshot(device.id));
+        }
+
       case 'update':
-        // Merge event into live cache.
-        final existing = _liveCache[device.id];
-        _liveCache[device.id] = existing != null
-            ? existing.merge(event)
-            : DeviceLiveData.fromUpdate(event);
-
-        // Infer device type from subscription attributes when the stored type
-        // is unknown or is a stale commissioning fallback.
-        final storedType = device.deviceType;
-        if (storedType == DeviceType.unknown ||
-            storedType == DeviceType.onOffLight) {
-          final inferred = _inferTypeFromEvent(event);
-          if (inferred != null) {
-            final idx2 = _indexById(device.id);
-            if (idx2 != -1) {
-              _devices[idx2] =
-                  _devices[idx2].copyWith(deviceType: inferred);
-              unawaited(_persist());
-            }
-          }
-        }
-
-        // Update persisted isOnline flag only on transition false → true
-        // (avoids a disk write on every subscription event).
-        final idx = _indexById(device.id);
-        if (idx != -1 && !_devices[idx].isOnline) {
-          _devices[idx] = _devices[idx].copyWith(isOnline: true);
-          unawaited(_persist());
-        }
-        notifyListeners();
+        _applyStateUpdate(device, event);
     }
   }
 
-  // ── Subscription management ───────────────────────────────────────────────
+  // ── Subscription management ────────────────────────────────────────────────
+
+  /// Shared merge logic for both `established` and `update` events.
+  void _applyStateUpdate(MatterDevice device, Map<String, dynamic> event) {
+    final existing = _liveCache[device.id];
+    _liveCache[device.id] = existing != null
+        ? existing.merge(event)
+        : DeviceLiveData.fromUpdate(event);
+
+    // Infer device type from subscription attributes when the stored type
+    // is unknown or is a stale commissioning fallback.
+    final storedType = device.deviceType;
+    if (storedType == DeviceType.unknown ||
+        storedType == DeviceType.onOffLight) {
+      final inferred = _inferTypeFromEvent(event);
+      if (inferred != null) {
+        final idx2 = _indexById(device.id);
+        if (idx2 != -1) {
+          _devices[idx2] = _devices[idx2].copyWith(deviceType: inferred);
+          unawaited(_persist());
+        }
+      }
+    }
+
+    // Update persisted isOnline flag only on transition false → true
+    // (avoids a disk write on every subscription event).
+    final idx = _indexById(device.id);
+    if (idx != -1 && !_devices[idx].isOnline) {
+      _devices[idx] = _devices[idx].copyWith(isOnline: true);
+      unawaited(_persist());
+    }
+    notifyListeners();
+  }
+
+  static const _kEstablishTimeout = Duration(seconds: 15);
 
   Future<void> _startAllSubscriptions() async {
+    // Start all subscriptions in parallel so every device gets its first
+    // established event at roughly the same time regardless of device count.
+    await Future.wait([
+      for (final device in _devices) _startSubscription(device),
+    ]);
     for (final device in _devices) {
-      await _startSubscription(device);
       if (device.deviceType == DeviceType.unknown) {
-        _resolveUnknownDeviceType(device);
+        unawaited(_resolveUnknownDeviceType(device));
       }
     }
   }
@@ -320,7 +349,16 @@ class DeviceProvider extends ChangeNotifier {
     if (_subscribedNodeIds.contains(device.nodeId)) return;
     _subscribedNodeIds.add(device.nodeId);
     final ok = await _channel.startSubscription(device.nodeId);
-    if (!ok) _subscribedNodeIds.remove(device.nodeId);
+    if (!ok) {
+      _subscribedNodeIds.remove(device.nodeId);
+      return;
+    }
+    // Arm a fallback: if the SDK doesn't deliver an `established` event within
+    // the timeout, do a one-shot read to unblock the stale UI.
+    _establishTimeouts[device.id]?.cancel();
+    _establishTimeouts[device.id] = Timer(_kEstablishTimeout, () {
+      if (!_disposed) unawaited(refreshDevice(device.id));
+    });
   }
 
   Future<void> _stopSubscription(MatterDevice device) async {
@@ -430,10 +468,14 @@ class DeviceProvider extends ChangeNotifier {
     final currentOn = _liveCache[deviceId]?.isOn ?? false;
     final newOn     = !currentOn;
 
+    // Optimistic update — immediate UI feedback before the round-trip.
+    _mergeLiveCache(deviceId, (e) => e.merge({'onOff': newOn}));
     final ok = await _channel.toggleDevice(device.nodeId, on: newOn);
     if (ok) {
-      _mergeLiveCache(deviceId, (e) => e.merge({'onOff': newOn}));
       await _flushSnapshot(deviceId);
+    } else {
+      // Roll back to the previous value on failure.
+      _mergeLiveCache(deviceId, (e) => e.merge({'onOff': currentOn}));
     }
   }
 
@@ -445,6 +487,45 @@ class DeviceProvider extends ChangeNotifier {
     _mergeLiveCache(deviceId, (e) => e.merge({'level': level}));
     await _channel.setLevel(_devices[idx].nodeId, level);
     await _flushSnapshot(deviceId);
+  }
+
+  Future<void> coveringUp(String deviceId) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    await _channel.coveringUp(_devices[idx].nodeId);
+  }
+
+  Future<void> coveringDown(String deviceId) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    await _channel.coveringDown(_devices[idx].nodeId);
+  }
+
+  Future<void> coveringStop(String deviceId) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    await _channel.coveringStop(_devices[idx].nodeId);
+  }
+
+  Future<void> coveringGoToLift(String deviceId, int percent100ths) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    _mergeLiveCache(deviceId, (e) => e.merge({'liftPercent100ths': percent100ths}));
+    await _channel.coveringGoToLift(_devices[idx].nodeId, percent100ths);
+  }
+
+  Future<void> setFanMode(String deviceId, int mode) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    _mergeLiveCache(deviceId, (e) => e.merge({'fanMode': mode}));
+    await _channel.setFanMode(_devices[idx].nodeId, mode);
+  }
+
+  Future<void> setFanPercent(String deviceId, int percent) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    _mergeLiveCache(deviceId, (e) => e.merge({'fanPercent': percent}));
+    await _channel.setFanPercent(_devices[idx].nodeId, percent);
+  }
+
+  Future<void> setColorTemperature(String deviceId, int mireds) async {
+    final idx = _indexById(deviceId); if (idx == -1) return;
+    _mergeLiveCache(deviceId, (e) => e.merge({'colorTempMireds': mireds}));
+    await _channel.setColorTemperature(_devices[idx].nodeId, mireds);
   }
 
   // ── Refresh (on-demand one-shot read) ─────────────────────────────────────
@@ -471,17 +552,23 @@ class DeviceProvider extends ChangeNotifier {
     if (newType == DeviceType.thermostat) {
       final thermo = await _channel.readThermostat(device.nodeId);
       if (thermo != null) {
-        _mergeLiveCache(deviceId, (e) => e.copyWith(
-          updatedAt:         DateTime.now(),
-          isStale:           false,
-          isOn:              deviceState.isOn              ?? e.isOn,
-          levelRaw:          deviceState.brightnessLevel   ?? e.levelRaw,
-          localTempCenti:    thermo.localTempCenti         ?? e.localTempCenti,
-          heatingSetptCenti: thermo.heatingSetptCenti      ?? e.heatingSetptCenti,
-          coolingSetptCenti: thermo.coolingSetptCenti      ?? e.coolingSetptCenti,
-          systemMode:        thermo.systemMode             ?? e.systemMode,
-          controlSequence:   thermo.controlSequence        ?? e.controlSequence,
-        ));
+        _mergeLiveCache(deviceId, (e) => e.merge({
+          if (deviceState.isOn              != null) 'onOff':               deviceState.isOn,
+          if (deviceState.brightnessLevel   != null) 'level':               deviceState.brightnessLevel,
+          if (thermo.localTempCenti         != null) 'localTempCenti':      thermo.localTempCenti,
+          if (thermo.heatingSetptCenti      != null) 'heatingSetptCenti':   thermo.heatingSetptCenti,
+          if (thermo.coolingSetptCenti      != null) 'coolingSetptCenti':   thermo.coolingSetptCenti,
+          if (thermo.systemMode             != null) 'systemMode':          thermo.systemMode,
+          if (thermo.controlSequence        != null) 'controlSequence':     thermo.controlSequence,
+          if (thermo.minHeatSetptCenti      != null) 'minHeatSetptCenti':   thermo.minHeatSetptCenti,
+          if (thermo.maxHeatSetptCenti      != null) 'maxHeatSetptCenti':   thermo.maxHeatSetptCenti,
+          if (thermo.minCoolSetptCenti      != null) 'minCoolSetptCenti':   thermo.minCoolSetptCenti,
+          if (thermo.maxCoolSetptCenti      != null) 'maxCoolSetptCenti':   thermo.maxCoolSetptCenti,
+          if (thermo.absMinHeatSetptCenti   != null) 'absMinHeatSetptCenti':thermo.absMinHeatSetptCenti,
+          if (thermo.absMaxHeatSetptCenti   != null) 'absMaxHeatSetptCenti':thermo.absMaxHeatSetptCenti,
+          if (thermo.absMinCoolSetptCenti   != null) 'absMinCoolSetptCenti':thermo.absMinCoolSetptCenti,
+          if (thermo.absMaxCoolSetptCenti   != null) 'absMaxCoolSetptCenti':thermo.absMaxCoolSetptCenti,
+        }));
       }
     } else {
       _mergeLiveCache(deviceId, (e) => e.merge({
