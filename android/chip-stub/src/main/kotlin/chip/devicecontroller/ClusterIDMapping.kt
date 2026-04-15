@@ -72,8 +72,16 @@ object ClusterIDMapping {
 
         object Attribute {
             object LocalTemperature            { const val id: Long = 0x00000000L }
-            object OccupiedHeatingSetpoint     { const val id: Long = 0x00000012L }
+            object AbsMinHeatSetpointLimit     { const val id: Long = 0x00000003L }
+            object AbsMaxHeatSetpointLimit     { const val id: Long = 0x00000004L }
+            object AbsMinCoolSetpointLimit     { const val id: Long = 0x00000005L }
+            object AbsMaxCoolSetpointLimit     { const val id: Long = 0x00000006L }
             object OccupiedCoolingSetpoint     { const val id: Long = 0x00000011L }
+            object OccupiedHeatingSetpoint     { const val id: Long = 0x00000012L }
+            object MinHeatSetpointLimit        { const val id: Long = 0x00000015L }
+            object MaxHeatSetpointLimit        { const val id: Long = 0x00000016L }
+            object MinCoolSetpointLimit        { const val id: Long = 0x00000017L }
+            object MaxCoolSetpointLimit        { const val id: Long = 0x00000018L }
             object SystemMode                  { const val id: Long = 0x0000001CL }
             object ControlSequenceOfOperation  { const val id: Long = 0x0000001BL }
         }
@@ -147,6 +155,81 @@ object ClusterIDMapping {
         object Attribute {
             // AirQualityEnum: 0=Unknown 1=Good 2=Fair 3=Moderate 4=Poor 5=VeryPoor 6=ExtremelyPoor
             object AirQuality { const val id: Long = 0x00000000L }
+        }
+    }
+
+    object WindowCovering {
+        const val ID: Long = 0x00000102L
+        object Attribute {
+            object CurrentPositionLiftPercent100ths { const val id: Long = 0x0000000EL }
+            object OperationalStatus               { const val id: Long = 0x0000000AL }
+        }
+        object Command {
+            object UpOrOpen              { const val id: Long = 0x00000000L }
+            object DownOrClose           { const val id: Long = 0x00000001L }
+            object StopMotion            { const val id: Long = 0x00000002L }
+            object GoToLiftPercentage    { const val id: Long = 0x00000005L }
+        }
+        object GoToLiftPercentageCommandField {
+            object LiftPercent100thsValue { const val id: Int = 0 }
+        }
+    }
+
+    object FanControl {
+        const val ID: Long = 0x00000202L
+        object Attribute {
+            object FanMode        { const val id: Long = 0x00000000L }
+            object PercentSetting { const val id: Long = 0x00000002L }
+            object PercentCurrent { const val id: Long = 0x00000003L }
+        }
+    }
+
+    object ColorControl {
+        const val ID: Long = 0x00000300L
+        object Attribute {
+            object ColorTemperatureMireds      { const val id: Long = 0x00000007L }
+            object ColorTempPhysicalMinMireds  { const val id: Long = 0x0000400BL }
+            object ColorTempPhysicalMaxMireds  { const val id: Long = 0x0000400CL }
+        }
+        object Command {
+            object MoveToColorTemperature { const val id: Long = 0x0000000AL }
+        }
+        object MoveToColorTemperatureCommandField {
+            object ColorTemperatureMireds { const val id: Int = 0 }
+            object TransitionTime         { const val id: Int = 1 }
+            object OptionsMask            { const val id: Int = 2 }
+            object OptionsOverride        { const val id: Int = 3 }
+        }
+    }
+
+    object SmokeCoAlarm {
+        const val ID: Long = 0x0000005CL
+        object Attribute {
+            object SmokeState    { const val id: Long = 0x00000001L }
+            object COState       { const val id: Long = 0x00000002L }
+            object BatteryAlert  { const val id: Long = 0x00000003L }
+        }
+    }
+
+    // Concentration measurement clusters — MeasuredValue (0x0000) is a nullable float.
+    object CarbonMonoxideConcentrationMeasurement {
+        const val ID: Long = 0x0000040CL
+        object Attribute {
+            object MeasuredValue { const val id: Long = 0x00000000L }
+        }
+    }
+
+    object CarbonDioxideConcentrationMeasurement {
+        const val ID: Long = 0x0000040DL
+        object Attribute {
+            object MeasuredValue { const val id: Long = 0x00000000L }
+        }
+    }
+
+    object Pm25ConcentrationMeasurement {
+        const val ID: Long = 0x0000042AL
+        object Attribute {
+            object MeasuredValue { const val id: Long = 0x00000000L }
         }
     }
 

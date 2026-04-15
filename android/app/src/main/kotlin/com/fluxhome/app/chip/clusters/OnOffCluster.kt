@@ -1,4 +1,4 @@
-package com.example.matter_home.chip.clusters
+package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 import android.util.Log

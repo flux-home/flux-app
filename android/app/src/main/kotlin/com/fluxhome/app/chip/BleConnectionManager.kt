@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -42,7 +42,7 @@ class BleConnectionManager : BleCallback {
     companion object {
         private const val TAG = "BleConnectionManager"
         private const val MATTER_BLE_UUID = "0000FFF6-0000-1000-8000-00805F9B34FB"
-        private const val BLE_SCAN_TIMEOUT_MS = 10_000L
+        private const val BLE_SCAN_TIMEOUT_MS = 30_000L  // 30 s: bulbs can be slow to advertise
     }
 
     private val adapter: BluetoothAdapter = BluetoothAdapter.getDefaultAdapter()

@@ -1,4 +1,4 @@
-package com.example.matter_home.chip.clusters
+package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 
@@ -18,6 +18,10 @@ import android.content.Context
  *  Battery / Humidity         SensorCluster.kt
  *  Thread diagnostics         ThreadDiagCluster.kt
  *  OTA update (requestor)     OtaCluster.kt
+ *  Window Covering            WindowCoveringCluster.kt
+ *  Fan Control                FanControlCluster.kt
+ *  Color Control              ColorControlCluster.kt
+ *  Smoke CO Alarm             SmokeCoAlarmCluster.kt
  *  Live subscriptions         SubscriptionManager.kt
  *  Wildcard cluster inspector ClusterInspector.kt
  *  Shared coroutine helpers   ClusterUtils.kt
@@ -69,6 +73,30 @@ object ClusterClient {
 
     suspend fun readHumidity(context: Context, nodeId: Long) =
         SensorCluster.readHumidity(context, nodeId)
+
+    // ── Window Covering ───────────────────────────────────────────────────────
+    suspend fun coveringUp(context: Context, nodeId: Long, endpoint: Int = 1) =
+        WindowCoveringCluster.upOrOpen(context, nodeId, endpoint)
+
+    suspend fun coveringDown(context: Context, nodeId: Long, endpoint: Int = 1) =
+        WindowCoveringCluster.downOrClose(context, nodeId, endpoint)
+
+    suspend fun coveringStop(context: Context, nodeId: Long, endpoint: Int = 1) =
+        WindowCoveringCluster.stopMotion(context, nodeId, endpoint)
+
+    suspend fun coveringGoToLift(context: Context, nodeId: Long, percent100ths: Int, endpoint: Int = 1) =
+        WindowCoveringCluster.goToLiftPercentage(context, nodeId, percent100ths, endpoint)
+
+    // ── Fan Control ───────────────────────────────────────────────────────────
+    suspend fun setFanMode(context: Context, nodeId: Long, mode: Int, endpoint: Int = 1) =
+        FanControlCluster.writeFanMode(context, nodeId, mode, endpoint)
+
+    suspend fun setFanPercent(context: Context, nodeId: Long, percent: Int, endpoint: Int = 1) =
+        FanControlCluster.writePercentSetting(context, nodeId, percent, endpoint)
+
+    // ── Color Control ─────────────────────────────────────────────────────────
+    suspend fun setColorTemperature(context: Context, nodeId: Long, mireds: Int, endpoint: Int = 1) =
+        ColorControlCluster.moveToColorTemperature(context, nodeId, mireds, endpoint = endpoint)
 
     // ── Thread Network Diagnostics ────────────────────────────────────────────
     suspend fun readThreadNetworkDiagnostics(context: Context, nodeId: Long) =

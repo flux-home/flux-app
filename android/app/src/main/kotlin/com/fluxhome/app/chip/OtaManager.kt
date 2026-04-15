@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import android.util.Log
 import chip.devicecontroller.OTAProviderDelegate

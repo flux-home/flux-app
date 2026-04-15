@@ -1,4 +1,4 @@
-package com.example.matter_home
+package com.fluxhome.app
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,14 +8,14 @@ import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.example.matter_home.chip.ChipClient
-import com.example.matter_home.chip.clusters.ClusterClient
-import com.example.matter_home.chip.OtaManager
-import com.example.matter_home.chip.MatterCommissioner
-import com.example.matter_home.chip.NetworkDiagnosticsRunner
-import com.example.matter_home.chip.SetupPayloadHelper
-import com.example.matter_home.chip.AndroidThreadCredentialReader
-import com.example.matter_home.chip.ThreadBorderRouterScanner
+import com.fluxhome.app.chip.ChipClient
+import com.fluxhome.app.chip.clusters.ClusterClient
+import com.fluxhome.app.chip.OtaManager
+import com.fluxhome.app.chip.MatterCommissioner
+import com.fluxhome.app.chip.NetworkDiagnosticsRunner
+import com.fluxhome.app.chip.SetupPayloadHelper
+import com.fluxhome.app.chip.AndroidThreadCredentialReader
+import com.fluxhome.app.chip.ThreadBorderRouterScanner
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -213,6 +213,39 @@ class MatterBridge(private val context: Context) {
     fun setLevel(nodeId: Long, level: Int, result: MethodChannel.Result) =
         requireChip(result) {
             ClusterClient.moveToLevel(context, nodeId, level)
+            main.post { result.success(true) }
+        }
+
+    // ── Window Covering ───────────────────────────────────────────────────────
+
+    fun coveringUp(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) { ClusterClient.coveringUp(context, nodeId); main.post { result.success(true) } }
+
+    fun coveringDown(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) { ClusterClient.coveringDown(context, nodeId); main.post { result.success(true) } }
+
+    fun coveringStop(nodeId: Long, result: MethodChannel.Result) =
+        requireChip(result) { ClusterClient.coveringStop(context, nodeId); main.post { result.success(true) } }
+
+    fun coveringGoToLift(nodeId: Long, percent100ths: Int, result: MethodChannel.Result) =
+        requireChip(result) {
+            ClusterClient.coveringGoToLift(context, nodeId, percent100ths)
+            main.post { result.success(true) }
+        }
+
+    // ── Fan Control ───────────────────────────────────────────────────────────
+
+    fun setFanMode(nodeId: Long, mode: Int, result: MethodChannel.Result) =
+        requireChip(result) { ClusterClient.setFanMode(context, nodeId, mode); main.post { result.success(true) } }
+
+    fun setFanPercent(nodeId: Long, percent: Int, result: MethodChannel.Result) =
+        requireChip(result) { ClusterClient.setFanPercent(context, nodeId, percent); main.post { result.success(true) } }
+
+    // ── Color Control ─────────────────────────────────────────────────────────
+
+    fun setColorTemperature(nodeId: Long, mireds: Int, result: MethodChannel.Result) =
+        requireChip(result) {
+            ClusterClient.setColorTemperature(context, nodeId, mireds)
             main.post { result.success(true) }
         }
 
@@ -649,6 +682,9 @@ class MatterBridge(private val context: Context) {
         try {
             val parsed = SetupPayloadHelper.parse(payload)
             val caps = parsed.discoveryCapabilities.map { it.name }
+            Log.i(TAG, "parsePayload disc=${parsed.discriminator} " +
+                "shortDisc=${parsed.hasShortDiscriminator} caps=$caps " +
+                "vid=${parsed.vendorId} pid=${parsed.productId} pin=${parsed.setupPinCode}")
             result.success(mapOf(
                 "vendorId"              to parsed.vendorId,
                 "productId"             to parsed.productId,

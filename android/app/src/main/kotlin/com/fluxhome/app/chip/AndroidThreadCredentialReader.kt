@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import android.app.Activity
 import android.content.Intent

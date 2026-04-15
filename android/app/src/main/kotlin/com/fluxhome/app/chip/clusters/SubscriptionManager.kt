@@ -1,23 +1,30 @@
-package com.example.matter_home.chip.clusters
+package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.AirQuality
 import chip.devicecontroller.ClusterIDMapping.BooleanState
+import chip.devicecontroller.ClusterIDMapping.CarbonDioxideConcentrationMeasurement
+import chip.devicecontroller.ClusterIDMapping.CarbonMonoxideConcentrationMeasurement
+import chip.devicecontroller.ClusterIDMapping.ColorControl
+import chip.devicecontroller.ClusterIDMapping.FanControl
 import chip.devicecontroller.ClusterIDMapping.LevelControl
 import chip.devicecontroller.ClusterIDMapping.OccupancySensing
 import chip.devicecontroller.ClusterIDMapping.OnOff
+import chip.devicecontroller.ClusterIDMapping.Pm25ConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.PowerSource
 import chip.devicecontroller.ClusterIDMapping.RelativeHumidityMeasurement
+import chip.devicecontroller.ClusterIDMapping.SmokeCoAlarm
 import chip.devicecontroller.ClusterIDMapping.TemperatureMeasurement
 import chip.devicecontroller.ClusterIDMapping.Thermostat
+import chip.devicecontroller.ClusterIDMapping.WindowCovering
 import chip.devicecontroller.ReportCallback
 import chip.devicecontroller.ResubscriptionAttemptCallback
 import chip.devicecontroller.SubscriptionEstablishedCallback
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.ChipPathId
 import chip.devicecontroller.model.NodeState
-import com.example.matter_home.chip.ChipClient
+import com.fluxhome.app.chip.ChipClient
 
 private const val TAG = "SubscriptionManager"
 
@@ -34,7 +41,9 @@ internal object SubscriptionManager {
      * Subscribed attribute keys:
      *   onOff, level, localTempCenti, heatingSetptCenti, coolingSetptCenti,
      *   systemMode, controlSequence, humidityCenti, tempMeasureCenti,
-     *   batPercentRaw (0–200), batChargeLevel, occupancy, contactState, airQuality.
+     *   batPercentRaw (0–200), batChargeLevel, occupancy, contactState, airQuality,
+     *   liftPercent100ths, fanMode, fanPercent, colorTempMireds, smokeState, coState,
+     *   pm25 (µg/m³ × 10 as int), co2Ppm (ppm as int), coPpm (ppm × 10 as int).
      */
     fun subscribeDeviceState(
         context:         Context,
@@ -109,6 +118,9 @@ internal object SubscriptionManager {
             wep(OccupancySensing.ID,            OccupancySensing.Attribute.Occupancy.id),
             wep(BooleanState.ID,                BooleanState.Attribute.StateValue.id),
             wep(AirQuality.ID,                  AirQuality.Attribute.AirQuality.id),
+            wep(Pm25ConcentrationMeasurement.ID,              Pm25ConcentrationMeasurement.Attribute.MeasuredValue.id),
+            wep(CarbonDioxideConcentrationMeasurement.ID,     CarbonDioxideConcentrationMeasurement.Attribute.MeasuredValue.id),
+            wep(CarbonMonoxideConcentrationMeasurement.ID,    CarbonMonoxideConcentrationMeasurement.Attribute.MeasuredValue.id),
         )
     }
 
@@ -137,6 +149,25 @@ internal object SubscriptionManager {
             intOf(OccupancySensing.ID, OccupancySensing.Attribute.Occupancy.id)        ?.let { r["occupancy"]         = it }
             get(BooleanState.ID,   BooleanState.Attribute.StateValue.id)               { it as? Boolean }?.let { r["contactState"] = it }
             intOf(AirQuality.ID,   AirQuality.Attribute.AirQuality.id)                ?.let { r["airQuality"]        = it }
+
+            // Concentration measurement clusters report nullable floats.
+            // Store as scaled integers: PM2.5 and CO as ×10 (1 decimal), CO2 as direct ppm.
+            fun floatOf(clusterId: Long, attrId: Long): Double? =
+                get(clusterId, attrId) { (it as? Number)?.toDouble() }
+
+            floatOf(Pm25ConcentrationMeasurement.ID,           Pm25ConcentrationMeasurement.Attribute.MeasuredValue.id)
+                ?.let { r["pm25"]   = (it * 10).toInt() }
+            floatOf(CarbonDioxideConcentrationMeasurement.ID,  CarbonDioxideConcentrationMeasurement.Attribute.MeasuredValue.id)
+                ?.let { r["co2Ppm"] = it.toInt() }
+            floatOf(CarbonMonoxideConcentrationMeasurement.ID, CarbonMonoxideConcentrationMeasurement.Attribute.MeasuredValue.id)
+                ?.let { r["coPpm"]  = (it * 10).toInt() }
+            intOf(WindowCovering.ID, WindowCovering.Attribute.CurrentPositionLiftPercent100ths.id)
+                                                                                        ?.let { r["liftPercent100ths"] = it }
+            intOf(FanControl.ID,   FanControl.Attribute.FanMode.id)                    ?.let { r["fanMode"]           = it }
+            intOf(FanControl.ID,   FanControl.Attribute.PercentCurrent.id)             ?.let { r["fanPercent"]        = it }
+            intOf(ColorControl.ID, ColorControl.Attribute.ColorTemperatureMireds.id)   ?.let { r["colorTempMireds"]   = it }
+            intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.SmokeState.id)               ?.let { r["smokeState"]        = it }
+            intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.COState.id)                  ?.let { r["coState"]           = it }
         }
         return r
     }

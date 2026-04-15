@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import android.bluetooth.BluetoothGatt
 import android.content.Context
@@ -7,6 +7,8 @@ import chip.devicecontroller.CommissionParameters
 import chip.devicecontroller.ICDRegistrationInfo
 import chip.devicecontroller.NetworkCredentials
 import matter.onboardingpayload.OnboardingPayload
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -36,6 +38,8 @@ fun chipErrorDescription(code: Long): String = when (code) {
     17L  -> "Wrong node ID (0x11)"
     24L  -> "Buffer too small (0x18)"
     32L  -> "Timeout (0x20) — device did not respond in time; check range and power"
+    45L  -> "Wi-Fi credentials error (0x2D) — device rejected credentials or network not found; " +
+            "check SSID and password"
     47L  -> "Invalid PASE parameter (0x2F)"
     50L  -> "No shared trusted root (0x32)"
     70L  -> "Internal error (0x46)"
@@ -79,6 +83,29 @@ object MatterCommissioner {
      *  it can be explicitly closed before retrying, even when the CHIP SDK
      *  failed to call back [BleCallback.onNotifyChipConnectionClosed]. */
     private var activeBle: BleConnectionManager? = null
+
+    /**
+     * Fulfilled by [provideCredentials] when Flutter responds to a
+     * [CREDENTIALS_NEEDED] event.  null = cancel; non-null = proceed.
+     */
+    private var pendingCreds: CompletableDeferred<NetworkCredentials?>? = null
+
+    /**
+     * Called from [MatterBridge] after Flutter collects credentials in response
+     * to a [CREDENTIALS_NEEDED] event.
+     *   ssid == null → use stored Thread credentials (or cancel if none)
+     *   ssid != null → use these WiFi credentials
+     */
+    fun provideCredentials(ssid: String?, password: String?, threadTlv: ByteArray?) {
+        val creds: NetworkCredentials? = when {
+            ssid != null -> NetworkCredentials.forWiFi(
+                NetworkCredentials.WiFiCredentials(ssid, password ?: ""))
+            threadTlv != null -> NetworkCredentials.forThread(
+                NetworkCredentials.ThreadCredentials(threadTlv))
+            else -> null  // cancel
+        }
+        pendingCreds?.complete(creds)
+    }
 
     // ── BLE commissioning ────────────────────────────────────────────────────
 
@@ -130,41 +157,52 @@ object MatterCommissioner {
         onEvent("✓ BLE connected (MTU negotiated)")
 
         // 3 ── Network credentials ─────────────────────────────────────────────
-        //     BLE commissioning requires network credentials (Wi-Fi or Thread)
-        //     because the CHIP SDK always sets mNeedsNetworkSetup=true for BLE
-        //     transport. Devices already on the network (Ethernet/on-network)
-        //     must be commissioned via commissionViaIp() instead.
+        //
+        // If neither WiFi nor Thread credentials are available, or if only one
+        // type is available but we don't yet know which the device needs, emit
+        // CREDENTIALS_NEEDED and suspend until Flutter replies via provideCredentials().
+        //
+        // If we already have exactly one type of credentials we can pass them
+        // immediately; onReadCommissioningInfo will call
+        // updateCommissioningNetworkCredentials() to switch if needed.
         val safeSsid = wifiSsid?.trim()?.takeIf { it.isNotEmpty() }
+        val hasWifi   = safeSsid != null
+        val hasThread = threadDatasetTlv != null
+
         val networkCreds: NetworkCredentials = when {
-            safeSsid != null -> {
+            // Both available or neither — ask Flutter to decide.
+            (!hasWifi && !hasThread) || (hasWifi && hasThread) -> {
+                onEvent("🔌 CREDENTIALS_NEEDED")
+                pendingCreds = CompletableDeferred()
+                val chosen = pendingCreds!!.await()
+                    ?: throw CommissioningException(-3, "Commissioning cancelled by user")
+                chosen
+            }
+            hasWifi -> {
                 onEvent("📶 Using Wi-Fi SSID: $safeSsid")
                 NetworkCredentials.forWiFi(
-                    NetworkCredentials.WiFiCredentials(safeSsid, wifiPassword ?: "")
-                )
+                    NetworkCredentials.WiFiCredentials(safeSsid!!, wifiPassword ?: ""))
             }
-            threadDatasetTlv != null -> {
-                onEvent("🧵 Using Thread operational dataset (${threadDatasetTlv.size} bytes)")
+            else -> {
+                onEvent("🧵 Using Thread operational dataset (${threadDatasetTlv!!.size} bytes)")
                 NetworkCredentials.forThread(
-                    NetworkCredentials.ThreadCredentials(threadDatasetTlv)
-                )
+                    NetworkCredentials.ThreadCredentials(threadDatasetTlv))
             }
-            else -> throw CommissioningException(
-                -3,
-                "BLE commissioning requires Wi-Fi or Thread credentials. " +
-                "Use commissionViaIp() for devices already on the network."
-            )
         }
 
         // 4 ── CHIP pairing ────────────────────────────────────────────────────
         onEvent("⚙ Starting CHIP commissioning (PASE)…")
         val commissionedNodeId = pairViaBle(
-            context = context,
-            gatt    = gatt,
-            connId  = ble.connectionId,
-            nodeId  = nodeId,
-            pinCode = payload.setupPinCode,
-            network = networkCreds,
-            onEvent = onEvent,
+            context          = context,
+            gatt             = gatt,
+            connId           = ble.connectionId,
+            nodeId           = nodeId,
+            pinCode          = payload.setupPinCode,
+            network          = networkCreds,
+            wifiSsid         = wifiSsid,
+            wifiPassword     = wifiPassword,
+            threadDatasetTlv = threadDatasetTlv,
+            onEvent          = onEvent,
         )
 
         activeBle = null  // CHIP SDK owns the BLE lifecycle from here; clear our ref
@@ -244,6 +282,9 @@ object MatterCommissioner {
         nodeId: Long,
         pinCode: Long,
         network: NetworkCredentials,
+        wifiSsid: String?,
+        wifiPassword: String?,
+        threadDatasetTlv: ByteArray?,
         onEvent: (String) -> Unit,
     ): Long = suspendCancellableCoroutine { cont ->
         val controller = ChipClient.getController()
@@ -275,13 +316,49 @@ object MatterCommissioner {
                 wifiEndpointId: Int, threadEndpointId: Int,
             ) {
                 val kInvalidEndpointId = 0xFFFF
+                val isWifi   = wifiEndpointId   != kInvalidEndpointId
+                val isThread = threadEndpointId != kInvalidEndpointId
                 onEvent(
                     "📋 Device info: " +
                     "VID=0x${vendorId.toString(16).uppercase().padStart(4,'0')} " +
                     "PID=0x${productId.toString(16).uppercase().padStart(4,'0')} " +
-                    "wifi-ep=${if (wifiEndpointId == kInvalidEndpointId) "none" else wifiEndpointId} " +
-                    "thread-ep=${if (threadEndpointId == kInvalidEndpointId) "none" else threadEndpointId}"
+                    "wifi-ep=${if (isWifi) wifiEndpointId else "none"} " +
+                    "thread-ep=${if (isThread) threadEndpointId else "none"}"
                 )
+                val safeSsid = wifiSsid?.trim()?.takeIf { it.isNotEmpty() }
+                when {
+                    // Correct credentials already match device type — confirm and continue.
+                    isWifi && safeSsid != null ->
+                        controller.updateCommissioningNetworkCredentials(
+                            NetworkCredentials.forWiFi(
+                                NetworkCredentials.WiFiCredentials(safeSsid, wifiPassword ?: ""))
+                        ).also { onEvent("📶 Confirmed: Wi-Fi network «$safeSsid»") }
+                    isThread && threadDatasetTlv != null ->
+                        controller.updateCommissioningNetworkCredentials(
+                            NetworkCredentials.forThread(
+                                NetworkCredentials.ThreadCredentials(threadDatasetTlv))
+                        ).also { onEvent("🧵 Confirmed: Thread dataset") }
+
+                    // WiFi device but we started with Thread (or no) creds:
+                    // block this callback thread (= pause the CHIP state machine)
+                    // and wait for Flutter to collect WiFi credentials.
+                    isWifi && safeSsid == null -> {
+                        onEvent("🔌 CREDENTIALS_NEEDED")
+                        pendingCreds = CompletableDeferred()
+                        // runBlocking is safe here: this callback runs on a background
+                        // JNI thread (confirmed via logcat), not the main looper.
+                        // Blocking it pauses the commissioning state machine until
+                        // Flutter calls provideCredentials().
+                        val chosen = runBlocking { pendingCreds!!.await() }
+                        if (chosen != null) {
+                            controller.updateCommissioningNetworkCredentials(chosen)
+                        }
+                        // If null (user cancelled), commissioning continues and will
+                        // fail at RequestWiFiCredentials — Flutter handles the error.
+                    }
+                    isThread && threadDatasetTlv == null ->
+                        onEvent("⚠ Thread device but no Thread dataset — commissioning will fail")
+                }
             }
 
             override fun onCommissioningComplete(returnedNodeId: Long, errorCode: Long) {

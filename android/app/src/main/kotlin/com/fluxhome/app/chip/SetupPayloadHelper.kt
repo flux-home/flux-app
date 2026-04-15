@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import matter.onboardingpayload.OnboardingPayload
 import matter.onboardingpayload.OnboardingPayloadParser

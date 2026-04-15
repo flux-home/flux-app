@@ -1,4 +1,4 @@
-package com.example.matter_home.chip.clusters
+package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 import android.util.Log
@@ -9,7 +9,7 @@ import chip.devicecontroller.model.AttributeWriteRequest
 import chip.devicecontroller.model.ChipAttributePath
 import chip.devicecontroller.model.InvokeElement
 import chip.devicecontroller.model.NodeState
-import com.example.matter_home.chip.ChipClient
+import com.fluxhome.app.chip.ChipClient
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine

@@ -1,9 +1,10 @@
-package com.example.matter_home
+package com.fluxhome.app
 
 import android.content.Intent
 import android.util.Log
-import com.example.matter_home.chip.AndroidThreadCredentialReader
-import com.example.matter_home.chip.ChipClient
+import com.fluxhome.app.chip.AndroidThreadCredentialReader
+import com.fluxhome.app.chip.ChipClient
+import com.fluxhome.app.chip.MatterCommissioner
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -13,9 +14,9 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val TAG             = "MainActivity"
-        private const val METHOD_CHANNEL  = "com.example.matter_home/matter"
-        private const val EVENT_CHANNEL   = "com.example.matter_home/commission_events"
-        private const val DEVICE_CHANNEL  = "com.example.matter_home/device_state"
+        private const val METHOD_CHANNEL  = "com.fluxhome.app/matter"
+        private const val EVENT_CHANNEL   = "com.fluxhome.app/commission_events"
+        private const val DEVICE_CHANNEL  = "com.fluxhome.app/device_state"
     }
 
     private val bridge by lazy { MatterBridge(applicationContext) }
@@ -86,6 +87,45 @@ class MainActivity : FlutterActivity() {
                         val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
                         val level  = call.argument<Int>("level") ?: 0
                         bridge.setLevel(nodeId, level, result)
+                    }
+
+                    "coveringUp" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.coveringUp(nodeId, result)
+                    }
+
+                    "coveringDown" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.coveringDown(nodeId, result)
+                    }
+
+                    "coveringStop" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        bridge.coveringStop(nodeId, result)
+                    }
+
+                    "coveringGoToLift" -> {
+                        val nodeId        = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val percent100ths = call.argument<Int>("percent100ths") ?: 0
+                        bridge.coveringGoToLift(nodeId, percent100ths, result)
+                    }
+
+                    "setFanMode" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val mode   = call.argument<Int>("mode") ?: 0
+                        bridge.setFanMode(nodeId, mode, result)
+                    }
+
+                    "setFanPercent" -> {
+                        val nodeId  = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val percent = call.argument<Int>("percent") ?: 0
+                        bridge.setFanPercent(nodeId, percent, result)
+                    }
+
+                    "setColorTemperature" -> {
+                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val mireds = call.argument<Int>("mireds") ?: 370
+                        bridge.setColorTemperature(nodeId, mireds, result)
                     }
 
                     "readDeviceState" -> {
@@ -203,6 +243,17 @@ class MainActivity : FlutterActivity() {
                     "parsePayload" -> {
                         val payload = call.argument<String>("payload") ?: ""
                         bridge.parsePayload(payload, result)
+                    }
+
+                    "provideCredentials" -> {
+                        val ssid     = call.argument<String?>("ssid")
+                        val password = call.argument<String?>("password")
+                        val threadHex = call.argument<String?>("threadDatasetHex")
+                        val threadTlv = threadHex?.let {
+                            it.chunked(2).map { b -> b.toInt(16).toByte() }.toByteArray()
+                        }
+                        MatterCommissioner.provideCredentials(ssid, password, threadTlv)
+                        result.success(null)
                     }
 
                     "getFabricId" ->

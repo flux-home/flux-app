@@ -1,4 +1,4 @@
-package com.example.matter_home.chip
+package com.fluxhome.app.chip
 
 import chip.devicecontroller.ChipDeviceController
 import chip.devicecontroller.ICDDeviceInfo

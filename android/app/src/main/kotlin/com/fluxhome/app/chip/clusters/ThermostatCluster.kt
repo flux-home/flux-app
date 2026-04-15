@@ -1,4 +1,4 @@
-package com.example.matter_home.chip.clusters
+package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 import android.util.Log
@@ -25,11 +25,21 @@ internal object ThermostatCluster {
                 ?.let { (it as? Number)?.toInt() }
             fun nullableAttr(id: Long) = attr(id)?.takeUnless { it == 0x8000 }
             mapOf(
-                "localTemp"       to nullableAttr(Thermostat.Attribute.LocalTemperature.id),
-                "heatingSetpoint" to attr(Thermostat.Attribute.OccupiedHeatingSetpoint.id),
-                "coolingSetpoint" to attr(Thermostat.Attribute.OccupiedCoolingSetpoint.id),
-                "systemMode"      to attr(Thermostat.Attribute.SystemMode.id),
-                "controlSequence" to attr(Thermostat.Attribute.ControlSequenceOfOperation.id),
+                "localTemp"          to nullableAttr(Thermostat.Attribute.LocalTemperature.id),
+                "heatingSetpoint"    to attr(Thermostat.Attribute.OccupiedHeatingSetpoint.id),
+                "coolingSetpoint"    to attr(Thermostat.Attribute.OccupiedCoolingSetpoint.id),
+                "systemMode"         to attr(Thermostat.Attribute.SystemMode.id),
+                "controlSequence"    to attr(Thermostat.Attribute.ControlSequenceOfOperation.id),
+                // Setpoint range — read configurable and absolute limits separately
+                // so the Flutter side can take the tighter intersection.
+                "minHeatSetpt"    to attr(Thermostat.Attribute.MinHeatSetpointLimit.id),
+                "maxHeatSetpt"    to attr(Thermostat.Attribute.MaxHeatSetpointLimit.id),
+                "minCoolSetpt"    to attr(Thermostat.Attribute.MinCoolSetpointLimit.id),
+                "maxCoolSetpt"    to attr(Thermostat.Attribute.MaxCoolSetpointLimit.id),
+                "absMinHeatSetpt" to attr(Thermostat.Attribute.AbsMinHeatSetpointLimit.id),
+                "absMaxHeatSetpt" to attr(Thermostat.Attribute.AbsMaxHeatSetpointLimit.id),
+                "absMinCoolSetpt" to attr(Thermostat.Attribute.AbsMinCoolSetpointLimit.id),
+                "absMaxCoolSetpt" to attr(Thermostat.Attribute.AbsMaxCoolSetpointLimit.id),
             ).also { Log.d(TAG, "readThermostat → $it") }
         }
 
@@ -63,5 +73,13 @@ internal object ThermostatCluster {
         ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.OccupiedCoolingSetpoint.id),
         ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.SystemMode.id),
         ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.ControlSequenceOfOperation.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.AbsMinHeatSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.AbsMaxHeatSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.AbsMinCoolSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.AbsMaxCoolSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.MinHeatSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.MaxHeatSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.MinCoolSetpointLimit.id),
+        ChipAttributePath.newInstance(endpoint, Thermostat.ID, Thermostat.Attribute.MaxCoolSetpointLimit.id),
     )
 }

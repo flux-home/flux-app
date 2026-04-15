@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 // ── Detect whether the real CHIP SDK AARs are present ─────────────────────
@@ -18,7 +19,7 @@ val keyProps = Properties().also { props ->
 }
 
 android {
-    namespace  = "com.example.matter_home"
+    namespace  = "com.fluxhome.app"
     compileSdk = 36
 
     ndkVersion = "28.2.13676358"
@@ -33,7 +34,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.matter_home"
+        applicationId = "com.fluxhome.app"
         minSdk     = 27
         targetSdk  = 35
         versionCode = flutter.versionCode
@@ -81,6 +82,10 @@ dependencies {
         // ── Compile-time stubs (simulation mode at runtime) ──────────────────
         implementation(project(":chip-stub"))
     }
+
+    // Firebase BoM + Analytics
+    implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
+    implementation("com.google.firebase:firebase-analytics")
 
     // Thread Network credential store (Play Services, all build variants)
     implementation("com.google.android.gms:play-services-threadnetwork:16.0.0")
