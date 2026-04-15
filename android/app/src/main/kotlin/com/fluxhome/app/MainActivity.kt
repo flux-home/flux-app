@@ -8,7 +8,26 @@ import com.fluxhome.app.chip.MatterCommissioner
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+
+/**
+ * Reads a nodeId argument that may arrive as Int32 or Int64 depending on
+ * whether the Dart value fits in a signed 32-bit integer.
+ *
+ * Background: Flutter's standard message codec encodes a Dart `int` as int32
+ * when -2^31 ≤ value ≤ 2^31-1, and as int64 otherwise.  Matter nodeIds are
+ * unsigned 64-bit values and can exceed Int.MAX_VALUE, so we must handle both
+ * cases.  Using `argument<Int>` alone silently returns null for int64 values,
+ * causing the fallback nodeId 0L to be used and routing commands to the wrong
+ * (nonexistent) device.
+ */
+private fun MethodCall.nodeIdArg(key: String = "nodeId"): Long? =
+    when (val v = argument<Any>(key)) {
+        is Int  -> v.toLong()
+        is Long -> v
+        else    -> null
+    }
 
 class MainActivity : FlutterActivity() {
 
@@ -62,7 +81,7 @@ class MainActivity : FlutterActivity() {
                         val wifiSsid         = call.argument<String>("wifiSsid")
                         val wifiPassword     = call.argument<String>("wifiPassword")
                         val threadDatasetHex = call.argument<String>("threadDatasetHex")
-                        val nodeId           = call.argument<Int>("nodeId")?.toLong()
+                        val nodeId           = call.nodeIdArg()
                                                ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
                         bridge.commissionDevice(payload, wifiSsid, wifiPassword, threadDatasetHex, nodeId, result)
                     }
@@ -72,127 +91,127 @@ class MainActivity : FlutterActivity() {
                         val port    = call.argument<Int>("port") ?: 5540
                         val disc    = call.argument<Int>("discriminator") ?: 0
                         val pin     = call.argument<Int>("setupPinCode")?.toLong() ?: 0L
-                        val nodeId  = call.argument<Int>("nodeId")?.toLong()
+                        val nodeId  = call.nodeIdArg()
                                       ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
                         bridge.commissionViaIp(ip, port, disc, pin, nodeId, result)
                     }
 
                     "toggleDevice" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         val on     = call.argument<Boolean>("on") ?: false
                         bridge.toggleDevice(nodeId, on, result)
                     }
 
                     "setLevel" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         val level  = call.argument<Int>("level") ?: 0
                         bridge.setLevel(nodeId, level, result)
                     }
 
                     "coveringUp" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.coveringUp(nodeId, result)
                     }
 
                     "coveringDown" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.coveringDown(nodeId, result)
                     }
 
                     "coveringStop" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.coveringStop(nodeId, result)
                     }
 
                     "coveringGoToLift" -> {
-                        val nodeId        = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId        = call.nodeIdArg() ?: 0L
                         val percent100ths = call.argument<Int>("percent100ths") ?: 0
                         bridge.coveringGoToLift(nodeId, percent100ths, result)
                     }
 
                     "setFanMode" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         val mode   = call.argument<Int>("mode") ?: 0
                         bridge.setFanMode(nodeId, mode, result)
                     }
 
                     "setFanPercent" -> {
-                        val nodeId  = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId  = call.nodeIdArg() ?: 0L
                         val percent = call.argument<Int>("percent") ?: 0
                         bridge.setFanPercent(nodeId, percent, result)
                     }
 
                     "setColorTemperature" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         val mireds = call.argument<Int>("mireds") ?: 370
                         bridge.setColorTemperature(nodeId, mireds, result)
                     }
 
                     "readDeviceState" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readDeviceState(nodeId, result)
                     }
 
                     "readBasicInfo" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readBasicInfo(nodeId, result)
                     }
 
                     "readServerClusterList" -> {
-                        val nodeId   = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId   = call.nodeIdArg() ?: 0L
                         val endpoint = call.argument<Int>("endpoint") ?: 0
                         bridge.readServerClusterList(nodeId, endpoint, result)
                     }
 
                     "readPartsList" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readPartsList(nodeId, result)
                     }
 
                     "readThermostat" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readThermostat(nodeId, result)
                     }
 
                     "writeHeatingSetpoint" -> {
-                        val nodeId      = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId      = call.nodeIdArg() ?: 0L
                         val centidegrees = call.argument<Int>("centidegrees") ?: 0
                         bridge.writeHeatingSetpoint(nodeId, centidegrees, result)
                     }
 
                     "writeSystemMode" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         val mode   = call.argument<Int>("mode") ?: 0
                         bridge.writeSystemMode(nodeId, mode, result)
                     }
 
                     "readHumidity" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readHumidity(nodeId, result)
                     }
 
                     "readBattery" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readBattery(nodeId, result)
                     }
 
                     "readThreadNetworkDiagnostics" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readThreadNetworkDiagnostics(nodeId, result)
                     }
 
                     "readClusters" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readClusters(nodeId, result)
                     }
 
                     "readDeviceType" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readDeviceType(nodeId, result)
                     }
 
                     "downloadAndFlash" -> {
-                        val nodeId              = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId              = call.nodeIdArg() ?: 0L
                         val otaUrl              = call.argument<String>("otaUrl") ?: ""
                         val targetVersion       = call.argument<String>("targetVersion")
                                                     ?.toLongOrNull() ?: 0L
@@ -205,28 +224,28 @@ class MainActivity : FlutterActivity() {
                     "cancelOta" -> bridge.cancelOta(result)
 
                     "identify" -> {
-                        val nodeId  = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId  = call.nodeIdArg() ?: 0L
                         val seconds = call.argument<Int>("seconds") ?: 15
                         bridge.identify(nodeId, seconds, result)
                     }
 
                     "shareDevice" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.openCommissioningWindow(nodeId, result)
                     }
 
                     "removeDevice" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.removeDevice(nodeId, result)
                     }
 
                     "startSubscription" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.startSubscription(nodeId, result)
                     }
 
                     "stopSubscription" -> {
-                        val nodeId = call.argument<Int>("nodeId")?.toLong() ?: 0L
+                        val nodeId = call.nodeIdArg() ?: 0L
                         bridge.stopSubscription(nodeId, result)
                     }
 

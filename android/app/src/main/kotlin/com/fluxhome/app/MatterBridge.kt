@@ -87,7 +87,7 @@ class MatterBridge(private val context: Context) {
             onUpdate = { nid, attrs ->
                 if (nid !in cancelledNodeIds) {
                     val payload = mutableMapOf<String, Any?>(
-                        "nodeId" to nid.toInt(),
+                        "nodeId" to nid,
                         "type"   to "update",
                     )
                     payload.putAll(attrs)
@@ -96,11 +96,11 @@ class MatterBridge(private val context: Context) {
             },
             onEstablished = { nid ->
                 if (nid !in cancelledNodeIds)
-                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "established"))
+                    emitDeviceState(mapOf("nodeId" to nid, "type" to "established"))
             },
             onResubscribing = { nid, nextMs ->
                 if (nid !in cancelledNodeIds) {
-                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "resubscribing",
+                    emitDeviceState(mapOf("nodeId" to nid, "type" to "resubscribing",
                                          "nextMs" to nextMs))
                     // SDK exponential backoff can grow to minutes — if it exceeds 30 s,
                     // the UDP socket is likely permanently broken.  Restart cleanly.
@@ -118,7 +118,7 @@ class MatterBridge(private val context: Context) {
             },
             onError = { nid, err ->
                 if (nid !in cancelledNodeIds) {
-                    emitDeviceState(mapOf("nodeId" to nid.toInt(), "type" to "error",
+                    emitDeviceState(mapOf("nodeId" to nid, "type" to "error",
                                          "message" to (err.message ?: "unknown")))
                     // For ICD / sleepy devices the initial connection may time out
                     // because the device is asleep.  Retry after 60 s — the device
@@ -171,7 +171,7 @@ class MatterBridge(private val context: Context) {
         )
         val deviceTypeId = readPrimaryDeviceType(commissionedNodeId)
         main.post {
-            result.success(mapOf("nodeId" to commissionedNodeId.toInt(), "deviceTypeId" to deviceTypeId))
+            result.success(mapOf("nodeId" to commissionedNodeId, "deviceTypeId" to deviceTypeId))
         }
     }
 
@@ -196,7 +196,7 @@ class MatterBridge(private val context: Context) {
         )
         val deviceTypeId = readPrimaryDeviceType(commissionedNodeId)
         main.post {
-            result.success(mapOf("nodeId" to commissionedNodeId.toInt(), "deviceTypeId" to deviceTypeId))
+            result.success(mapOf("nodeId" to commissionedNodeId, "deviceTypeId" to deviceTypeId))
         }
     }
 
@@ -516,7 +516,7 @@ class MatterBridge(private val context: Context) {
     private fun emitOtaProgress(nodeId: Long, phase: String, progress: Int?, message: String?) {
         val map = mutableMapOf<String, Any?>(
             "type"   to "otaProgress",
-            "nodeId" to nodeId.toInt(),
+            "nodeId" to nodeId,
             "phase"  to phase,
         )
         if (progress != null) map["progress"] = progress
