@@ -79,7 +79,42 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         child: Stack(
           children: [
             // ── Camera feed ──────────────────────────────────────────────────
-            MobileScanner(controller: _controller, onDetect: _onDetect),
+            // Camera fails to start when Android hasn't fully released the
+            // hardware from a previous session (e.g. re-scanning after a
+            // failed commissioning). The errorBuilder lets the user tap to
+            // retry without backing out of the screen.
+            MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+              errorBuilder: (context, error, child) => GestureDetector(
+                onTap: () async {
+                  try {
+                    await _controller.start();
+                  } catch (_) {}
+                  if (mounted) setState(() {});
+                },
+                child: const ColoredBox(
+                  color: Colors.black,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.camera_alt_outlined, color: Colors.white38, size: 56),
+                        SizedBox(height: 16),
+                        Text(
+                          'TAP TO ENABLE CAMERA',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
             // ── Scan-area overlay (hidden in manual mode) ─────────────────────
             if (!_manualMode) const _ScanOverlay(),

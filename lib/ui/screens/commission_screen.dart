@@ -236,6 +236,17 @@ class _CommissionScreenState extends State<CommissionScreen> {
   Future<void> _resetAndScan() async {
     _ctrl.reset();
     await _scanQr();
+    // After re-scanning from a failed attempt, restart commissioning
+    // automatically — the same behaviour as opening with initialPayload.
+    // Without this the user lands on the idle simple form, which has only
+    // an "Open camera" button and no way to proceed, so they press it,
+    // get another camera screen, and the cycle repeats.
+    if (!mounted || _ctrl.parsed == null || _ctrl.rawPayload == null) return;
+    if (_netType == 0 && !_threadExplicitlySelected) {
+      final ok = await _ensureThreadDataset();
+      if (!mounted || !ok) return;
+    }
+    await _commission();
   }
 
   // ── WiFi credential collection ────────────────────────────────────────────
