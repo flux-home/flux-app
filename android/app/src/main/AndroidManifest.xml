@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Camera: QR code scanning during commissioning -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -27,6 +28,17 @@
     <!-- Required by CHIP SDK mDNS resolver (NsdServiceFinderAndResolver) to
          acquire a multicast lock for operational device discovery over Wi-Fi -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!--
+        Explicitly opt out of advertising ID.
+        play-services-base (a transitive dep of play-services-threadnetwork)
+        contains AdvertisingIdClient stubs that trigger Play Console's
+        automated AD_ID detector. This declaration tells the build toolchain
+        and Google's scanner that this app intentionally does not use it.
+    -->
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
 
     <!-- Hardware features (optional) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
