@@ -1,7 +1,7 @@
 name: matter_home
 description: "Local, private, independent."
 publish_to: 'none'
-version: 1.2.0+5
+version: 1.2.0+6
 
 environment:
   sdk: ^3.10.1
