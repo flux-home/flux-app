@@ -3,6 +3,8 @@ package com.fluxhome.app.chip
 import android.app.Activity
 import android.content.Intent
 import android.util.Log
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.threadnetwork.ThreadNetwork
 import com.google.android.gms.threadnetwork.ThreadNetworkCredentials
 import io.flutter.plugin.common.MethodChannel
@@ -28,6 +30,18 @@ object AndroidThreadCredentialReader {
      * The result arrives asynchronously via [onActivityResult].
      */
     fun requestPreferredCredentials(activity: Activity, result: MethodChannel.Result) {
+        val playStatus = GoogleApiAvailability.getInstance()
+            .isGooglePlayServicesAvailable(activity)
+        if (playStatus != ConnectionResult.SUCCESS) {
+            Log.w(TAG, "Play Services not available (status=$playStatus) — cannot read Thread credentials")
+            result.error(
+                "PLAY_SERVICES_UNAVAILABLE",
+                "Google Play Services is not available on this device. " +
+                "Enter your Thread dataset manually instead.",
+                null,
+            )
+            return
+        }
         pendingResult = result
         Log.d(TAG, "Calling getPreferredCredentials()…")
         ThreadNetwork.getClient(activity)
