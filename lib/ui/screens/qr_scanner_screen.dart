@@ -1,6 +1,7 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:flutter_zxing/flutter_zxing.dart';
 
 /// Full-screen QR scanner that also accepts a manually typed code.
 ///
@@ -13,54 +14,31 @@ class QrScannerScreen extends StatefulWidget {
 }
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
-  final MobileScannerController _controller = MobileScannerController();
   final _manualCtrl = TextEditingController();
   bool _scanned = false;
   bool _manualMode = false;
-  double _zoom = 0.4; // 0.4 → 1.0 maps to 1.8× → 3.0× display
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) _controller.setZoomScale(_zoom);
-    });
-  }
+  CameraController? _cameraController;
 
   @override
   void dispose() {
-    _controller.dispose();
     _manualCtrl.dispose();
     super.dispose();
   }
 
-  // ── Pinch-to-zoom ─────────────────────────────────────────────────────────
-
-  double _baseZoom = 0.4;
-  void _onScaleStart(ScaleStartDetails _) => _baseZoom = _zoom;
-  void _onScaleUpdate(ScaleUpdateDetails d) {
-    final z = (_baseZoom + (d.scale - 1) * 0.3).clamp(0.0, 1.0);
-    if ((z - _zoom).abs() > 0.01) {
-      setState(() => _zoom = z);
-      _controller.setZoomScale(_zoom);
-    }
-  }
-
   // ── Camera scan ───────────────────────────────────────────────────────────
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onScan(Code code) {
     if (_scanned || _manualMode) return;
-    final code = capture.barcodes.firstOrNull?.rawValue;
-    if (code != null && code.isNotEmpty) {
+    final text = code.text;
+    if (text != null && text.isNotEmpty) {
       _scanned = true;
-      Navigator.of(context).pop(code);
+      Navigator.of(context).pop(text);
     }
   }
 
   // ── Manual entry ──────────────────────────────────────────────────────────
 
   void _confirmManual() {
-    // Strip any dashes the formatter inserted before handing off the raw digits.
     final code = _manualCtrl.text.replaceAll('-', '').trim();
     if (code.isEmpty) return;
     Navigator.of(context).pop(code);
@@ -72,105 +50,86 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // No AppBar — full-screen camera, back arrow from system gesture.
-      body: GestureDetector(
-        onScaleStart: _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        child: Stack(
-          children: [
-            // ── Camera feed ──────────────────────────────────────────────────
-            // Camera fails to start when Android hasn't fully released the
-            // hardware from a previous session (e.g. re-scanning after a
-            // failed commissioning). The errorBuilder lets the user tap to
-            // retry without backing out of the screen.
-            MobileScanner(
-              controller: _controller,
-              onDetect: _onDetect,
-              errorBuilder: (context, error, child) => GestureDetector(
-                onTap: () async {
-                  try {
-                    await _controller.start();
-                  } catch (_) {}
-                  if (mounted) setState(() {});
-                },
-                child: const ColoredBox(
-                  color: Colors.black,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.camera_alt_outlined, color: Colors.white38, size: 56),
-                        SizedBox(height: 16),
-                        Text(
-                          'TAP TO ENABLE CAMERA',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                      ],
+      body: Stack(
+        children: [
+          // ── Camera + ZXing scanner ─────────────────────────────────────────
+          ReaderWidget(
+            onScan: _onScan,
+            codeFormat: Format.qrCode,
+            showScannerOverlay: false,   // we draw our own cutout below
+            showFlashlight: true,
+            showGallery: false,
+            showToggleCamera: false,
+            allowPinchZoom: true,
+            scanDelay: const Duration(milliseconds: 200),
+            scanDelaySuccess: const Duration(milliseconds: 500),
+            actionButtonsAlignment: Alignment.topRight,
+            actionButtonsPadding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 4,
+              right: 4,
+            ),
+            actionButtonsBackgroundColor: Colors.transparent,
+            onControllerCreated: (controller, error) {
+              _cameraController = controller;
+            },
+            loading: const ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.camera_alt_outlined, color: Colors.white38, size: 56),
+                    SizedBox(height: 16),
+                    Text(
+                      'STARTING CAMERA',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        letterSpacing: 1.5,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
+          ),
 
-            // ── Scan-area overlay (hidden in manual mode) ─────────────────────
-            if (!_manualMode) const _ScanOverlay(),
+          // ── Scan-area overlay (hidden in manual mode) ─────────────────────
+          if (!_manualMode) const _ScanOverlay(),
 
-            // ── System-chrome: back + torch ───────────────────────────────────
-            SafeArea(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.flash_on_outlined, color: Colors.white),
-                    onPressed: _controller.toggleTorch,
-                    tooltip: 'Toggle torch',
-                  ),
-                ],
+          // ── Back button (top left) ────────────────────────────────────────
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ),
+          ),
 
-            // ── Bottom panel ──────────────────────────────────────────────────
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: _manualMode
-                    ? _ManualEntryPanel(
-                        key: const ValueKey('manual'),
-                        controller: _manualCtrl,
-                        onConfirm: _confirmManual,
-                        onCancel: () => setState(() {
-                          _manualMode = false;
-                          _manualCtrl.clear();
-                        }),
-                      )
-                    : _ScanBottomBar(
-                        key: const ValueKey('scan'),
-                        zoom: _zoom,
-                        onZoomOut: () {
-                          final z = (_zoom - 0.15).clamp(0.0, 1.0);
-                          setState(() => _zoom = z);
-                          _controller.setZoomScale(z);
-                        },
-                        onZoomIn: () {
-                          final z = (_zoom + 0.15).clamp(0.0, 1.0);
-                          setState(() => _zoom = z);
-                          _controller.setZoomScale(z);
-                        },
-                        onManualTap: () => setState(() => _manualMode = true),
-                      ),
-              ),
+          // ── Bottom panel ──────────────────────────────────────────────────
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _manualMode
+                  ? _ManualEntryPanel(
+                      key: const ValueKey('manual'),
+                      controller: _manualCtrl,
+                      onConfirm: _confirmManual,
+                      onCancel: () => setState(() {
+                        _manualMode = false;
+                        _manualCtrl.clear();
+                      }),
+                    )
+                  : _ScanBottomBar(
+                      key: const ValueKey('scan'),
+                      onManualTap: () => setState(() => _manualMode = true),
+                    ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -180,22 +139,13 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
 class _ScanBottomBar extends StatelessWidget {
   const _ScanBottomBar({
-    required this.zoom,
-    required this.onZoomOut,
-    required this.onZoomIn,
     required this.onManualTap,
     super.key,
   });
-  final double zoom;
-  final VoidCallback onZoomOut;
-  final VoidCallback onZoomIn;
   final VoidCallback onManualTap;
 
   @override
   Widget build(BuildContext context) {
-    // zoom 0.0–1.0 → display as e.g. "1.0×" … "3.0×"  (linear 1–3×)
-    final displayZoom = 1.0 + zoom * 2.0;
-
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(24, 40, 24, 24 + MediaQuery.of(context).padding.bottom),
@@ -209,50 +159,13 @@ class _ScanBottomBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Zoom split-pill ───────────────────────────────────────────────
-          Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(20),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Row(
-              children: [
-                // − button
-                Expanded(
-                  child: GestureDetector(
-                    onTap: onZoomOut,
-                    behavior: HitTestBehavior.opaque,
-                    child: const Center(child: Icon(Icons.remove, color: Colors.white, size: 18)),
-                  ),
-                ),
-                // Divider + zoom label
-                Container(width: 1, height: 20, color: Colors.white24),
-                SizedBox(
-                  width: 56,
-                  child: Center(
-                    child: Text(
-                      '${displayZoom.toStringAsFixed(1)}×',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ),
-                Container(width: 1, height: 20, color: Colors.white24),
-                // + button
-                Expanded(
-                  child: GestureDetector(
-                    onTap: onZoomIn,
-                    behavior: HitTestBehavior.opaque,
-                    child: const Center(child: Icon(Icons.add, color: Colors.white, size: 18)),
-                  ),
-                ),
-              ],
+          // ── Pinch hint ────────────────────────────────────────────────────
+          const Text(
+            'PINCH TO ZOOM',
+            style: TextStyle(
+              color: Colors.white30,
+              fontSize: 10,
+              letterSpacing: 2,
             ),
           ),
 
@@ -406,7 +319,7 @@ class _OverlayPainter extends CustomPainter {
   const _OverlayPainter({required this.cutoutSize});
   final double cutoutSize;
 
-  static const double _radius = 22; // matches _kCardShape in device_card.dart
+  static const double _radius = 22;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -417,7 +330,6 @@ class _OverlayPainter extends CustomPainter {
     );
     final rRect = RRect.fromRectAndRadius(cutoutRect, const Radius.circular(_radius));
 
-    // ── Scrim + border ────────────────────────────────────────────────────
     canvas
       ..drawPath(
         Path.combine(
@@ -441,10 +353,6 @@ class _OverlayPainter extends CustomPainter {
 }
 
 // ── Manual pairing code formatter ─────────────────────────────────────────────
-//
-// Spec §5.1.4: 11-digit decimal code (XXXXX-XXXXXX).
-// Digits beyond 11 are discarded.  A single dash is inserted after digit 5.
-// The commissioner must receive raw digits — _confirmManual strips the dash.
 
 class _ManualCodeFormatter extends TextInputFormatter {
   @override
