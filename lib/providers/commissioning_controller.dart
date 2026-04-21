@@ -320,7 +320,6 @@ class CommissioningController extends ChangeNotifier {
             : (parsed!.discriminator > 0 ? parsed!.discriminator : 3840),
         setupPinCode: cfg.setupPinCode,
         deviceName: name,
-        room: 'Unassigned',
       );
     } else {
       switch (cfg.netType) {
@@ -328,7 +327,6 @@ class CommissioningController extends ChangeNotifier {
           device = await _provider.commissionDevice(
             rawPayload!,
             name,
-            'Unassigned',
             threadDatasetHex: cfg.threadDatasetHex.isNotEmpty
                 ? cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '')
                 : threadDataset().replaceAll(RegExp(r'\s'), ''),
@@ -337,12 +335,11 @@ class CommissioningController extends ChangeNotifier {
           device = await _provider.commissionDevice(
             rawPayload!,
             name,
-            'Unassigned',
             wifiSsid: cfg.wifiSsid,
             wifiPassword: cfg.wifiPassword,
           );
         default: // None / Ethernet
-          device = await _provider.commissionDevice(rawPayload!, name, 'Unassigned');
+          device = await _provider.commissionDevice(rawPayload!, name);
       }
     }
 
@@ -370,6 +367,7 @@ class CommissioningController extends ChangeNotifier {
     _sessionId++; // invalidate in-flight start()
     _eventSub?.cancel();
     _eventSub = null;
+    _provider.cancelCommissioning();
     phase = CommissionPhase.idle;
     parsed = null;
     rawPayload = null;

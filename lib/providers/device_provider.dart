@@ -363,10 +363,17 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Commission ────────────────────────────────────────────────────────────
 
+  /// Called when the user cancels mid-commissioning.  Resets the provider
+  /// state to idle so the home screen stops showing a spinner.
+  void cancelCommissioning() {
+    if (state == DeviceProviderState.loading) {
+      state = DeviceProviderState.idle;
+      notifyListeners();
+    }
+  }
   Future<MatterDevice?> commissionDevice(
     String payload,
-    String deviceName,
-    String room, {
+    String deviceName, {
     String? wifiSsid,
     String? wifiPassword,
     String? threadDatasetHex,
@@ -386,7 +393,7 @@ class DeviceProvider extends ChangeNotifier {
       wifiPassword: wifiPassword,
       threadDatasetHex: threadDatasetHex,
     );
-    return _handleCommissionResult(result, deviceName, room, networkType: networkType);
+    return _handleCommissionResult(result, deviceName, networkType: networkType);
   }
 
   Future<MatterDevice?> commissionViaIp({
@@ -394,7 +401,6 @@ class DeviceProvider extends ChangeNotifier {
     required int discriminator,
     required int setupPinCode,
     required String deviceName,
-    required String room,
     int port = 5540,
   }) async {
     state = DeviceProviderState.loading;
@@ -406,13 +412,12 @@ class DeviceProvider extends ChangeNotifier {
       discriminator: discriminator,
       setupPinCode: setupPinCode,
     );
-    return _handleCommissionResult(result, deviceName, room, networkType: NetworkType.ethernet);
+    return _handleCommissionResult(result, deviceName, networkType: NetworkType.ethernet);
   }
 
   Future<MatterDevice?> _handleCommissionResult(
     CommissionResult result,
-    String name,
-    String room, {
+    String name, {
     NetworkType networkType = NetworkType.unknown,
   }) async {
     if (!result.success) {
@@ -426,13 +431,14 @@ class DeviceProvider extends ChangeNotifier {
         ? DeviceType.fromMatterDeviceTypeId(result.deviceTypeId!)
         : DeviceType.onOffLight;
 
+    final now = DateTime.now();
     final device = MatterDevice(
       id: _uuid.v4(),
       name: name,
       deviceType: deviceType,
       nodeId: result.nodeId!,
-      room: room,
-      commissionedAt: DateTime.now(),
+      commissionedAt: now,
+      lastModified: now,
       networkType: networkType,
     );
 
@@ -599,28 +605,20 @@ class DeviceProvider extends ChangeNotifier {
   Future<bool> shareWithGoogleHome(String deviceId) async {
     final device = findById(deviceId);
     if (device == null) return false;
-    final ok = await _channel.shareDevice(device.nodeId);
-    if (ok) {
+    final result = await _channel.shareDevice(device.nodeId);
+    if (result != null) {
       final idx = _indexById(deviceId);
       _devices[idx] = device.copyWith(sharedWithGoogleHome: true);
       await _persist();
       notifyListeners();
     }
-    return ok;
+    return result != null;
   }
 
   Future<void> renameDevice(String deviceId, String newName) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
-    _devices[idx] = _devices[idx].copyWith(name: newName);
-    await _persist();
-    notifyListeners();
-  }
-
-  Future<void> setRoom(String deviceId, String room) async {
-    final idx = _indexById(deviceId);
-    if (idx == -1) return;
-    _devices[idx] = _devices[idx].copyWith(room: room);
+    _devices[idx] = _devices[idx].copyWith(name: newName, lastModified: DateTime.now());
     await _persist();
     notifyListeners();
   }
@@ -660,12 +658,4 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   int _indexById(String id) => _devices.indexWhere((d) => d.id == id);
-
-  List<String> get rooms {
-    final set = <String>{};
-    for (final d in _devices) {
-      set.add(d.room);
-    }
-    return set.toList()..sort();
-  }
 }

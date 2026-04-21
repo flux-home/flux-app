@@ -42,34 +42,41 @@ class MatterDevice {
     required this.deviceType,
     required this.nodeId,
     required this.commissionedAt,
-    this.room = 'Unassigned',
+    required this.lastModified,
     this.isOnline = true,
     this.sharedWithGoogleHome = false,
     this.networkType = NetworkType.unknown,
   });
 
-  factory MatterDevice.fromJson(Map<String, dynamic> json) => MatterDevice(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    deviceType: DeviceType.values.firstWhere((e) => e.name == json['deviceType'], orElse: () => DeviceType.unknown),
-    nodeId: json['nodeId'] as int,
-    room: json['room'] as String? ?? 'Unassigned',
-    isOnline: json['isOnline'] as bool? ?? true,
-    sharedWithGoogleHome: json['sharedWithGoogleHome'] as bool? ?? false,
-    commissionedAt: DateTime.parse(json['commissionedAt'] as String),
-    networkType: NetworkType.values.firstWhere(
-      (e) => e.name == (json['networkType'] as String?),
-      orElse: () => NetworkType.unknown,
-    ),
-  );
+  factory MatterDevice.fromJson(Map<String, dynamic> json) {
+    final commissionedAt = DateTime.parse(json['commissionedAt'] as String);
+    return MatterDevice(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      deviceType: DeviceType.values.firstWhere((e) => e.name == json['deviceType'], orElse: () => DeviceType.unknown),
+      nodeId: json['nodeId'] as int,
+      isOnline: json['isOnline'] as bool? ?? true,
+      sharedWithGoogleHome: json['sharedWithGoogleHome'] as bool? ?? false,
+      commissionedAt: commissionedAt,
+      // Fall back to commissionedAt for records persisted before lastModified existed.
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'] as String)
+          : commissionedAt,
+      networkType: NetworkType.values.firstWhere(
+        (e) => e.name == (json['networkType'] as String?),
+        orElse: () => NetworkType.unknown,
+      ),
+    );
+  }
   final String id;
   final String name;
   final DeviceType deviceType;
   final int nodeId;
-  final String room;
   final bool isOnline;
   final bool sharedWithGoogleHome;
   final DateTime commissionedAt;
+  /// Updated on every user edit (rename etc.). Used for last-write-wins sync.
+  final DateTime lastModified;
   final NetworkType networkType;
 
   MatterDevice copyWith({
@@ -77,20 +84,20 @@ class MatterDevice {
     String? name,
     DeviceType? deviceType,
     int? nodeId,
-    String? room,
     bool? isOnline,
     bool? sharedWithGoogleHome,
     DateTime? commissionedAt,
+    DateTime? lastModified,
     NetworkType? networkType,
   }) => MatterDevice(
     id: id ?? this.id,
     name: name ?? this.name,
     deviceType: deviceType ?? this.deviceType,
     nodeId: nodeId ?? this.nodeId,
-    room: room ?? this.room,
     isOnline: isOnline ?? this.isOnline,
     sharedWithGoogleHome: sharedWithGoogleHome ?? this.sharedWithGoogleHome,
     commissionedAt: commissionedAt ?? this.commissionedAt,
+    lastModified: lastModified ?? this.lastModified,
     networkType: networkType ?? this.networkType,
   );
 
@@ -99,10 +106,10 @@ class MatterDevice {
     'name': name,
     'deviceType': deviceType.name,
     'nodeId': nodeId,
-    'room': room,
     'isOnline': isOnline,
     'sharedWithGoogleHome': sharedWithGoogleHome,
     'commissionedAt': commissionedAt.toIso8601String(),
+    'lastModified': lastModified.toIso8601String(),
     'networkType': networkType.name,
   };
 

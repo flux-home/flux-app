@@ -28,7 +28,6 @@ class DeviceView {
 
   String      get id                   => _device.id;
   String      get name                 => _device.name;
-  String      get room                 => _device.room;
   DeviceType  get deviceType           => _device.deviceType;
   int         get nodeId               => _device.nodeId;
   DateTime    get commissionedAt       => _device.commissionedAt;
