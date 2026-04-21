@@ -32,7 +32,7 @@ object ChipClient {
     private const val TAG = "ChipClient"
 
     /** Vendor ID used when creating the fabric.  0xFFF4 = CHIP test VID. */
-    const val VENDOR_ID = 0xFFF4
+    const val VENDOR_ID = 0xFFF1
 
     private lateinit var _controller: ChipDeviceController
     private lateinit var _platform: AndroidChipPlatform

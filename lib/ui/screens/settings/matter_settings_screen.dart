@@ -18,7 +18,6 @@ class MatterSettingsScreen extends StatefulWidget {
 
 class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   String? _fabricId;
-  int?    _vendorId;
 
   @override
   void initState() {
@@ -26,9 +25,6 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
     final ch = context.read<MatterFabricPort>();
     ch.getFabricId().then((id) {
       if (mounted) setState(() => _fabricId = id ?? 'N/A');
-    });
-    ch.getVendorId().then((vid) {
-      if (mounted) setState(() => _vendorId = vid);
     });
   }
 
@@ -105,28 +101,6 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
                       : null,
                 ),
                 Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                ListTile(
-                  leading: Icon(Icons.badge_outlined, color: cs.primary),
-                  title: const Text('Vendor ID'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _vendorId != null
-                            ? '0x${_vendorId!.toRadixString(16).toUpperCase().padLeft(4, '0')}'
-                            : '…',
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Test VID — not for production use. '
-                        'Range 0xFFF1–0xFFF4 is reserved by the Matter spec for testing only.',
-                        style: TextStyle(fontSize: 11, color: cs.error),
-                      ),
-                    ],
-                  ),
-                  isThreeLine: true,
-                ),
               ],
             ),
           ),

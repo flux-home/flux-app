@@ -15,7 +15,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nothing else Matters', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Flux Home', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => context.push('/settings'))],
       ),
       floatingActionButton: FloatingActionButton(

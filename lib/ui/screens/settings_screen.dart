@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:matter_home/ui/screens/network_check_screen.dart';
 import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
@@ -33,21 +32,13 @@ class SettingsScreen extends StatelessWidget {
                 Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
                 ListTile(
                   title: const Text('Thread'),
-                  subtitle: const Text('Operational dataset'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute<void>(builder: (_) => const ThreadSettingsScreen())),
-                ),
-                Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
-                ListTile(
-                  title: const Text('Network Check'),
-                  subtitle: const Text('Diagnose IPv6 & Thread commissioning'),
+                  subtitle: const Text('Thread Network Management'),
                   trailing: const Icon(Icons.chevron_right),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
                   ),
                   onTap: () => Navigator.push(context,
-                      MaterialPageRoute<void>(builder: (_) => const NetworkCheckScreen())),
+                      MaterialPageRoute<void>(builder: (_) => const ThreadSettingsScreen())),
                 ),
               ],
             ),
