@@ -1,3 +1,4 @@
+import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
@@ -91,7 +92,7 @@ abstract interface class MatterClusterPort {
 /// Used by [DeviceProvider], [DeviceSettingsScreen], [MatterSettingsScreen],
 /// [ThreadSettingsScreen], [ThreadDiagScreen], and [NetworkCheckScreen].
 abstract interface class MatterFabricPort {
-  Future<bool>  shareDevice(int nodeId);
+  Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0});
   Future<bool>  removeDevice(int nodeId);
 
   Future<bool>  downloadAndFlash({

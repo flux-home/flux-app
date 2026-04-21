@@ -112,6 +112,14 @@ class ChipDeviceController(params: ControllerParams) {
         imTimeoutMs: Int,
     ): Unit = throw ChipSdkStubException()
 
+    fun openPairingWindowWithPIN(
+        devicePtr: Long,
+        duration: Int,
+        iteration: Long,
+        discriminator: Int,
+        setupPinCode: Long,
+    ): String = throw ChipSdkStubException()
+
     fun unpairDevice(nodeId: Long): Unit = throw ChipSdkStubException()
 
     fun onNotifyChipConnectionClosed(connId: Int): Unit = throw ChipSdkStubException()

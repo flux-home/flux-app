@@ -230,8 +230,10 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "shareDevice" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.openCommissioningWindow(nodeId, result)
+                        val nodeId    = call.nodeIdArg() ?: 0L
+                        val vendorId  = call.argument<Int>("vendorId")  ?: 0
+                        val productId = call.argument<Int>("productId") ?: 0
+                        bridge.openCommissioningWindow(nodeId, vendorId, productId, result)
                     }
 
                     "removeDevice" -> {

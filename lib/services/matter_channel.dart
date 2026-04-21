@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
+import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
@@ -373,7 +374,20 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<bool> shareDevice(int nodeId) => _invoke('shareDevice', false, args: {'nodeId': nodeId});
+  Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0}) =>
+      _invoke<ShareDeviceResult?>(
+        'shareDevice',
+        null,
+        args: {'nodeId': nodeId, 'vendorId': vendorId, 'productId': productId},
+        decode: (raw) {
+          if (raw == null) return null;
+          final map = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
+          return ShareDeviceResult(
+            qrCodePayload:     map['qrCodePayload']     as String,
+            manualPairingCode: map['manualPairingCode'] as String,
+          );
+        },
+      );
 
   @override
   Future<bool> removeDevice(int nodeId) => _invoke('removeDevice', false, args: {'nodeId': nodeId});

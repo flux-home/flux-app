@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.fluxhome.app.chip.ChipClient
+import com.fluxhome.app.chip.CommissioningException
 import com.fluxhome.app.chip.clusters.ClusterClient
 import com.fluxhome.app.chip.OtaManager
 import com.fluxhome.app.chip.MatterCommissioner
@@ -16,6 +17,11 @@ import com.fluxhome.app.chip.NetworkDiagnosticsRunner
 import com.fluxhome.app.chip.SetupPayloadHelper
 import com.fluxhome.app.chip.AndroidThreadCredentialReader
 import com.fluxhome.app.chip.ThreadBorderRouterScanner
+import matter.onboardingpayload.CommissioningFlow
+import matter.onboardingpayload.DiscoveryCapability
+import matter.onboardingpayload.ManualOnboardingPayloadGenerator
+import matter.onboardingpayload.OnboardingPayload
+import matter.onboardingpayload.QRCodeOnboardingPayloadGenerator
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -266,11 +272,106 @@ class MatterBridge(private val context: Context) {
 
     // ── Multi-admin / share ───────────────────────────────────────────────────
 
-    fun openCommissioningWindow(nodeId: Long, result: MethodChannel.Result) =
-        requireChip(result) {
-            // TODO: AdministratorCommissioning cluster openCommissioningWindow
-            main.post { result.success(true) }
+    fun openCommissioningWindow(
+        nodeId: Long,
+        vendorId: Int,
+        productId: Int,
+        result: MethodChannel.Result,
+    ) = requireChip(result) {
+        val rng          = java.security.SecureRandom()
+        val discriminator = rng.nextInt(0x1000)             // 12-bit: 0–4095
+        val pin           = generateValidPin(rng)            // 27-bit valid passcode
+
+        // Establish a CASE session and open an ECM window for 300 s.
+        // openPairingWindowWithPIN sends the AdministratorCommissioning cluster
+        // command to the device and returns the 11-digit manual pairing code.
+        val devicePtr  = ChipClient.getConnectedDevicePointer(context, nodeId)
+
+        // Open ECM window for 300 s.
+        // Old CHIP SDK versions return Boolean (true = success, false = failure).
+        // New CHIP SDK versions return String (manual pairing code; empty = failure).
+        // We pass the result to windowOpened() so both variants are handled.
+        val sdkResult = ChipClient.getController().openPairingWindowWithPIN(
+            devicePtr, 300, 1000L, discriminator, pin
+        )
+        Log.i(TAG, "openPairingWindowWithPIN: nodeId=$nodeId disc=$discriminator " +
+                   "pin=$pin sdkResult=$sdkResult (${sdkResult::class.java.simpleName})")
+        if (!windowOpened(sdkResult)) {
+            throw CommissioningException(
+                -5,
+                "Device rejected the commissioning window request " +
+                "(sdkResult=$sdkResult). The device may be offline, " +
+                "already have an open window, or not support multi-admin.",
+            )
         }
+
+        // If Flutter didn't supply VID/PID (device info not yet loaded in UI),
+        // read them directly from the device's BasicInformation cluster so the
+        // QR code carries the real values — some commissioning apps filter mDNS
+        // advertisements by VID and will silently stall if VID=0 mismatches.
+        val finalVendorId: Int
+        val finalProductId: Int
+        if (vendorId == 0) {
+            val info = try { ClusterClient.readBasicInfo(context, nodeId) } catch (_: Exception) { null }
+            finalVendorId  = info?.vendorId ?.removePrefix("0x")?.removePrefix("0X")?.toIntOrNull(16) ?: 0
+            finalProductId = info?.productId?.removePrefix("0x")?.removePrefix("0X")?.toIntOrNull(16) ?: 0
+            Log.i(TAG, "VID/PID read from device: VID=0x%04X PID=0x%04X".format(finalVendorId, finalProductId))
+        } else {
+            finalVendorId  = vendorId
+            finalProductId = productId
+        }
+
+        // Build an OnboardingPayload and use the SDK's own generators for both codes.
+        // This guarantees the manual code uses the correct Verhoeff check digit and
+        // the QR code uses the correct base-38 encoding — no custom implementations needed.
+        val payload = OnboardingPayload(
+            /* version             */ 0,
+            /* vendorId            */ finalVendorId,
+            /* productId           */ finalProductId,
+            /* commissioningFlow   */ CommissioningFlow.STANDARD.value,
+            /* discoveryCapabilities */ mutableSetOf(DiscoveryCapability.ON_NETWORK),
+            /* discriminator       */ discriminator,
+            /* hasShortDiscriminator */ false,
+            /* setupPinCode        */ pin,
+        )
+        val manualCode = ManualOnboardingPayloadGenerator(payload).payloadDecimalStringRepresentation()
+        val qrCode     = "MT:" + QRCodeOnboardingPayloadGenerator(payload).payloadBase38Representation()
+
+        Log.i(TAG, "ECM window open: nodeId=$nodeId disc=$discriminator " +
+                   "VID=0x%04X PID=0x%04X manual=$manualCode qr=$qrCode".format(finalVendorId, finalProductId))
+
+        main.post {
+            result.success(mapOf(
+                "manualPairingCode" to manualCode,
+                "qrCodePayload"     to qrCode,
+            ))
+        }
+    }
+
+    /** Returns true if the result of [openPairingWindowWithPIN] indicates success.
+     *  Handles both SDK variants:
+     *   - Boolean true/false  (old SDK)
+     *   - String manualCode   (new SDK; non-empty = success)
+     */
+    private fun windowOpened(result: Any): Boolean = when (result) {
+        is Boolean -> result
+        is String  -> result.isNotEmpty()
+        else       -> true   // unknown return type: assume success
+    }
+
+    /** Generates a cryptographically random valid Matter passcode (1–99999998). */
+    private fun generateValidPin(rng: java.security.SecureRandom): Long {
+        // Matter spec §5.1.6.1 — invalid passcodes must not be used.
+        val invalid = setOf(
+            0L, 11111111L, 22222222L, 33333333L, 44444444L,
+            55555555L, 66666666L, 77777777L, 88888888L, 99999999L,
+            12345678L, 87654321L,
+        )
+        var pin: Long
+        do { pin = (rng.nextLong().and(Long.MAX_VALUE)) % 99_999_998L + 1L }
+        while (pin in invalid)
+        return pin
+    }
 
     // ── Remove ───────────────────────────────────────────────────────────────
 

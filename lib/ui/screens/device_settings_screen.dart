@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/ota_progress.dart';
+import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/dcl_service.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -11,6 +15,7 @@ import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:matter_home/ui/widgets/info_row.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main settings screen
@@ -33,6 +38,29 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
     await context.read<MatterClusterPort>().identify(d.nodeId);
     await Future<void>.delayed(const Duration(seconds: 15));
     if (mounted) setState(() => _identifying = false);
+  }
+
+  Future<void> _shareDevice(BuildContext context, MatterDevice d) async {
+    final view      = context.read<DeviceProvider>().viewFor(d.id);
+    final vendorId  = _parseHexId(view?.vendorId)  ?? 0;
+    final productId = _parseHexId(view?.productId) ?? 0;
+    final port      = context.read<MatterFabricPort>();
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _ShareBottomSheet(
+        device: d,
+        vendorId: vendorId,
+        productId: productId,
+        port: port,
+      ),
+    );
   }
 
   Future<void> _remove(BuildContext context, MatterDevice d) async {
@@ -108,35 +136,52 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ── Identify ────────────────────────────────────────────────
-              const SectionLabel('Identify'),
-              Card(
-                color: cs.surface,
-                child: ListTile(
-                  leading: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: _identifying
-                        ? SizedBox(
-                            key: const ValueKey('spinner'),
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2.5, color: cs.primary),
-                          )
-                        : Icon(Icons.lightbulb_outline, key: const ValueKey('icon'), color: cs.primary),
+              // ── Identify + Share buttons ─────────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonal(
+                      onPressed: _identifying ? null : () => _identify(d),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: _identifying
+                                ? const SizedBox(
+                                    key: ValueKey('spinner'),
+                                    width: 16, height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.lightbulb_outline,
+                                    key: ValueKey('icon'), size: 18),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_identifying ? 'Identifying…' : 'Identify'),
+                        ],
+                      ),
+                    ),
                   ),
-                  title: Text(
-                    _identifying ? 'Identifying…' : 'Identify device',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.tonal(
+                      onPressed: () => _shareDevice(context, d),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.share_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Share'),
+                        ],
+                      ),
+                    ),
                   ),
-                  subtitle: Text(_identifying ? 'Device is blinking for 15 s' : 'Makes the device blink / beep'),
-                  trailing: _identifying ? null : const Icon(Icons.chevron_right),
-                  onTap: _identifying ? null : () => _identify(d),
-                ),
+                ],
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // ── Software updates ─────────────────────────────────────────
+              // ── Software updates ──────────────────────────────────────────
               _OtaSection(device: d),
 
               // ── Network type ──────────────────────────────────────────────
@@ -146,64 +191,42 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                   color: cs.surface,
                   child: ListTile(
                     leading: Icon(switch (d.networkType) {
-                      NetworkType.wifi => Icons.wifi,
-                      NetworkType.thread => Icons.memory_outlined,
+                      NetworkType.wifi     => Icons.wifi,
+                      NetworkType.thread   => Icons.memory_outlined,
                       NetworkType.ethernet => Icons.settings_ethernet,
-                      NetworkType.unknown => Icons.device_unknown_outlined,
+                      NetworkType.unknown  => Icons.device_unknown_outlined,
                     }, color: cs.primary),
-                    title: Text(d.networkType.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(d.networkType.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(switch (d.networkType) {
-                      NetworkType.wifi => 'IEEE 802.11 Wi-Fi',
-                      NetworkType.thread => 'IEEE 802.15.4 Thread mesh',
+                      NetworkType.wifi     => 'IEEE 802.11 Wi-Fi',
+                      NetworkType.thread   => 'IEEE 802.15.4 Thread mesh',
                       NetworkType.ethernet => 'Ethernet / IP',
-                      NetworkType.unknown => '',
+                      NetworkType.unknown  => '',
                     }),
                   ),
                 ),
                 const SizedBox(height: 20),
               ],
 
-              // ── Tools ────────────────────────────────────────────────────
+              // ── Tools ─────────────────────────────────────────────────────
               const SectionLabel('Tools'),
               Card(
                 color: cs.surface,
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(Icons.info_outline, color: cs.primary),
-                      title: const Text('Device info'),
-                      subtitle: const Text('Type, node ID, commissioned date'),
-                      trailing: const Icon(Icons.chevron_right),
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                      ),
-                      onTap: () =>
-                          Navigator.push(context, MaterialPageRoute<void>(builder: (_) => DeviceInfoScreen(device: d))),
+                child: ListTile(
+                  leading: Icon(Icons.info_outline, color: cs.primary),
+                  title: const Text('Device info'),
+                  subtitle: const Text('Type, node ID, hardware, clusters'),
+                  trailing: const Icon(Icons.chevron_right),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(16)),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => DeviceInfoScreen(device: d),
                     ),
-                    Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                    ListTile(
-                      leading: Icon(Icons.hub_outlined, color: cs.primary),
-                      title: const Text('Thread diagnostics'),
-                      subtitle: const Text('Channel, role, neighbours, routing table'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () =>
-                          Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ThreadDiagScreen(device: d))),
-                    ),
-                    Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                    ListTile(
-                      leading: Icon(Icons.manage_search, color: cs.primary),
-                      title: const Text('Inspect clusters'),
-                      subtitle: const Text('View all Matter clusters and attributes'),
-                      trailing: const Icon(Icons.chevron_right),
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute<void>(builder: (_) => ClusterInspectorScreen(device: d)),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
 
@@ -536,6 +559,348 @@ class _OtaSectionState extends State<_OtaSection> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Share device bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+int? _parseHexId(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  final s = (raw.startsWith('0x') || raw.startsWith('0X')) ? raw.substring(2) : raw;
+  return int.tryParse(s, radix: 16);
+}
+
+enum _ShareState { loading, active, expired, error }
+
+class _ShareBottomSheet extends StatefulWidget {
+  const _ShareBottomSheet({
+    required this.device,
+    required this.vendorId,
+    required this.productId,
+    required this.port,
+  });
+
+  final MatterDevice device;
+  final int vendorId;
+  final int productId;
+  final MatterFabricPort port;
+
+  @override
+  State<_ShareBottomSheet> createState() => _ShareBottomSheetState();
+}
+
+class _ShareBottomSheetState extends State<_ShareBottomSheet> {
+  static const _windowSeconds = 300;
+
+  _ShareState       _state = _ShareState.loading;
+  ShareDeviceResult? _result;
+  String            _errorMessage = '';
+  Timer?            _timer;
+  int               _secondsLeft = _windowSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _openWindow();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  // ── Logic ────────────────────────────────────────────────────────────────
+
+  Future<void> _openWindow() async {
+    _timer?.cancel();
+    setState(() {
+      _state       = _ShareState.loading;
+      _result      = null;
+      _errorMessage = '';
+      _secondsLeft = _windowSeconds;
+    });
+    try {
+      final res = await widget.port.shareDevice(
+        widget.device.nodeId,
+        vendorId:  widget.vendorId,
+        productId: widget.productId,
+      );
+      if (!mounted) return;
+      if (res == null) {
+        setState(() {
+          _state        = _ShareState.error;
+          _errorMessage = 'Device did not respond. Is it reachable?';
+        });
+        return;
+      }
+      setState(() {
+        _result      = res;
+        _state       = _ShareState.active;
+        _secondsLeft = _windowSeconds;
+      });
+      _startCountdown();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state        = _ShareState.error;
+        _errorMessage = e.toString();
+      });
+    }
+  }
+
+  void _startCountdown() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        _secondsLeft--;
+        if (_secondsLeft <= 0) {
+          _secondsLeft = 0;
+          _state = _ShareState.expired;
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  // ── Build ───────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Handle bar ────────────────────────────────────────────────
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: cs.onSurfaceVariant.withAlpha(80),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // ── Title ──────────────────────────────────────────────────────
+          Text(
+            'Share device',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.device.name,
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+          ),
+          const SizedBox(height: 24),
+          // ── State-dependent body ────────────────────────────────────────
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: switch (_state) {
+              _ShareState.loading => _buildLoading(cs),
+              _ShareState.active  => _buildActive(cs),
+              _ShareState.expired => _buildExpired(cs),
+              _ShareState.error   => _buildError(cs),
+            },
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  // ── Loading ───────────────────────────────────────────────────────────────
+
+  Widget _buildLoading(ColorScheme cs) {
+    return Padding(
+      key: const ValueKey('loading'),
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        children: [
+          CircularProgressIndicator(color: cs.primary, strokeWidth: 2.5),
+          const SizedBox(height: 20),
+          Text(
+            'Opening commissioning window…',
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Active (QR code + countdown) ────────────────────────────────────────
+
+  Widget _buildActive(ColorScheme cs) {
+    final result = _result!;
+    final countdown = _countdownColor(cs);
+    return Padding(
+      key: const ValueKey('active'),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          // QR code
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: QrImageView(
+              data: result.qrCodePayload,
+              version: QrVersions.auto,
+              size: 220,
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Instruction
+          Text(
+            'Open any Matter app and scan the code above',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 20),
+          // Manual pairing code
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  result.formattedManualCode,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: result.manualPairingCode));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Pairing code copied'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: Icon(Icons.copy_outlined, size: 18, color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Manual pairing code',
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+          // Countdown
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.timer_outlined, size: 16, color: countdown),
+              const SizedBox(width: 6),
+              Text(
+                _formatCountdown(),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: countdown,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Expired ───────────────────────────────────────────────────────────────
+
+  Widget _buildExpired(ColorScheme cs) {
+    return Padding(
+      key: const ValueKey('expired'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Column(
+        children: [
+          Icon(Icons.hourglass_disabled_outlined, size: 52, color: cs.onSurfaceVariant),
+          const SizedBox(height: 16),
+          const Text(
+            'Window expired',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'The 5-minute commissioning window has closed.\nOpen a new one to try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _openWindow,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Error ───────────────────────────────────────────────────────────────────
+
+  Widget _buildError(ColorScheme cs) {
+    return Padding(
+      key: const ValueKey('error'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Column(
+        children: [
+          Icon(Icons.error_outline, size: 52, color: cs.error),
+          const SizedBox(height: 16),
+          const Text(
+            'Could not open window',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _openWindow,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  String _formatCountdown() {
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return '$m:${s.toString().padLeft(2, '0')} remaining';
+  }
+
+  Color _countdownColor(ColorScheme cs) {
+    if (_secondsLeft > 120) return Colors.green.shade400;
+    if (_secondsLeft > 60)  return Colors.orange.shade400;
+    return cs.error;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Device info sub-screen
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -558,7 +923,6 @@ class DeviceInfoScreen extends StatelessWidget {
     // ── Identity ───────────────────────────────────────────────────────
     add('Product', view?.displayProductName);
     add('Vendor', view?.vendorName);
-    add('Vendor ID', view?.vendorId, mono: true);
     add('Product ID', view?.productId, mono: true);
     add('Part no.', view?.partNumber);
 
@@ -603,6 +967,49 @@ class DeviceInfoScreen extends StatelessWidget {
                   : Column(children: rows),
             ),
           ),
+
+          const SizedBox(height: 20),
+
+          Card(
+            color: cs.surface,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.hub_outlined, color: cs.primary),
+                  title: const Text('Thread diagnostics'),
+                  subtitle: const Text('Channel, role, neighbours, routing table'),
+                  trailing: const Icon(Icons.chevron_right),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => ThreadDiagScreen(device: device),
+                    ),
+                  ),
+                ),
+                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+                ListTile(
+                  leading: Icon(Icons.manage_search, color: cs.primary),
+                  title: const Text('Inspect clusters'),
+                  subtitle: const Text('View all Matter clusters and attributes'),
+                  trailing: const Icon(Icons.chevron_right),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => ClusterInspectorScreen(device: device),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
         ],
       ),
     );
