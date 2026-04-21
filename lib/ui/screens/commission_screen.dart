@@ -173,10 +173,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
       });
 
       if (autoStart) {
-        // For autoStart the user never saw the form, so always confirm
-        // Thread credentials before BLE starts.  For Wi-Fi the pre-collection
-        // prompt inside start() already handles the empty-credentials case.
-        if (_netType == 0) {
+        // Only prompt for the Thread dataset when none is configured at all.
+        // If a dataset hex is already set (from stored settings), skip straight
+        // to commissioning.
+        if (_netType == 0 && _threadCtrl.text.trim().isEmpty) {
           final ok = await _ensureThreadDataset();
           if (!mounted || !ok) return;
         }
@@ -238,9 +238,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
     await _scanQr();
     // After re-scanning from a failed attempt, restart commissioning
     // automatically — the same behaviour as opening with initialPayload.
-    // Without this the user lands on the idle simple form, which has only
-    // an "Open camera" button and no way to proceed, so they press it,
-    // get another camera screen, and the cycle repeats.
     if (!mounted || _ctrl.parsed == null || _ctrl.rawPayload == null) return;
     if (_netType == 0 && !_threadExplicitlySelected) {
       final ok = await _ensureThreadDataset();
@@ -310,10 +307,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
     if (_ctrl.rawPayload == null) return;
 
-    // Pre-flight: if Thread is selected and the user has NOT yet explicitly
-    // chosen a dataset (including "Empty dataset"), prompt them to pick one
-    // before opening a BLE connection.
-    if (_netType == 0 && !_threadExplicitlySelected) {
+    // Pre-flight: if Thread is selected and no dataset is configured at all,
+    // prompt the user to pick one before opening a BLE connection.
+    if (_netType == 0 && _threadCtrl.text.trim().isEmpty) {
       final ok = await _ensureThreadDataset();
       if (!ok) return; // user cancelled
     }
@@ -356,6 +352,11 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
+  void _cancelAndGoHome() {
+    _ctrl.reset();
+    if (mounted) context.go('/');
+  }
+
   @override
   Widget build(BuildContext context) {
     final inProgress =
@@ -364,25 +365,74 @@ class _CommissionScreenState extends State<CommissionScreen> {
         _ctrl.phase == CommissionPhase.failed;
 
     if (inProgress) return _buildProgressScreen(context);
-    return _expertMode ? _buildExpertFormScreen(context) : _buildSimpleFormScreen(context);
+    // When opened from the home-screen scan (initialPayload provided) keep a
+    // camera-like backdrop visible while the Thread dataset modal (if needed)
+    // pops in from the bottom.
+    if (widget.initialPayload != null) return _buildScanningBackdrop(context);
+    return _buildExpertFormScreen(context);
   }
 
-  // ── Simple form screen ────────────────────────────────────────────────────
+  // ── Static camera backdrop ─────────────────────────────────────────────────────
 
-  Widget _buildSimpleFormScreen(BuildContext context) {
+  /// Shown in place of the expert form when the screen was opened from the
+  /// home-screen QR scan.  Mirrors the look of [QrScannerScreen] so the
+  /// transition feels seamless, but does not activate the camera hardware.
+  Widget _buildScanningBackdrop(BuildContext context) {
+    final parsed = _ctrl.parsed;
+    final parsing = _ctrl.parsing;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Matter Device')),
-      body: Center(
-        child: _ctrl.parsing
-            ? const CircularProgressIndicator()
-            : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 48),
-                child: FilledButton.icon(
-                  onPressed: _scanQr,
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Open camera'),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // ── Scan-area overlay (scrim + rounded cutout + border) ────────────
+          const CustomPaint(
+            painter: _ScanOverlayPainter(),
+            child: SizedBox.expand(),
+          ),
+
+          // ── Status indicator (inside / just below the cutout) ─────────────
+          if (parsing)
+            const Center(
+              child: SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+              ),
+            )
+          else if (parsed != null)
+            Center(
+              child: Transform.translate(
+                offset: const Offset(0, 148), // just below the 240-px cutout
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle_outline, color: Colors.white, size: 28),
+                    const SizedBox(height: 6),
+                    Text(
+                      parsed.suggestedName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+
+          // ── Back / cancel ─────────────────────────────────────────────────
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: _cancelAndGoHome,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -400,6 +450,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
       canPop: !busy,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final router = GoRouter.of(context);
         final cancel = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
@@ -411,14 +462,17 @@ class _CommissionScreenState extends State<CommissionScreen> {
             ],
           ),
         );
-        if ((cancel ?? false) && mounted) _ctrl.reset();
+        if ((cancel ?? false) && mounted) {
+          _ctrl.reset();
+          router.go('/');
+        }
       },
       child: Scaffold(
         backgroundColor: cs.surface,
         appBar: AppBar(
           title: const Text('Adding Device'),
           automaticallyImplyLeading: false,
-          leading: failed ? IconButton(icon: const Icon(Icons.close), onPressed: _ctrl.reset) : null,
+          leading: failed ? IconButton(icon: const Icon(Icons.close), onPressed: _cancelAndGoHome) : null,
           actions: [_modeToggleButton()],
         ),
         body: _expertMode
@@ -1411,7 +1465,7 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final allItems = [ThreadDataset.empty, ...widget.datasets];
+    final allItems = [...widget.datasets];
 
     return SafeArea(
       child: Padding(
@@ -1439,18 +1493,16 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
 
             // ── Saved datasets + Empty ─────────────────────────────────
             ...allItems.map((ds) {
-              final subtitle = ds.isEmpty
-                  ? 'No credentials — device joins via MeshCoP'
-                  : ds.hex.length > 20
+              final subtitle = ds.hex.length > 20
                   ? '${ds.hex.substring(0, 20)}…'
                   : ds.hex;
               return ListTile(
-                leading: Icon(ds.isEmpty ? Icons.memory_outlined : Icons.router_outlined, color: cs.onSurfaceVariant),
+                leading: Icon(Icons.router_outlined, color: cs.onSurfaceVariant),
                 title: Text(ds.label),
                 subtitle: Text(
                   subtitle,
                   style: TextStyle(
-                    fontFamily: ds.isEmpty ? null : 'monospace',
+                    fontFamily: 'monospace',
                     fontSize: 11,
                     color: cs.onSurfaceVariant,
                   ),
@@ -1480,6 +1532,43 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
       ),
     );
   }
+}
+
+// ── Scan overlay painter (replicates QrScannerScreen's scrim for the backdrop) ──
+
+class _ScanOverlayPainter extends CustomPainter {
+  const _ScanOverlayPainter();
+  static const double _cutoutSize = 240;
+  static const double _radius = 22;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cutoutRect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2 - 40),
+      width: _cutoutSize,
+      height: _cutoutSize,
+    );
+    final rRect = RRect.fromRectAndRadius(cutoutRect, const Radius.circular(_radius));
+    canvas
+      ..drawPath(
+        Path.combine(
+          PathOperation.difference,
+          Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
+          Path()..addRRect(rRect),
+        ),
+        Paint()..color = Colors.black.withAlpha(210),
+      )
+      ..drawRRect(
+        rRect,
+        Paint()
+          ..color = Colors.white
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke,
+      );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter _) => false;
 }
 
 // ── Dataset picker bottom sheet ───────────────────────────────────────────────
