@@ -247,47 +247,68 @@ class _CommissionableDeviceTile extends StatelessWidget {
       if (dt != DeviceType.unknown) icon = dt.icon;
     }
 
-    final (modeColor, modeIcon) = device.isEnhanced
-        ? (Colors.green.shade500, Icons.lock_open_outlined)
-        : device.isBasic
-        ? (Colors.orange.shade500, Icons.lock_open_outlined)
-        : (cs.onSurfaceVariant, Icons.lock_outlined);
+    final hint = device.pairingHintText;
 
     return ListTile(
       leading: Icon(icon, color: cs.primary),
-      title: Text(
-        device.displayName,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              device.displayName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (device.isIcd) ...[
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'Battery / sleepy device',
+              child: Icon(Icons.battery_4_bar_outlined,
+                  size: 14, color: cs.onSurfaceVariant),
+            ),
+          ],
+        ],
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (device.ipAddress.isNotEmpty)
-            Text(
-              '${device.ipAddress}:${device.port}',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
           if (device.vendorId > 0)
             Text(
-              'VID:0x${device.vendorId.toRadixString(16).toUpperCase().padLeft(4, "0")}  '
-              'PID:0x${device.productId.toRadixString(16).toUpperCase().padLeft(4, "0")}',
+              'VID:0x${device.vendorId.toRadixString(16).toUpperCase().padLeft(4, "0")}'
+              '  PID:0x${device.productId.toRadixString(16).toUpperCase().padLeft(4, "0")}',
               style: TextStyle(fontFamily: 'monospace', fontSize: 11,
                   color: cs.onSurfaceVariant),
             ),
+          if (hint != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Icon(Icons.touch_app_outlined, size: 11,
+                      color: cs.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text(
+                    hint,
+                    style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(modeIcon, size: 14, color: modeColor),
-          const SizedBox(width: 4),
-          Text(
-            device.modeLabel,
-            style: TextStyle(fontSize: 11, color: modeColor, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-      isThreeLine: device.ipAddress.isNotEmpty && device.vendorId > 0,
+      trailing: device.isOpen
+          ? Text(
+              device.modeLabel,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: device.isEnhanced
+                    ? Colors.green.shade400
+                    : Colors.orange.shade400,
+              ),
+            )
+          : null,
+      isThreeLine: device.vendorId > 0 && hint != null,
     );
   }
 }

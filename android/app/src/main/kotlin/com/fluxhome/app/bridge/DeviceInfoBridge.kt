@@ -92,6 +92,8 @@ class DeviceInfoBridge(private val core: BridgeCore) {
                     "commissioningMode" to d.commissioningMode,
                     "deviceName"        to d.deviceName,
                     "instanceName"      to d.instanceName,
+                    "pairingHint"       to d.pairingHint,
+                    "isIcd"             to d.isIcd,
                 )
             }
             core.main.post { result.success(mapped) }

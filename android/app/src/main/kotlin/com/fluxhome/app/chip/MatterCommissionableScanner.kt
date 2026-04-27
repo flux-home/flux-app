@@ -42,6 +42,10 @@ object MatterCommissionableScanner {
         val deviceName:        String,
         /** "EnhancedWindowOpen", "BasicWindowOpen", or "WindowNotOpen" */
         val commissioningMode: String,
+        /** PH TXT key — pairing hint bitmask (0 if absent). */
+        val pairingHint:       Int,
+        /** True when the ICD TXT key is present and equals "1". */
+        val isIcd:             Boolean,
     )
 
     suspend fun scan(context: Context): List<CommissionableInfo> {
@@ -95,6 +99,12 @@ object MatterCommissionableScanner {
                         else -> "WindowNotOpen"
                     }
 
+                    // Pairing hint: key "PH"
+                    val ph   = txt("PH")?.toIntOrNull() ?: 0
+
+                    // ICD (sleepy device): key "ICD"
+                    val icd  = txt("ICD") == "1"
+
                     val host = info.host?.hostAddress ?: ""
                     Log.d(TAG, "✓ Resolved: instance=${info.serviceName} " +
                             "host=$host port=${info.port} disc=$disc VP=$vid+$pid " +
@@ -110,6 +120,8 @@ object MatterCommissionableScanner {
                         deviceType        = dt,
                         deviceName        = dn,
                         commissioningMode = mode,
+                        pairingHint       = ph,
+                        isIcd             = icd,
                     )
                     resolveNext()
                 }
