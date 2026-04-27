@@ -828,8 +828,8 @@ class DeviceProvider extends ChangeNotifier {
         _mergeLiveCache(deviceId, (e) => e.merge({'onOff': false}));
         await _channel.toggleDevice(device.nodeId, on: false);
       case AutomationAction.thermostatOff:
-        _mergeLiveCache(deviceId, (e) => e.merge({'onOff': false}));
-        await _channel.toggleDevice(device.nodeId, on: false);
+        _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': 0}));
+        await _channel.writeSystemMode(device.nodeId, 0);
       case AutomationAction.brightnessStepUp:
         await stepBrightness(deviceId, up: true);
       case AutomationAction.brightnessStepDown:
@@ -844,6 +844,13 @@ class DeviceProvider extends ChangeNotifier {
   Future<void> _adjustSetpoint(String deviceId, double deltaCelsius) async {
     final device = findById(deviceId);
     if (device == null) return;
+    // If the thermostat is off, switch to Heat mode first — devices silently
+    // ignore setpoint writes while SystemMode == 0 (Off).
+    final currentMode = _liveCache[deviceId]?.systemMode;
+    if (currentMode == null || currentMode == 0) {
+      _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': 4}));
+      await _channel.writeSystemMode(device.nodeId, 4);
+    }
     const defaultCenti = 2000; // 20.0 °C fallback
     final current = _liveCache[deviceId]?.heatingSetptCenti ?? defaultCenti;
     final next = (current + (deltaCelsius * 100).round()).clamp(500, 3500);
