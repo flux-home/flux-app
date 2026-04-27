@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/ota_progress.dart';
+import 'package:matter_home/models/room.dart';
+import 'package:matter_home/models/switch_link.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -30,11 +33,23 @@ class DeviceProvider extends ChangeNotifier {
   String? errorMessage;
   List<MatterDevice> _devices = [];
 
+  // ── Rooms ───────────────────────────────────────────────────────────────────
+  // "No Room" is always the first entry and is never stored to disk.
+  List<Room> _rooms = [Room.noRoom];
+
   // ── In-memory caches ──────────────────────────────────────────────────────
-  final Map<String, DeviceLiveData> _liveCache = {};
-  final Map<String, String> _clusterCache = {}; // deviceId → JSON
-  final Map<String, OtaProgressState> _otaProgress = {};
-  final Map<String, PersistedSnapshot> _snapshots = {};
+  final Map<String, DeviceLiveData>     _liveCache     = {};
+  final Map<String, String>             _clusterCache  = {}; // deviceId → JSON
+  final Map<String, OtaProgressState>   _otaProgress   = {};
+  final Map<String, PersistedSnapshot>  _snapshots     = {};
+
+  // ── Switch links (in-app binding table) ───────────────────────────────────
+  // Keyed by source deviceId.  Execution happens when a press event is
+  // received on any endpoint listed in the link's pressEndpoints.
+  final Map<String, List<SwitchLink>> _switchLinks        = {};
+  final Map<String, int>              _lastSwitchPressTime = {}; // debounce: deviceId → last switchPressTime
+  final Map<String, ContactLink>      _contactLinks        = {};
+  final Map<String, bool>             _lastContactState    = {}; // debounce: deviceId → last acted state
 
   final Set<int> _subscribedNodeIds = {};
 
@@ -48,7 +63,7 @@ class DeviceProvider extends ChangeNotifier {
 
   bool _disposed = false;
 
-  StreamSubscription<Map<String, dynamic>>? _deviceStateSub;
+  StreamSubscription<DeviceStateEvent>? _deviceStateSub;
 
   // ── Public device list ────────────────────────────────────────────────────
 
@@ -58,6 +73,22 @@ class DeviceProvider extends ChangeNotifier {
 
   /// All devices as merged [DeviceView] objects (commissioning record + live).
   List<DeviceView> get deviceViews => _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
+
+  /// Rooms in creation order ("No Room" is always first).
+  List<Room> get rooms => List.unmodifiable(_rooms);
+
+  /// Devices grouped by room, in room creation order.
+  /// Every room appears in the list regardless of whether it has devices,
+  /// so the home screen always renders the section header.
+  List<(Room, List<DeviceView>)> get deviceViewsByRoom {
+    return _rooms.map((room) {
+      final views = _devices
+          .where((d) => d.roomId == room.id)
+          .map((d) => DeviceView(d, _liveCache[d.id]))
+          .toList();
+      return (room, views);
+    }).toList();
+  }
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.
   DeviceView? viewFor(String id) {
@@ -81,6 +112,8 @@ class DeviceProvider extends ChangeNotifier {
 
   void _load() {
     _snapshots.addAll(_store.loadSnapshots());
+    // Rooms: sentinel first, then persisted user-created rooms.
+    _rooms = [Room.noRoom, ..._store.loadRooms()];
 
     _devices = _store.loadDevices().map((d) {
       // Legacy fix: devices stored before device-type mapping may have
@@ -121,6 +154,9 @@ class DeviceProvider extends ChangeNotifier {
     await _store.saveSnapshots(_snapshots);
   }
 
+  /// Persists the user-created rooms list (excludes the sentinel).
+  Future<void> _persistRooms() => _store.saveRooms(_rooms);
+
   /// Captures the current live cache for [deviceId] into [_snapshots] and
   /// writes both stores to disk.  Called only at explicit checkpoints
   /// (first established event, user action, successful poll) — never from
@@ -140,6 +176,73 @@ class DeviceProvider extends ChangeNotifier {
 
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
+
+  // ── Switch link management ──────────────────────────────────────────────────
+
+  /// All links whose source is [deviceId], in insertion order.
+  List<SwitchLink> linksFor(String deviceId) =>
+      List.unmodifiable(_switchLinks[deviceId] ?? const []);
+
+  /// All commissioned devices that accept commands matching the switch group.
+  ///
+  /// [requiresOnOff]  include devices that accept On/Off commands (press).
+  /// [requiresLevel]  include devices that accept LevelControl commands (CW/CCW).
+  ///
+  /// A device is included when it satisfies *any* of the requested capabilities
+  /// so that a device supporting only OnOff is still offered even when the
+  /// group also has CW/CCW endpoints.
+  List<DeviceView> linkableTargets({
+    String? excludingDeviceId,
+    bool requiresOnOff = true,
+    bool requiresLevel = false,
+  }) {
+    return _devices
+        .where((d) => d.id != excludingDeviceId)
+        .map((d) => DeviceView(d, _liveCache[d.id]))
+        .where((v) {
+          final id = v.id;
+          if (requiresOnOff) {
+            final ok = v.deviceType.hasOnOff ||
+                (_liveCache[id]?.attrs.containsKey('onOff') ?? false);
+            if (ok) return true;
+          }
+          if (requiresLevel) {
+            final ok = v.deviceType.hasBrightness ||
+                (_liveCache[id]?.attrs.containsKey('level') ?? false);
+            if (ok) return true;
+          }
+          return false;
+        })
+        .toList();
+  }
+
+  /// Adds or replaces a [SwitchLink] for its source device.
+  void upsertSwitchLink(SwitchLink link) {
+    final list = _switchLinks.putIfAbsent(link.sourceDeviceId, () => []);
+    final idx  = list.indexWhere((l) => l.id == link.id);
+    if (idx >= 0) list[idx] = link; else list.add(link);
+    notifyListeners();
+  }
+
+  /// Removes the link identified by [linkId] from [sourceDeviceId].
+  void removeSwitchLink(String sourceDeviceId, String linkId) {
+    _switchLinks[sourceDeviceId]?.removeWhere((l) => l.id == linkId);
+    notifyListeners();
+  }
+
+  // ── Contact link management ──────────────────────────────────────────────
+
+  ContactLink? contactLinkFor(String deviceId) => _contactLinks[deviceId];
+
+  void upsertContactLink(ContactLink link) {
+    _contactLinks[link.sourceDeviceId] = link;
+    notifyListeners();
+  }
+
+  void removeContactLink(String sourceDeviceId) {
+    _contactLinks.remove(sourceDeviceId);
+    notifyListeners();
+  }
 
   void clearOtaProgress(String deviceId) {
     _otaProgress.remove(deviceId);
@@ -226,26 +329,21 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Subscription event handler ────────────────────────────────────────────
 
-  void _onDeviceStateEvent(Map<String, dynamic> event) {
-    final nodeId = event['nodeId'] as int?;
-    final type = event['type'] as String? ?? 'update';
-    if (nodeId == null) return;
-
-    final candidates = _devices.where((d) => d.nodeId == nodeId);
+  void _onDeviceStateEvent(DeviceStateEvent event) {
+    final candidates = _devices.where((d) => d.nodeId == event.nodeId);
     if (candidates.isEmpty) return;
     final device = candidates.first;
 
-    switch (type) {
-      case 'otaProgress':
+    switch (event) {
+      case OtaProgressEvent():
         _otaProgress[device.id] = OtaProgressState(
-          phase: event['phase'] as String? ?? 'error',
-          progress: event['progress'] as int?,
-          message: event['message'] as String?,
+          phase:    event.phase,
+          progress: event.progress,
+          message:  event.message,
         );
         notifyListeners();
 
-      case 'error':
-      case 'resubscribing':
+      case SubscriptionErrorEvent() || SubscriptionResubscribingEvent():
         // Mark cache stale but keep values — UI shows last known state dimmed.
         final existing = _liveCache[device.id];
         if (existing != null && !existing.isStale) {
@@ -253,34 +351,43 @@ class DeviceProvider extends ChangeNotifier {
           notifyListeners();
         }
 
-      case 'established':
+      case SubscriptionEstablishedEvent():
         // Cancel the fallback-read timer — the subscription is healthy.
         _establishTimeouts[device.id]?.cancel();
         _establishTimeouts[device.id] = null;
-        _applyStateUpdate(device, event);
-        // Flush snapshot once per session on the first established event so
-        // the next cold start has a complete, accurate attribute map.
+        // The initial data report arrives as a SubscriptionUpdateEvent
+        // immediately after, so no attrs to merge here.
+        // Flush snapshot once per session so the next cold start has a
+        // complete, accurate attribute map.
         if (_establishedThisSession.add(device.id)) {
           unawaited(_flushSnapshot(device.id));
         }
 
-      case 'update':
-        _applyStateUpdate(device, event);
+      case SubscriptionUpdateEvent():
+        _applyStateUpdate(device, event.attrs);
     }
   }
 
   // ── Subscription management ────────────────────────────────────────────────
 
-  /// Shared merge logic for both `established` and `update` events.
-  void _applyStateUpdate(MatterDevice device, Map<String, dynamic> event) {
+  /// Merges new attribute values into the live cache.
+  void _applyStateUpdate(MatterDevice device, Map<String, dynamic> attrs) {
+    // Capture contact state BEFORE the merge so we can detect transitions.
+    final prevContact = _liveCache[device.id]?.contactState;
+
     final existing = _liveCache[device.id];
-    _liveCache[device.id] = existing != null ? existing.merge(event) : DeviceLiveData.fromUpdate(event);
+    _liveCache[device.id] = existing != null ? existing.merge(attrs) : DeviceLiveData.fromUpdate(attrs);
+
+    // Execute any in-app switch links triggered by this event.
+    _handleSwitchPress(device.id, attrs);
+    // Execute any contact sensor links triggered by a state transition.
+    _handleContactChange(device.id, attrs, prevContact);
 
     // Infer device type from subscription attributes when the stored type
     // is unknown or is a stale commissioning fallback.
     final storedType = device.deviceType;
     if (storedType == DeviceType.unknown || storedType == DeviceType.onOffLight) {
-      final inferred = _inferTypeFromEvent(event);
+      final inferred = _inferTypeFromEvent(attrs);
       if (inferred != null) {
         final idx2 = _indexById(device.id);
         if (idx2 != -1) {
@@ -361,72 +468,24 @@ class DeviceProvider extends ChangeNotifier {
     await _channel.stopSubscription(device.nodeId);
   }
 
-  // ── Commission ────────────────────────────────────────────────────────────
+  // ── Commission lifecycle (called by CommissioningController) ─────────────
 
-  /// Called when the user cancels mid-commissioning.  Resets the provider
-  /// state to idle so the home screen stops showing a spinner.
-  void cancelCommissioning() {
-    if (state == DeviceProviderState.loading) {
-      state = DeviceProviderState.idle;
-      notifyListeners();
-    }
-  }
-  Future<MatterDevice?> commissionDevice(
-    String payload,
-    String deviceName, {
-    String? wifiSsid,
-    String? wifiPassword,
-    String? threadDatasetHex,
-  }) async {
+  /// Signals that commissioning has started; sets [state] to loading so the
+  /// home screen shows a progress indicator.
+  void beginCommissioning() {
     state = DeviceProviderState.loading;
     notifyListeners();
-
-    final networkType = threadDatasetHex != null && threadDatasetHex.isNotEmpty
-        ? NetworkType.thread
-        : wifiSsid != null && wifiSsid.isNotEmpty
-        ? NetworkType.wifi
-        : NetworkType.ethernet;
-
-    final result = await _channel.commissionDevice(
-      payload,
-      wifiSsid: wifiSsid,
-      wifiPassword: wifiPassword,
-      threadDatasetHex: threadDatasetHex,
-    );
-    return _handleCommissionResult(result, deviceName, networkType: networkType);
   }
 
-  Future<MatterDevice?> commissionViaIp({
-    required String ipAddress,
-    required int discriminator,
-    required int setupPinCode,
-    required String deviceName,
-    int port = 5540,
-  }) async {
-    state = DeviceProviderState.loading;
-    notifyListeners();
-
-    final result = await _channel.commissionViaIp(
-      ipAddress: ipAddress,
-      port: port,
-      discriminator: discriminator,
-      setupPinCode: setupPinCode,
-    );
-    return _handleCommissionResult(result, deviceName, networkType: NetworkType.ethernet);
-  }
-
-  Future<MatterDevice?> _handleCommissionResult(
+  /// Registers a successfully commissioned device: persists it, seeds the live
+  /// cache with a one-shot read, and starts its subscription.
+  ///
+  /// Called by CommissioningController once the CHIP SDK reports success.
+  Future<MatterDevice> registerCommissionedDevice(
     CommissionResult result,
-    String name, {
-    NetworkType networkType = NetworkType.unknown,
-  }) async {
-    if (!result.success) {
-      state = DeviceProviderState.error;
-      errorMessage = result.error ?? 'Commissioning failed';
-      notifyListeners();
-      return null;
-    }
-
+    String name,
+    NetworkType networkType,
+  ) async {
     final deviceType = result.deviceTypeId != null
         ? DeviceType.fromMatterDeviceTypeId(result.deviceTypeId!)
         : DeviceType.onOffLight;
@@ -447,11 +506,22 @@ class DeviceProvider extends ChangeNotifier {
     state = DeviceProviderState.idle;
     notifyListeners();
 
-    // Poll once to seed live cache, then start subscription.
     unawaited(refreshDevice(device.id));
     unawaited(_startSubscription(device));
 
     return device;
+  }
+
+  /// Signals that commissioning ended without producing a device (failure or
+  /// user cancellation).  [error] is null when the user cancelled intentionally.
+  void failCommissioning(String? error) {
+    if (error != null) {
+      state = DeviceProviderState.error;
+      errorMessage = error;
+    } else if (state == DeviceProviderState.loading) {
+      state = DeviceProviderState.idle;
+    }
+    notifyListeners();
   }
 
   // ── Control ───────────────────────────────────────────────────────────────
@@ -460,7 +530,12 @@ class DeviceProvider extends ChangeNotifier {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
     final device = _devices[idx];
-    if (!device.deviceType.hasOnOff) return;
+    // Allow toggle if the device type declares on/off capability OR if the
+    // subscription has already delivered an onOff attribute (e.g. IKEA APLSTUGA
+    // reports device type airQualitySensor but accepts On/Off commands).
+    final hasOnOff = device.deviceType.hasOnOff ||
+        (_liveCache[deviceId]?.attrs.containsKey('onOff') ?? false);
+    if (!hasOnOff) return;
 
     // Use live cache as source of truth so toggle direction is always correct.
     final currentOn = _liveCache[deviceId]?.isOn ?? false;
@@ -485,6 +560,18 @@ class DeviceProvider extends ChangeNotifier {
     _mergeLiveCache(deviceId, (e) => e.merge({'level': level}));
     await _channel.setLevel(_devices[idx].nodeId, level);
     await _flushSnapshot(deviceId);
+  }
+
+  /// Sends a StepWithOnOff command: steps brightness up or down by ~10 %.
+  /// Does not optimistically update the cache — the subscription delivers
+  /// the real new level within the subscription interval.
+  Future<void> stepBrightness(String deviceId, {required bool up}) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
+    final hasBrightness = _devices[idx].deviceType.hasBrightness ||
+        (_liveCache[deviceId]?.attrs.containsKey('level') ?? false);
+    if (!hasBrightness) return;
+    await _channel.stepLevel(_devices[idx].nodeId, stepUp: up);
   }
 
   Future<void> coveringUp(String deviceId) async {
@@ -600,6 +687,55 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
+
+
+  // ── Room management ───────────────────────────────────────────────────────────────────
+
+  /// Creates a new room with [name] and appends it in creation order.
+  Future<Room> createRoom(String name) async {
+    final room = Room(id: _uuid.v4(), name: name);
+    _rooms = [..._rooms, room];
+    await _persistRooms();
+    notifyListeners();
+    return room;
+  }
+
+  /// Renames [roomId] to [name].  Silently ignores the "No Room" sentinel.
+  Future<void> renameRoom(String roomId, String name) async {
+    if (roomId == Room.noRoomId) return;
+    final idx = _rooms.indexWhere((r) => r.id == roomId);
+    if (idx < 0) return;
+    _rooms = [..._rooms]..[idx] = _rooms[idx].copyWith(name: name);
+    await _persistRooms();
+    notifyListeners();
+  }
+
+  /// Deletes [roomId] and moves its devices to "No Room".
+  /// Silently ignores the "No Room" sentinel.
+  Future<void> deleteRoom(String roomId) async {
+    if (roomId == Room.noRoomId) return;
+    _rooms = _rooms.where((r) => r.id != roomId).toList();
+    final affected = _devices
+        .asMap()
+        .entries
+        .where((e) => e.value.roomId == roomId)
+        .map((e) => e.key)
+        .toList();
+    for (final idx in affected) {
+      _devices[idx] = _devices[idx].copyWith(roomId: Room.noRoomId);
+    }
+    await Future.wait([_persistRooms(), if (affected.isNotEmpty) _persist()]);
+    notifyListeners();
+  }
+
+  /// Assigns [deviceId] to [roomId].  Pass [Room.noRoomId] to unassign.
+  Future<void> assignRoom(String deviceId, String roomId) async {
+    final idx = _indexById(deviceId);
+    if (idx < 0) return;
+    _devices[idx] = _devices[idx].copyWith(roomId: roomId);
+    await _persist();
+    notifyListeners();
+  }
   // ── Share / rename / remove ───────────────────────────────────────────────
 
   Future<bool> shareWithGoogleHome(String deviceId) async {
@@ -658,4 +794,72 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   int _indexById(String id) => _devices.indexWhere((d) => d.id == id);
+
+  // ── Switch-link execution ──────────────────────────────────────────────────────────
+
+  /// Executes contact-sensor links when [contactState] transitions.
+  ///
+  /// [prevContact] is the value from the live cache *before* the current
+  /// update was merged, so a true transition (null→value excluded) fires once.
+  void _handleContactChange(
+    String deviceId,
+    Map<String, dynamic> attrs,
+    bool? prevContact,
+  ) {
+    if (!attrs.containsKey('contactState')) return;
+    final newState = attrs['contactState'] as bool?;
+    if (newState == null) return;
+    // Skip the first reading (no previous state to transition from).
+    if (prevContact == null) return;
+    // Skip if the state hasn't changed.
+    if (newState == prevContact) return;
+
+    final link = _contactLinks[deviceId];
+    if (link == null) return;
+
+    // true  = closed, false = open (BooleanState semantics).
+    final targets = newState ? link.onClose : link.onOpen;
+    for (final targetId in targets) {
+      unawaited(toggle(targetId));
+    }
+  }
+
+  /// Called on every subscription update.  When the event carries a new
+  /// [switchPressTime]
+  ///
+  /// Using [switchPressTime] rather than [switchCurrentEndpoint] > 0 correctly
+  /// handles the BILRESA scroll wheel, which fires InitialPress + ShortRelease
+  /// so rapidly that both events arrive in the same subscription report and
+  /// [switchCurrentEndpoint] is already 0 by the time Dart processes the map.
+  void _handleSwitchPress(String deviceId, Map<String, dynamic> attrs) {
+    // Only process updates that contain a press event.
+    final pressTime = attrs['switchPressTime'] as int?;
+    if (pressTime == null) return;
+
+    // Deduplicate: skip if we already acted on this exact timestamp.
+    if (pressTime == (_lastSwitchPressTime[deviceId] ?? 0)) return;
+    _lastSwitchPressTime[deviceId] = pressTime;
+
+    // switchLastEndpoint is set by the press and not cleared by the release,
+    // so it reliably holds the endpoint even after rapid press+release.
+    final ep = (attrs['switchLastEndpoint'] as int?) ?? 0;
+    if (ep == 0) return;
+
+    final links = _switchLinks[deviceId] ?? [];
+    for (final link in links) {
+      if (link.pressEndpoints.contains(ep)) {
+        for (final targetId in link.targetDeviceIds) {
+          unawaited(toggle(targetId));
+        }
+      } else if (link.cwEndpoints.contains(ep)) {
+        for (final targetId in link.targetDeviceIds) {
+          unawaited(stepBrightness(targetId, up: true));
+        }
+      } else if (link.ccwEndpoints.contains(ep)) {
+        for (final targetId in link.targetDeviceIds) {
+          unawaited(stepBrightness(targetId, up: false));
+        }
+      }
+    }
+  }
 }

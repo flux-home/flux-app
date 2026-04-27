@@ -160,7 +160,7 @@ const Map<String, String> kCommissionStageHuman = {
   'RemoveWiFiNetworkConfig': 'REMOVE WIFI CONFIG',
   'RemoveThreadNetworkConfig': 'REMOVE THREAD CONFIG',
   'EvictPreviousCaseSessions': 'CLEAR CONNECTION',
-  'FindOperationalForStayActive': 'ICD STAY AWAKE',
+  'FindOperationalForStayActive': 'LOOKING FOR DEVICE ON NETWORK',
   'ICDSendStayActive': 'WAKING',
   'FindOperationalForCommissioningComplete': 'CHECK ID',
   'SendComplete': 'FINALIZING',
@@ -312,48 +312,70 @@ class CommissioningController extends ChangeNotifier {
 
     MatterDevice? device;
 
+    // Determine network type before starting so the provider can record it.
+    final NetworkType networkType;
+    CommissionResult commissionResult;
+
+    _provider.beginCommissioning();
+
     if (cfg.method == CommissionMethod.ip) {
-      device = await _provider.commissionViaIp(
-        ipAddress: cfg.ipAddress,
-        discriminator: cfg.discriminator > 0
-            ? cfg.discriminator
-            : (parsed!.discriminator > 0 ? parsed!.discriminator : 3840),
-        setupPinCode: cfg.setupPinCode,
-        deviceName: name,
-      );
+      networkType = NetworkType.ethernet;
+      if (cfg.ipAddress.trim().isEmpty) {
+        // No IP entered — use DNS-SD on-network discovery.
+        // The SDK queries _matterc._udp using the discriminator embedded in
+        // the setup code; no address is required from the user.
+        _appendRaw('🔍 No IP address — using DNS-SD on-network discovery…',
+            level: LogLevel.info);
+        commissionResult = await _port.commissionViaCode(setupCode: rawPayload!);
+      } else {
+        commissionResult = await _port.commissionViaIp(
+          ipAddress: cfg.ipAddress,
+          discriminator: cfg.discriminator > 0
+              ? cfg.discriminator
+              : (parsed!.discriminator > 0 ? parsed!.discriminator : 3840),
+          setupPinCode: cfg.setupPinCode,
+        );
+      }
     } else {
       switch (cfg.netType) {
         case 0: // Thread
-          device = await _provider.commissionDevice(
+          networkType = NetworkType.thread;
+          commissionResult = await _port.commissionDevice(
             rawPayload!,
-            name,
             threadDatasetHex: cfg.threadDatasetHex.isNotEmpty
                 ? cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '')
                 : threadDataset().replaceAll(RegExp(r'\s'), ''),
           );
         case 1: // Wi-Fi
-          device = await _provider.commissionDevice(
+          networkType = NetworkType.wifi;
+          commissionResult = await _port.commissionDevice(
             rawPayload!,
-            name,
             wifiSsid: cfg.wifiSsid,
             wifiPassword: cfg.wifiPassword,
           );
         default: // None / Ethernet
-          device = await _provider.commissionDevice(rawPayload!, name);
+          networkType = NetworkType.ethernet;
+          commissionResult = await _port.commissionDevice(rawPayload!);
       }
     }
 
     await _eventSub?.cancel();
     _eventSub = null;
 
-    if (sessionId != _sessionId) return; // cancelled while commissionDevice ran
+    if (sessionId != _sessionId) return; // cancelled while commission ran
 
-    if (device != null) {
+    if (commissionResult.success) {
+      device = await _provider.registerCommissionedDevice(
+        commissionResult,
+        name,
+        networkType,
+      );
       result = device;
       phase = CommissionPhase.done;
       await QrPayloadService.clear();
     } else {
-      error = _provider.errorMessage ?? 'Commissioning failed';
+      error = commissionResult.error ?? 'Commissioning failed';
+      _provider.failCommissioning(error);
       phase = CommissionPhase.failed;
       _appendRaw(error!, level: LogLevel.error);
     }
@@ -367,7 +389,7 @@ class CommissioningController extends ChangeNotifier {
     _sessionId++; // invalidate in-flight start()
     _eventSub?.cancel();
     _eventSub = null;
-    _provider.cancelCommissioning();
+    _provider.failCommissioning(null);
     phase = CommissionPhase.idle;
     parsed = null;
     rawPayload = null;
