@@ -134,24 +134,16 @@ class ThreadTlvDecoder {
 /// The "Empty dataset" option (empty hex) is always implicitly available and
 /// is never stored in `thread_datasets_v2`.
 class ThreadSettingsService {
-  static const _keyDataset = 'thread_dataset_hex'; // legacy
-  static const _keyRouters = 'thread_discovered_routers';
+  static const _keyDataset  = 'thread_dataset_hex'; // legacy
+  static const _keyRouters  = 'thread_discovered_routers';
   static const _keyDatasets = 'thread_datasets_v2';
   static const _keyActiveHex = 'thread_active_hex_v2';
-
-  static const defaultDataset =
-      '35060004001fffc0020812f209ab410ad778'
-      '0708fd0e736aab8a000005101821a78a600f'
-      '096682821720a51fd913030d4e4553542d50'
-      '414e2d32364241010226ba0410f377af82aa'
-      '453bb24d2e2b6fd2324e650c0402a0fff800'
-      '0300000f0e080000690ddc3ed1a8';
 
   // ── Active dataset ──────────────────────────────────────────────────────────
 
   /// Returns the active hex string.
-  /// - Returns '' if "Empty dataset" is explicitly selected.
-  /// - Falls back to [defaultDataset] if nothing has been configured yet.
+  /// - Returns '' if "Empty dataset" is explicitly selected or nothing is configured.
+  /// - Falls back to migrating the legacy key if present.
   static Future<String> load() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.containsKey(_keyActiveHex)) {
@@ -159,11 +151,11 @@ class ThreadSettingsService {
     }
     // Migrate from old single-dataset key.
     if (prefs.containsKey(_keyDataset)) {
-      final hex = prefs.getString(_keyDataset) ?? defaultDataset;
-      await _migrate(prefs, hex);
+      final hex = prefs.getString(_keyDataset) ?? '';
+      if (hex.isNotEmpty) await _migrate(prefs, hex);
       return hex;
     }
-    return defaultDataset;
+    return '';
   }
 
   /// True if the user has explicitly chosen an active dataset (even empty).
@@ -171,9 +163,9 @@ class ThreadSettingsService {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.containsKey(_keyActiveHex)) return true;
     if (prefs.containsKey(_keyDataset)) {
-      final hex = prefs.getString(_keyDataset) ?? defaultDataset;
-      await _migrate(prefs, hex);
-      return true;
+      final hex = prefs.getString(_keyDataset) ?? '';
+      if (hex.isNotEmpty) await _migrate(prefs, hex);
+      return hex.isNotEmpty;
     }
     return false;
   }
@@ -183,8 +175,8 @@ class ThreadSettingsService {
     final prefs = await SharedPreferences.getInstance();
     // Migrate if needed.
     if (!prefs.containsKey(_keyActiveHex) && prefs.containsKey(_keyDataset)) {
-      final hex = prefs.getString(_keyDataset) ?? defaultDataset;
-      await _migrate(prefs, hex);
+      final hex = prefs.getString(_keyDataset) ?? '';
+      if (hex.isNotEmpty) await _migrate(prefs, hex);
     }
     if (!prefs.containsKey(_keyActiveHex)) return null;
 
@@ -222,15 +214,11 @@ class ThreadSettingsService {
     final prefs = await SharedPreferences.getInstance();
     // Migrate if needed.
     if (!prefs.containsKey(_keyDatasets) && prefs.containsKey(_keyDataset)) {
-      final hex = prefs.getString(_keyDataset) ?? defaultDataset;
-      await _migrate(prefs, hex);
+      final hex = prefs.getString(_keyDataset) ?? '';
+      if (hex.isNotEmpty) await _migrate(prefs, hex);
     }
     final raw = prefs.getString(_keyDatasets);
-    if (raw == null) {
-      // No datasets saved yet; seed with the default.
-      final name = ThreadTlvDecoder.networkName(defaultDataset) ?? 'Default';
-      return [ThreadDataset(label: name, hex: defaultDataset)];
-    }
+    if (raw == null) return [];
     try {
       final list = json.decode(raw) as List<dynamic>;
       return list.map((e) => ThreadDataset.fromJson(Map<String, dynamic>.from(e as Map))).toList();

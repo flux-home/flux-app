@@ -224,6 +224,8 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _datasets.isEmpty
+          ? _NoCredentialsHint(onAdd: () => _showAddCredentials(context))
           : allNets.isEmpty
           ? Center(
               child: Text(
@@ -349,6 +351,50 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── No-credentials empty state ───────────────────────────────────────────────
+
+class _NoCredentialsHint extends StatelessWidget {
+  const _NoCredentialsHint({required this.onAdd});
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.memory_outlined, size: 56,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+            const SizedBox(height: 20),
+            Text(
+              'No Thread credentials',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add your Thread network credentials before commissioning '
+              'Thread devices. You can import them from Android or enter '
+              'the dataset hex manually.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              icon:  const Icon(Icons.add),
+              label: const Text('Add credentials'),
+              onPressed: onAdd,
+            ),
+          ],
         ),
       ),
     );
@@ -728,6 +774,42 @@ class _ThreadDatasetDetailScreenState extends State<_ThreadDatasetDetailScreen> 
     super.dispose();
   }
 
+  Future<void> _confirmDelete() async {
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete dataset?'),
+        content: Text(
+          widget.isActive
+              ? '"${widget.initialLabel}" is your active dataset. '
+                'Deleting it will clear the active selection and '
+                'Thread commissioning will require new credentials.'
+              : 'Delete "${widget.initialLabel}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if ((confirmed ?? false) && mounted) {
+      await ThreadSettingsService.removeDataset(
+          widget.initialHex.replaceAll(RegExp(r'\s'), ''));
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
   Future<void> _save() async {
     final clean = _hexCtrl.text.replaceAll(RegExp(r'\s'), '');
     final name  = _labelCtrl.text.trim().isNotEmpty
@@ -766,6 +848,12 @@ class _ThreadDatasetDetailScreenState extends State<_ThreadDatasetDetailScreen> 
       appBar: AppBar(
         title: Text(widget.isNew ? 'Add dataset' : 'Edit dataset'),
         actions: [
+          if (!widget.isNew)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete dataset',
+              onPressed: _confirmDelete,
+            ),
           IconButton(
             icon: Icon(_saved ? Icons.check : Icons.save_outlined),
             tooltip: 'Save',
@@ -870,20 +958,6 @@ class _ThreadDatasetDetailScreenState extends State<_ThreadDatasetDetailScreen> 
           ),
 
           const SizedBox(height: 16),
-
-          if (!widget.isNew)
-            OutlinedButton.icon(
-              onPressed: () async {
-                _hexCtrl.text   = ThreadSettingsService.defaultDataset;
-                _labelCtrl.text = '';
-                await _save();
-              },
-              icon:  const Icon(Icons.restore),
-              label: const Text('Reset to default (NEST-PAN-26BA)'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
 
           const SizedBox(height: 40),
         ],
