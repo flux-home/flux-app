@@ -17,6 +17,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   final _manualCtrl = TextEditingController();
   bool _scanned = false;
   bool _manualMode = false;
+  // ignore: unused_field
   CameraController? _cameraController;
 
   @override

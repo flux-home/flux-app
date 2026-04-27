@@ -12,7 +12,6 @@ import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/services/cluster_parser.dart';
 import 'package:matter_home/services/dcl_service.dart';
 import 'package:matter_home/models/device_type.dart';
-import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/ui/screens/cluster_inspector_screen.dart';
 import 'package:matter_home/ui/screens/thread_diag_screen.dart';

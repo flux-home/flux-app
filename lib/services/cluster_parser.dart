@@ -409,6 +409,7 @@ ClusterReading? _renderCumulativeEnergy(dynamic v) {
   );
 }
 
+// ignore: unused_element
 ClusterReading? _renderBatteryRaw(dynamic v) {
   final pct = (v as int) ~/ 2; // batPercentRaw is 0–200; half = percent
   final q   = pct > 60 ? ClusterQuality.good
@@ -426,6 +427,7 @@ ClusterReading? _renderBatteryRaw(dynamic v) {
   );
 }
 
+// ignore: unused_element
 ClusterReading? _renderBatteryLvl(dynamic v) {
   final lvl = v as int;
   final q   = switch (lvl) {
