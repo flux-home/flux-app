@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:matter_home/ui/screens/settings/app_info_screen.dart';
 import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
@@ -46,14 +47,22 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // ── About ──────────────────────────────────────────────────────
+          // ── App info ───────────────────────────────────────────────────
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
             child: SectionLabel('About'),
           ),
-          const ListTile(
-            title: Text('Flux'),
-            subtitle: Text('Flutter + CHIP SDK (connectedhomeip)'),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListTile(
+              title: const Text('App Info'),
+              trailing: const Icon(Icons.chevron_right),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(16)),
+              ),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute<void>(builder: (_) => const AppInfoScreen())),
+            ),
           ),
 
           const SizedBox(height: 40),

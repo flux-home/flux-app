@@ -1,7 +1,7 @@
 name: matter_home
 description: "Local, private, independent."
 publish_to: 'none'
-version: 1.2.0+7
+version: 1.2.0+8
 
 environment:
   sdk: ^3.10.1
@@ -13,6 +13,7 @@ dependencies:
   flutter_zxing: ^2.2.1
   go_router: ^14.6.2
   http: ^1.2.2
+  package_info_plus: ^10.1.0
   permission_handler: ^11.3.1
   provider: ^6.1.2
   qr_flutter: ^4.1.0
