@@ -48,6 +48,7 @@ class MatterHomeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme:      buildAppTheme(),
       darkTheme:  buildAppTheme(brightness: Brightness.dark),
+      themeMode:  ThemeMode.dark,
       routerConfig: appRouter,
     );
   }
