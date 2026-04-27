@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
-const _seed   = Color(0xFF1B6CA8); // Matter brand blue
+/// Primary brand green — used for FABs, filled buttons, and icons app-wide.
+const kBrandGreen   = Color(0xFF6DC9A2);
+
+/// On-surface colour for elements placed on top of [kBrandGreen].
+const kBrandGreenOn = Color(0xFF1A4A38);
 
 /// Shared corner radius — matches device card tiles and camera-view pills.
 const kButtonRadius = 22.0;
@@ -9,7 +13,10 @@ const kButtonRadius = 22.0;
 const _kButtonH = 52.0;
 
 ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
-  final cs = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+  final cs = ColorScheme.fromSeed(
+    seedColor: kBrandGreen,
+    brightness: brightness,
+  );
 
   // Shared shape used by every button type.
   final shape = RoundedRectangleBorder(
@@ -35,10 +42,14 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       ),
     ),
 
-    floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: cs.primary,
-      foregroundColor: cs.onPrimary,
-      shape: const RoundedRectangleBorder(
+    // ── Global icon colour ────────────────────────────────────────────────
+    iconTheme: const IconThemeData(color: kBrandGreen),
+    primaryIconTheme: const IconThemeData(color: kBrandGreenOn),
+
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: kBrandGreen,
+      foregroundColor: kBrandGreenOn,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(kButtonRadius)),
       ),
     ),
@@ -46,10 +57,12 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Filled (primary action) ───────────────────────────────────────────
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape:       shape,
-        minimumSize: const Size(0, _kButtonH),
-        padding:     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        elevation:   0,
+        backgroundColor: kBrandGreen,
+        foregroundColor: kBrandGreenOn,
+        shape:           shape,
+        minimumSize:     const Size(0, _kButtonH),
+        padding:         const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        elevation:       0,
       ),
     ),
 
@@ -66,9 +79,10 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     // ── Text (low-emphasis / dialog cancel) ──────────────────────────────
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        shape:       shape,
-        minimumSize: const Size(0, 44),
-        padding:     const EdgeInsets.symmetric(horizontal: 16),
+        foregroundColor: kBrandGreen,
+        shape:           shape,
+        minimumSize:     const Size(0, 44),
+        padding:         const EdgeInsets.symmetric(horizontal: 16),
       ),
     ),
 
