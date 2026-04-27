@@ -94,6 +94,10 @@ class DeviceView {
   int? get colorTempMireds   => _live?.colorTempMireds;
   int? get smokeState        => _live?.smokeState;
   int? get coState           => _live?.coState;
+  int? get switchCurrentPosition => _live?.switchCurrentPosition;
+  int? get switchCurrentEndpoint => _live?.switchCurrentEndpoint;
+  int? get switchLastPosition     => _live?.switchLastPosition;
+  int? get switchLastEndpoint     => _live?.switchLastEndpoint;
 
   // ── Escape hatch ──────────────────────────────────────────────────────────
 

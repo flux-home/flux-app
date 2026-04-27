@@ -18,6 +18,10 @@ class ShareDeviceResult {
   final String manualPairingCode;
 
   /// Returns the manual pairing code as plain digits (no separators).
-  String get formattedManualCode =>
-      manualPairingCode.replaceAll(RegExp(r'\D'), '');
+  String get formattedManualCode {
+    final d = manualPairingCode.replaceAll(RegExp(r'\D'), '');
+    if (d.length <= 4) return d;
+    if (d.length <= 7) return '${d.substring(0, 4)}-${d.substring(4)}';
+    return '${d.substring(0, 4)}-${d.substring(4, 7)}-${d.substring(7)}';
+  }
 }

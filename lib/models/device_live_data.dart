@@ -151,6 +151,19 @@ class DeviceLiveData {
   int? get colorTempMireds => attrs['colorTempMireds'] as int?;
   int? get smokeState => attrs['smokeState'] as int?;
   int? get coState => attrs['coState'] as int?;
+  int? get switchCurrentPosition => attrs['switchCurrentPosition'] as int?;
+  int? get switchCurrentEndpoint => attrs['switchCurrentEndpoint'] as int?;
+  int? get switchLastPosition     => attrs['switchLastPosition'] as int?;
+  int? get switchLastEndpoint     => attrs['switchLastEndpoint'] as int?;
+
+  // Electrical Power Measurement (0x0090) — all values are nullable int64
+  // transmitted as Dart int (64-bit).  Units: mW, mV, mA.
+  int? get activePower    => attrs['activePower']    as int?;  // milliwatts
+  int? get voltage        => attrs['voltage']        as int?;  // millivolts
+  int? get activeCurrent  => attrs['activeCurrent']  as int?;  // milliamps
+
+  // Electrical Energy Measurement (0x0091) — converted to Wh on the Kotlin side.
+  int? get cumulativeEnergyWh => attrs['cumulativeEnergyWh'] as int?;
 
   // ── BasicInfo delegation (unchanged public API) ───────────────────────────
 

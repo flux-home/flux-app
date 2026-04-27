@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:matter_home/models/device_live_data.dart' show DeviceLiveData;
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart' show DeviceView;
+import 'package:matter_home/models/room.dart';
 
 // ── Network transport type ────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ class MatterDevice {
     this.isOnline = true,
     this.sharedWithGoogleHome = false,
     this.networkType = NetworkType.unknown,
+    this.roomId = Room.noRoomId,
   });
 
   factory MatterDevice.fromJson(Map<String, dynamic> json) {
@@ -66,6 +68,7 @@ class MatterDevice {
         (e) => e.name == (json['networkType'] as String?),
         orElse: () => NetworkType.unknown,
       ),
+      roomId: json['roomId'] as String? ?? Room.noRoomId,
     );
   }
   final String id;
@@ -78,6 +81,7 @@ class MatterDevice {
   /// Updated on every user edit (rename etc.). Used for last-write-wins sync.
   final DateTime lastModified;
   final NetworkType networkType;
+  final String roomId;
 
   MatterDevice copyWith({
     String? id,
@@ -89,6 +93,7 @@ class MatterDevice {
     DateTime? commissionedAt,
     DateTime? lastModified,
     NetworkType? networkType,
+    String? roomId,
   }) => MatterDevice(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -99,6 +104,7 @@ class MatterDevice {
     commissionedAt: commissionedAt ?? this.commissionedAt,
     lastModified: lastModified ?? this.lastModified,
     networkType: networkType ?? this.networkType,
+    roomId: roomId ?? this.roomId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +117,7 @@ class MatterDevice {
     'commissionedAt': commissionedAt.toIso8601String(),
     'lastModified': lastModified.toIso8601String(),
     'networkType': networkType.name,
+    'roomId': roomId,
   };
 
   @override
