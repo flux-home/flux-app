@@ -846,23 +846,21 @@ class DeviceProvider extends ChangeNotifier {
       case AutomationAction.brightnessStepDown:
         await stepBrightness(deviceId, up: false);
       case AutomationAction.thermostatSetpointUp:
-        await _adjustSetpoint(deviceId, 0.5);
+        await _adjustSetpoint(deviceId, 1.0);
       case AutomationAction.thermostatSetpointDown:
-        await _adjustSetpoint(deviceId, -0.5);
+        await _adjustSetpoint(deviceId, -1.0);
     }
   }
 
   Future<void> _adjustSetpoint(String deviceId, double deltaCelsius) async {
     final device = findById(deviceId);
     if (device == null) return;
-    // If the thermostat is off, switch to Heat mode first — devices silently
-    // ignore setpoint writes while SystemMode == 0 (Off).
     final currentMode = _liveCache[deviceId]?.systemMode;
     if (currentMode == null || currentMode == 0) {
       _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': 4}));
       await _channel.writeSystemMode(device.nodeId, 4);
     }
-    const defaultCenti = 2000; // 20.0 °C fallback
+    const defaultCenti = 2000;
     final current = _liveCache[deviceId]?.heatingSetptCenti ?? defaultCenti;
     final next = (current + (deltaCelsius * 100).round()).clamp(500, 3500);
     _mergeLiveCache(deviceId, (e) => e.merge({'heatingSetptCenti': next}));
@@ -954,10 +952,10 @@ class DeviceProvider extends ChangeNotifier {
         ));
       }
       if (group.cwEndpoints.isNotEmpty) {
-        final a = _supportsAction(targetView, AutomationAction.brightnessStepUp)
-            ? AutomationAction.brightnessStepUp
-            : _supportsAction(targetView, AutomationAction.thermostatSetpointUp)
-                ? AutomationAction.thermostatSetpointUp
+        final a = _supportsAction(targetView, AutomationAction.thermostatSetpointUp)
+            ? AutomationAction.thermostatSetpointUp
+            : _supportsAction(targetView, AutomationAction.brightnessStepUp)
+                ? AutomationAction.brightnessStepUp
                 : null;
         if (a != null) upsertRule(AutomationRule(
           sourceDeviceId: sourceDeviceId,
@@ -969,10 +967,10 @@ class DeviceProvider extends ChangeNotifier {
         ));
       }
       if (group.ccwEndpoints.isNotEmpty) {
-        final a = _supportsAction(targetView, AutomationAction.brightnessStepDown)
-            ? AutomationAction.brightnessStepDown
-            : _supportsAction(targetView, AutomationAction.thermostatSetpointDown)
-                ? AutomationAction.thermostatSetpointDown
+        final a = _supportsAction(targetView, AutomationAction.thermostatSetpointDown)
+            ? AutomationAction.thermostatSetpointDown
+            : _supportsAction(targetView, AutomationAction.brightnessStepDown)
+                ? AutomationAction.brightnessStepDown
                 : null;
         if (a != null) upsertRule(AutomationRule(
           sourceDeviceId: sourceDeviceId,
