@@ -200,9 +200,11 @@ class DeviceProvider extends ChangeNotifier {
     return switch (action) {
       AutomationAction.toggle ||
       AutomationAction.turnOn  ||
-      AutomationAction.turnOff ||
+      AutomationAction.turnOff =>
+          v.deviceType.hasOnOff || (live?.attrs.containsKey('onOff') ?? false) ||
+          v.deviceType == DeviceType.thermostat || (live?.attrs.containsKey('systemMode') ?? false),
       AutomationAction.thermostatOff =>
-          v.deviceType.hasOnOff || (live?.attrs.containsKey('onOff') ?? false),
+          v.deviceType == DeviceType.thermostat || (live?.attrs.containsKey('systemMode') ?? false),
       AutomationAction.brightnessStepUp ||
       AutomationAction.brightnessStepDown =>
           v.deviceType.hasBrightness || (live?.attrs.containsKey('level') ?? false),
@@ -820,7 +822,16 @@ class DeviceProvider extends ChangeNotifier {
     if (device == null) return;
     switch (action) {
       case AutomationAction.toggle:
-        await toggle(deviceId);
+        // Thermostats: toggle SystemMode between Off(0) and Heat(4).
+        if (device.deviceType == DeviceType.thermostat ||
+            (_liveCache[deviceId]?.attrs.containsKey('systemMode') ?? false)) {
+          final cur = _liveCache[deviceId]?.systemMode ?? 0;
+          final next = cur == 0 ? 4 : 0;
+          _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': next}));
+          await _channel.writeSystemMode(device.nodeId, next);
+        } else {
+          await toggle(deviceId);
+        }
       case AutomationAction.turnOn:
         _mergeLiveCache(deviceId, (e) => e.merge({'onOff': true}));
         await _channel.toggleDevice(device.nodeId, on: true);

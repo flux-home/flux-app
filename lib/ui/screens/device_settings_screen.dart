@@ -1308,24 +1308,48 @@ class _ConnectionsScreen extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 4),
+          if (groups.isEmpty && device.deviceType.isSwitch)
+              Card(
+                color: cs.surface,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16,
+                          color: cs.onSurfaceVariant),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Open the device screen first so button data can load.',
+                          style: TextStyle(
+                              fontSize: 13, color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           Card(
             color: cs.surface,
             child: ListTile(
               leading: Icon(Icons.add_circle_outline, color: cs.primary),
               title: const Text('Connect a device'),
-              onTap: () => showModalBottomSheet<void>(
-                context:            context,
-                isScrollControlled: true,
-                useSafeArea:        true,
-                backgroundColor:    cs.surface,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                builder: (_) => _AddConnectionSheet(
-                  source: device,
-                  groups: groups,
-                ),
-              ),
+              enabled: !device.deviceType.isSwitch || groups.isNotEmpty,
+              onTap: groups.isNotEmpty || !device.deviceType.isSwitch
+                  ? () => showModalBottomSheet<void>(
+                      context:            context,
+                      isScrollControlled: true,
+                      useSafeArea:        true,
+                      backgroundColor:    cs.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                      ),
+                      builder: (_) => _AddConnectionSheet(
+                        source: device,
+                        groups: groups,
+                      ),
+                    )
+                  : null,
             ),
           ),
         ],
