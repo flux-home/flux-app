@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,15 +6,25 @@ import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/thermostat_models.dart';
+import 'package:matter_home/models/switch_link.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/cluster_parser.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/ui/screens/device_settings_screen.dart';
+import 'package:matter_home/ui/theme.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:provider/provider.dart';
 
-part 'device_detail/device_cards.dart';
+part 'device_detail/switch_card.dart';
+part 'device_detail/on_off_card.dart';
+part 'device_detail/brightness_card.dart';
+part 'device_detail/color_temperature_card.dart';
+part 'device_detail/readings_section.dart';
+part 'device_detail/window_covering_card.dart';
+part 'device_detail/fan_control_card.dart';
+part 'device_detail/smoke_alarm_card.dart';
 part 'device_detail/thermostat_card.dart';
+part 'device_detail/connecting_banner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -41,6 +52,11 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   // ── Readings ───────────────────────────────────────────────────────────────
   /// One-shot cluster JSON parse — never wiped once set.
   List<ClusterReading>? _clusterReadings;
+
+  /// True when the On/Off cluster (0x0006) on this device has a non-empty
+  /// AcceptedCommandList — i.e. the device is genuinely controllable even if
+  /// its [DeviceType] does not declare [DeviceType.hasOnOff].
+  bool _onOffIsControllable = false;
 
   /// Displayed list: _clusterReadings merged with live readings.
   List<ClusterReading>? _readings;
@@ -83,7 +99,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (_clusterReadings == null) {
       final cached = _provider.clusterCacheFor(widget.deviceId);
       if (cached != null) {
-        _clusterReadings = extractReadings(parseClusters(cached), view.deviceType);
+        final endpoints = parseClusters(cached);
+        _clusterReadings = extractReadings(endpoints, view.deviceType);
+        _onOffIsControllable = onOffClusterIsControllable(endpoints);
       }
     }
     setState(() => _readings = _merged(view));
@@ -203,7 +221,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       final jsonStr = await context.read<MatterClusterPort>().readClusters(view.nodeId);
       if (!mounted) return;
       if (jsonStr != null) _provider.cacheClusterJson(widget.deviceId, jsonStr);
-      _clusterReadings = extractReadings(parseClusters(jsonStr), view.deviceType);
+      final endpoints = parseClusters(jsonStr);
+      _clusterReadings = extractReadings(endpoints, view.deviceType);
+      _onOffIsControllable = onOffClusterIsControllable(endpoints);
       setState(() {
         _readings = _merged(view);
         _readingsLoading = false;
@@ -239,17 +259,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(view.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Text(
-                  productName ?? view.deviceType.displayName,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                ),
-                if (view.isStale) ...[
-                  const SizedBox(width: 6),
-                  Icon(Icons.cloud_off_outlined, size: 12, color: cs.onSurfaceVariant.withAlpha(150)),
-                ],
-              ],
+            Text(
+              productName ?? view.deviceType.displayName,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
           ],
         ),
@@ -270,11 +282,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            if (view.deviceType.hasBrightness && view.isOnline) ...[
+            _ConnectingBanner(isStale: view.isStale),
+            if (view.deviceType.isSwitch && view.isOnline) ...[
+              _SwitchCard(view: view, readings: _clusterReadings ?? const []),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType.hasBrightness && view.isOnline && !view.deviceType.isSwitch) ...[
               _BrightnessCard(brightness: view.brightness, onChanged: (v) => provider.setBrightness(view.id, v)),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasOnOff && view.isOnline) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
+            if (view.deviceType.hasOnOff && view.isOnline && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
+            if (_onOffIsControllable && !view.deviceType.hasOnOff && view.isOnline && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
             if (view.deviceType == DeviceType.thermostat && view.isOnline) ...[
               _ThermostatCard(
                 state: view.thermoState,
@@ -300,7 +318,25 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               _SmokeAlarmCard(view: view),
               const SizedBox(height: 12),
             ],
-            _ReadingsSection(readings: _readings, loading: _readingsLoading),
+            // For switch devices, filter out per-endpoint switch readings
+            // (already shown in _SwitchCard) — keep battery etc.
+            // When a device is controllable via AcceptedCommandList but its
+            // DeviceType doesn't declare hasOnOff, the dedicated _OnOffCard is
+            // already shown above; suppress the fallback 0x0006 sensor tile
+            // (label='Power', unit='') so the two don't coexist.
+            _ReadingsSection(
+              readings: () {
+                var r = _readings;
+                if (view.deviceType.isSwitch) {
+                  r = r?.where((x) => x.endpoint == null).toList();
+                }
+                if (_onOffIsControllable && !view.deviceType.hasOnOff) {
+                  r = r?.where((x) => !(x.label == 'Power' && x.unit.isEmpty)).toList();
+                }
+                return r;
+              }(),
+              loading: _readingsLoading,
+            ),
           ],
         ),
       ),
