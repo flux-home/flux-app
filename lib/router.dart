@@ -5,6 +5,7 @@ import 'package:matter_home/ui/screens/commission_screen.dart';
 import 'package:matter_home/ui/screens/device_detail_screen.dart';
 import 'package:matter_home/ui/screens/home_screen.dart';
 import 'package:matter_home/ui/screens/qr_payload_detail_screen.dart';
+import 'package:matter_home/ui/screens/commission_area/room_picker_screen.dart';
 import 'package:matter_home/ui/screens/settings_screen.dart';
 
 final appRouter = GoRouter(
@@ -25,6 +26,11 @@ final appRouter = GoRouter(
         final id = state.pathParameters['id']!;
         return _slide(state, DeviceDetailScreen(deviceId: id));
       },
+    ),
+    GoRoute(
+      path: '/room-picker/:id',
+      pageBuilder: (_, state) =>
+          _slide(state, RoomPickerScreen(deviceId: state.pathParameters['id']!)),
     ),
     GoRoute(
       path: '/settings',

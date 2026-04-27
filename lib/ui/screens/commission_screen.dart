@@ -173,10 +173,25 @@ class _CommissionScreenState extends State<CommissionScreen> {
       });
 
       if (autoStart) {
-        // Only prompt for the Thread dataset when none is configured at all.
-        // If a dataset hex is already set (from stored settings), skip straight
-        // to commissioning.
-        if (_netType == 0 && _threadCtrl.text.trim().isEmpty) {
+        // Manual pairing codes carry no discovery-capability bits, so we
+        // cannot tell whether the device is fresh (needs BLE + network
+        // provisioning) or already on a network (multi-admin via IP/mDNS).
+        // Ask the user before blindly starting a BLE scan.
+        if (p.capabilitiesUnknown) {
+          final method = await _showConnectionPicker();
+          if (!mounted || method == null) return;
+          setState(() {
+            _method = method;
+            // Multi-admin devices already have network credentials — no
+            // provisioning step needed.
+            if (method == CommissionMethod.ip) _netType = 2;
+          });
+        }
+
+        // Only prompt for the Thread dataset for BLE+Thread.
+        if (_method == CommissionMethod.ble &&
+            _netType == 0 &&
+            _threadCtrl.text.trim().isEmpty) {
           final ok = await _ensureThreadDataset();
           if (!mounted || !ok) return;
         }
@@ -330,7 +345,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     if (!mounted) return;
     if (_ctrl.phase == CommissionPhase.done && _ctrl.result != null) {
       await Future<void>.delayed(const Duration(milliseconds: 700));
-      if (mounted) context.pushReplacement('/device/${_ctrl.result!.id}');
+      if (mounted) context.pushReplacement('/room-picker/${_ctrl.result!.id}');
     }
   }
 
@@ -771,11 +786,20 @@ class _CommissionScreenState extends State<CommissionScreen> {
               if (_ctrl.parsed != null && _method == CommissionMethod.ip) ...[
                 const SizedBox(height: 20),
                 const SectionLabel('IP commissioning', style: SectionLabelStyle.prominent),
+                const SizedBox(height: 6),
+                // For multi-admin (already-provisioned) devices the IP is optional:
+                // leave it blank and the app discovers the device via DNS-SD
+                // (_matterc._udp) automatically.
+                const Text(
+                  'Leave IP address empty to find the device automatically via DNS-SD.',
+                  style: TextStyle(fontSize: 12, color: Colors.white54),
+                ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _ipCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'IP address',
+                    labelText: 'IP address (optional)',
+                    hintText: 'Leave empty for auto-discovery',
                     prefixIcon: Icon(Icons.lan_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -1012,7 +1036,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           controller: _manualCtrl,
           decoration: InputDecoration(
             labelText: 'Pairing code',
-            hintText: '12345-678901',
+            hintText: '1234-567-8901',
             prefixIcon: const Icon(Icons.dialpad_outlined),
             border: const OutlineInputBorder(),
             errorText: hasError ? widget.parseError : null,
@@ -1075,7 +1099,15 @@ class _ManualCodeFormatter extends TextInputFormatter {
         .replaceAll(RegExp('[^0-9]'), '')
         .substring(0, newValue.text.replaceAll(RegExp('[^0-9]'), '').length.clamp(0, 11));
     if (digits.isEmpty) return TextEditingValue.empty;
-    final formatted = digits.length > 5 ? '${digits.substring(0, 5)}-${digits.substring(5)}' : digits;
+    // Matter manual pairing code display format: XXXX-XXX-XXXX  (4-3-4, 11 digits)
+    final String formatted;
+    if (digits.length <= 4) {
+      formatted = digits;
+    } else if (digits.length <= 7) {
+      formatted = '${digits.substring(0, 4)}-${digits.substring(4)}';
+    } else {
+      formatted = '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
+    }
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
@@ -1922,6 +1954,139 @@ class _WifiCredentialPanelState extends State<_WifiCredentialPanel> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Connection method picker
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Shown when a manual pairing code is auto-started and the payload carries no
+// discovery-capability bits.  Manual codes are valid for both a factory-fresh
+// BLE device and an already-commissioned device sharing access via multi-admin
+// — the user must tell us which applies.
+
+extension on _CommissionScreenState {
+  Future<CommissionMethod?> _showConnectionPicker() =>
+      showModalBottomSheet<CommissionMethod>(
+        context: context,
+        isDismissible: false,
+        enableDrag: false,
+        useSafeArea: true,
+        backgroundColor: Colors.grey.shade900,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetCtx) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'How is this device connected?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Manual codes don\'t include this info — pick one to continue.',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              _ConnectionTile(
+                icon: Icons.bluetooth_outlined,
+                title: 'New device',
+                subtitle: 'Factory reset, not yet on any network',
+                onTap: () => Navigator.pop(sheetCtx, CommissionMethod.ble),
+              ),
+              const SizedBox(height: 10),
+              _ConnectionTile(
+                icon: Icons.lan_outlined,
+                title: 'Already on a network',
+                subtitle: 'Multi-admin / shared from another app — discovered automatically via DNS-SD',
+                onTap: () => Navigator.pop(sheetCtx, CommissionMethod.ip),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _ConnectionTile extends StatelessWidget {
+  const _ConnectionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(14),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(20),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white30, size: 20),
+          ],
+        ),
       ),
     );
   }
