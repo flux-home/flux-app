@@ -13,6 +13,7 @@ class ControllerParams private constructor() {
         fun setControllerVendorId(vendorId: Int): Builder = throw ChipSdkStubException()
         fun setEnableServerInteractions(enable: Boolean): Builder = throw ChipSdkStubException()
         fun setSkipAttestationCertificateValidation(skip: Boolean): Builder = throw ChipSdkStubException()
+        fun setCASEFailsafeTimerSeconds(seconds: Int): Builder = throw ChipSdkStubException()
         fun build(): ControllerParams = throw ChipSdkStubException()
     }
 }

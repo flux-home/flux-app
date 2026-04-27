@@ -28,13 +28,22 @@ object ClusterIDMapping {
         }
 
         object Command {
-            object MoveToLevel { const val id: Long = 0x00000000L }
+            object MoveToLevel  { const val id: Long = 0x00000000L }
+            object StepWithOnOff { const val id: Long = 0x00000006L }
         }
 
         object MoveToLevelCommandField {
-            object Level          { const val id: Int = 0 }
-            object TransitionTime { const val id: Int = 1 }
-            object OptionsMask    { const val id: Int = 3 }
+            object Level           { const val id: Int = 0 }
+            object TransitionTime  { const val id: Int = 1 }
+            object OptionsMask     { const val id: Int = 3 }
+            object OptionsOverride { const val id: Int = 4 }
+        }
+
+        object StepWithOnOffCommandField {
+            object StepMode        { const val id: Int = 0 }  // 0 = Up, 1 = Down
+            object StepSize        { const val id: Int = 1 }  // 0–254
+            object TransitionTime  { const val id: Int = 2 }
+            object OptionsMask     { const val id: Int = 3 }
             object OptionsOverride { const val id: Int = 4 }
         }
     }
@@ -230,6 +239,56 @@ object ClusterIDMapping {
         const val ID: Long = 0x0000042AL
         object Attribute {
             object MeasuredValue { const val id: Long = 0x00000000L }
+        }
+    }
+
+    object Switch {
+        const val ID: Long = 0x0000003BL
+        object Attribute {
+            object NumberOfPositions { const val id: Long = 0x00000000L }
+            object CurrentPosition   { const val id: Long = 0x00000001L }
+            object MultiPressMax     { const val id: Long = 0x00000002L }
+        }
+        object Event {
+            object SwitchLatched      { const val id: Long = 0x00000000L }
+            object InitialPress       { const val id: Long = 0x00000001L }
+            object LongPress          { const val id: Long = 0x00000002L }
+            object ShortRelease       { const val id: Long = 0x00000003L }
+            object LongRelease        { const val id: Long = 0x00000004L }
+            object MultiPressOngoing  { const val id: Long = 0x00000005L }
+            object MultiPressComplete { const val id: Long = 0x00000006L }
+        }
+    }
+
+    // Matter 1.3 – Electrical Power Measurement cluster (AC and DC).
+    // Attribute units: Voltage = mV, ActiveCurrent = mA, ActivePower = mW,
+    // RMSVoltage = mV, RMSCurrent = mA, RMSPower = mW (all nullable int64s).
+    object ElectricalPowerMeasurement {
+        const val ID: Long = 0x00000090L
+
+        object Attribute {
+            object Voltage        { const val id: Long = 0x00000002L }
+            object ActiveCurrent  { const val id: Long = 0x00000003L }
+            object ActivePower    { const val id: Long = 0x00000006L }
+            object ApparentPower  { const val id: Long = 0x00000008L }
+            object RMSVoltage     { const val id: Long = 0x00000009L }
+            object RMSCurrent     { const val id: Long = 0x0000000AL }
+            object RMSPower       { const val id: Long = 0x0000000BL }
+        }
+    }
+
+    // Matter 1.3 – Electrical Energy Measurement cluster.
+    // CumulativeEnergyImported / Exported are nullable EnergyMeasurementStructs
+    // whose `energy` field carries the value in milliwatt-hours (mWh).
+    object ElectricalEnergyMeasurement {
+        const val ID: Long = 0x00000091L
+
+        object Attribute {
+            object Accuracy                  { const val id: Long = 0x00000000L }
+            object CumulativeEnergyImported  { const val id: Long = 0x00000001L }
+            object CumulativeEnergyExported  { const val id: Long = 0x00000002L }
+            object PeriodicEnergyImported    { const val id: Long = 0x00000003L }
+            object PeriodicEnergyExported    { const val id: Long = 0x00000004L }
         }
     }
 

@@ -68,6 +68,18 @@ class ChipDeviceController(params: ControllerParams) {
         params: CommissionParameters,
     ): Unit = throw ChipSdkStubException()
 
+    fun pairDeviceWithCode(
+        nodeId: Long,
+        setupCode: String,
+        discoverOnce: Boolean,
+        useOnlyOnNetworkDiscovery: Boolean,
+        params: CommissionParameters,
+    ): Unit = throw ChipSdkStubException()
+
+    fun discoverCommissionableNodes(): Unit = throw ChipSdkStubException()
+
+    fun getDiscoveredDevice(idx: Int): DiscoveredDevice? = throw ChipSdkStubException()
+
     fun getConnectedDevicePointer(
         nodeId: Long,
         callback: GetConnectedDeviceCallbackJni.GetConnectedDeviceCallback,
@@ -125,4 +137,17 @@ class ChipDeviceController(params: ControllerParams) {
     fun onNotifyChipConnectionClosed(connId: Int): Unit = throw ChipSdkStubException()
 
     fun close(): Unit = throw ChipSdkStubException()
+}
+
+// Stub for discovered commissionable device (mirrors DiscoveredDevice.java)
+class DiscoveredDevice {
+    var discriminator: Long = 0
+    var ipAddress: String = ""
+    var port: Int = 0
+    var deviceType: Long = 0
+    var vendorId: Int = 0
+    var productId: Int = 0
+    var commissioningMode: String = "WindowNotOpen"
+    var deviceName: String = ""
+    var instanceName: String = ""
 }

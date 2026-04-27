@@ -1,6 +1,7 @@
 package com.fluxhome.app.chip
 
 import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -36,6 +37,7 @@ object ChipClient {
 
     private lateinit var _controller: ChipDeviceController
     private lateinit var _platform: AndroidChipPlatform
+    private var _multicastLock: WifiManager.MulticastLock? = null
 
     /** True when the real CHIPController.aar is loaded. */
     var isAvailable: Boolean = false
@@ -60,7 +62,12 @@ object ChipClient {
                     context,
                     NsdManagerServiceResolver.NsdManagerResolverAvailState(),
                 ),
-                NsdManagerServiceBrowser(context),
+                // Increase browse timeout to 30 s (default is 5 s).
+                // The CHIP SDK browses for sub-typed mDNS records such as
+                // _matterc._udp,_S2 (short discriminator filter).  Some
+                // devices are slow to advertise these sub-types and 5 s
+                // is not enough to reliably find them before commission.
+                NsdManagerServiceBrowser(context, 30_000L),
                 ChipMdnsCallbackImpl(),
                 DiagnosticDataProviderImpl(context),
             )
@@ -68,12 +75,12 @@ object ChipClient {
                 ControllerParams.newBuilder()
                     .setControllerVendorId(VENDOR_ID)
                     .setEnableServerInteractions(true)
-                    // Skip PAA/DAC certificate chain validation against the test trust store.
-                    // This allows commissioning real commercial devices whose PAA certs are not
-                    // in the SDK's built-in test store.
-                    // For production: remove this flag and supply the real PAA trust store via
-                    // setAttestationTrustStoreDelegate().
                     .setSkipAttestationCertificateValidation(true)
+                    // Extend the failsafe to 600 s before the CASE phase begins.
+                    // Without this, devices like the Hue bridge that reboot after
+                    // receiving the NOC expire the default 30-second failsafe and
+                    // roll back the NOC before CommissioningComplete can be sent.
+                    .setCASEFailsafeTimerSeconds(600)
                     .build(),
             )
             // Permissive attestation delegate.
@@ -91,6 +98,21 @@ object ChipClient {
             )
             isAvailable = true
             Log.i(TAG, "CHIP SDK initialised – fabric 0x${_controller.compressedFabricId.toULong().toString(16)}")
+
+            // Acquire a Wi-Fi multicast lock so Android delivers mDNS multicast
+            // packets to the CHIP SDK.  Without this, DNS-SD discovery (both
+            // commissioning _matterc._udp and operational _matter._tcp) is silently
+            // suppressed by the OS, even though CHANGE_WIFI_MULTICAST_STATE is
+            // declared in the manifest.
+            val wifiMgr = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            _multicastLock = wifiMgr
+                ?.createMulticastLock("chip_matter")
+                ?.also {
+                    it.setReferenceCounted(false)
+                    it.acquire()
+                    Log.i(TAG, "Wi-Fi multicast lock acquired")
+                }
         } catch (e: Exception) {
             Log.w(TAG, "CHIP SDK not available (${e.javaClass.simpleName}): simulation mode")
             isAvailable = false

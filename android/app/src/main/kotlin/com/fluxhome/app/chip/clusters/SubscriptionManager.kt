@@ -2,11 +2,14 @@ package com.fluxhome.app.chip.clusters
 
 import android.content.Context
 import android.util.Log
+import chip.devicecontroller.ChipEventStructs
 import chip.devicecontroller.ClusterIDMapping.AirQuality
 import chip.devicecontroller.ClusterIDMapping.BooleanState
 import chip.devicecontroller.ClusterIDMapping.CarbonDioxideConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.CarbonMonoxideConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.ColorControl
+import chip.devicecontroller.ClusterIDMapping.ElectricalEnergyMeasurement
+import chip.devicecontroller.ClusterIDMapping.ElectricalPowerMeasurement
 import chip.devicecontroller.ClusterIDMapping.FanControl
 import chip.devicecontroller.ClusterIDMapping.LevelControl
 import chip.devicecontroller.ClusterIDMapping.OccupancySensing
@@ -15,6 +18,7 @@ import chip.devicecontroller.ClusterIDMapping.Pm25ConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.PowerSource
 import chip.devicecontroller.ClusterIDMapping.RelativeHumidityMeasurement
 import chip.devicecontroller.ClusterIDMapping.SmokeCoAlarm
+import chip.devicecontroller.ClusterIDMapping.Switch
 import chip.devicecontroller.ClusterIDMapping.TemperatureMeasurement
 import chip.devicecontroller.ClusterIDMapping.Thermostat
 import chip.devicecontroller.ClusterIDMapping.WindowCovering
@@ -22,6 +26,7 @@ import chip.devicecontroller.ReportCallback
 import chip.devicecontroller.ResubscriptionAttemptCallback
 import chip.devicecontroller.SubscriptionEstablishedCallback
 import chip.devicecontroller.model.ChipAttributePath
+import chip.devicecontroller.model.ChipEventPath
 import chip.devicecontroller.model.ChipPathId
 import chip.devicecontroller.model.NodeState
 import com.fluxhome.app.chip.ChipClient
@@ -43,7 +48,9 @@ internal object SubscriptionManager {
      *   systemMode, controlSequence, humidityCenti, tempMeasureCenti,
      *   batPercentRaw (0–200), batChargeLevel, occupancy, contactState, airQuality,
      *   liftPercent100ths, fanMode, fanPercent, colorTempMireds, smokeState, coState,
-     *   pm25 (µg/m³ × 10 as int), co2Ppm (ppm as int), coPpm (ppm × 10 as int).
+     *   pm25 (µg/m³ × 10 as int), co2Ppm (ppm as int), coPpm (ppm × 10 as int),
+     *   activePower (mW as Long), voltage (mV as Long), activeCurrent (mA as Long),
+     *   cumulativeEnergyWh (Wh as Long).
      */
     fun subscribeDeviceState(
         context:         Context,
@@ -82,10 +89,10 @@ internal object SubscriptionManager {
                             }
                         },
                         devicePointer,
-                        buildPaths(),
-                        null,
+                        buildAttributePaths(),
+                        buildEventPaths(),
                         1,     // minInterval 1 s
-                        120,   // maxInterval 120 s
+                        15,    // maxInterval 15 s — keeps electrical measurements fresh
                         false, // keepSubscriptions
                         true,  // autoResubscribe
                         0,
@@ -99,7 +106,7 @@ internal object SubscriptionManager {
         )
     }
 
-    private fun buildPaths(): List<ChipAttributePath> {
+    private fun buildAttributePaths(): List<ChipAttributePath> {
         fun wep(clusterId: Long, attrId: Long) = ChipAttributePath.newInstance(
             ChipPathId.forWildcard(), ChipPathId.forId(clusterId), ChipPathId.forId(attrId),
         )
@@ -121,12 +128,65 @@ internal object SubscriptionManager {
             wep(Pm25ConcentrationMeasurement.ID,              Pm25ConcentrationMeasurement.Attribute.MeasuredValue.id),
             wep(CarbonDioxideConcentrationMeasurement.ID,     CarbonDioxideConcentrationMeasurement.Attribute.MeasuredValue.id),
             wep(CarbonMonoxideConcentrationMeasurement.ID,    CarbonMonoxideConcentrationMeasurement.Attribute.MeasuredValue.id),
+            wep(WindowCovering.ID,  WindowCovering.Attribute.CurrentPositionLiftPercent100ths.id),
+            wep(FanControl.ID,      FanControl.Attribute.FanMode.id),
+            wep(FanControl.ID,      FanControl.Attribute.PercentCurrent.id),
+            wep(ColorControl.ID,    ColorControl.Attribute.ColorTemperatureMireds.id),
+            wep(SmokeCoAlarm.ID,    SmokeCoAlarm.Attribute.SmokeState.id),
+            wep(SmokeCoAlarm.ID,    SmokeCoAlarm.Attribute.COState.id),
+            wep(Switch.ID,          Switch.Attribute.CurrentPosition.id),
+            // Electrical Power Measurement (0x0090) — mW, mV, mA; all nullable int64s.
+            // RMS variants cover AC loads; direct variants cover DC. Subscribe to both;
+            // extractAttrs prefers RMS when both are present.
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ActivePower.id),
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ApparentPower.id),
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.Voltage.id),
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ActiveCurrent.id),
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.RMSVoltage.id),
+            wep(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.RMSCurrent.id),
+            // Electrical Energy Measurement (0x0091) — CumulativeEnergyImported is a
+            // nullable EnergyMeasurementStruct; energy field = mWh (int64).
+            wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id),
         )
+    }
+
+    /** Subscribe to Switch cluster events (wildcard endpoint, all buttons). */
+    private fun buildEventPaths(): List<ChipEventPath> {
+        fun wev(eventId: Long) = ChipEventPath.newInstance(
+            ChipPathId.forWildcard(), ChipPathId.forId(Switch.ID), ChipPathId.forId(eventId),
+        )
+        return listOf(
+            wev(Switch.Event.InitialPress.id),
+            wev(Switch.Event.ShortRelease.id),
+            wev(Switch.Event.LongPress.id),
+            wev(Switch.Event.LongRelease.id),
+            wev(Switch.Event.MultiPressComplete.id),
+        )
+    }
+
+    /**
+     * Extracts the `energy` field (milliwatt-hours) from a nullable
+     * [EnergyMeasurementStruct] returned by [AttributeState.getValue].
+     *
+     * The real CHIP SDK returns a generated struct class instance whose exact
+     * name differs between SDK versions.  Using reflection keeps this code
+     * decoupled from the generated type, and lets the build stub (which throws
+     * on all attribute reads) remain stub-only.
+     */
+    private fun extractEnergyMwh(value: Any?): Long? {
+        if (value == null) return null
+        // Some SDK versions decode the struct as a plain Number (legacy).
+        if (value is Number) return value.toLong()
+        return try {
+            val field = value.javaClass.getDeclaredField("energy")
+            field.isAccessible = true
+            (field.get(value) as? Number)?.toLong()
+        } catch (_: Exception) { null }
     }
 
     private fun extractAttrs(state: NodeState): Map<String, Any?> {
         val r = mutableMapOf<String, Any?>()
-        state.getEndpointStates().values.forEach { ep ->
+        state.getEndpointStates().entries.forEach { (endpointId, ep) ->
             fun <T> get(clusterId: Long, attrId: Long, cast: (Any) -> T?): T? =
                 ep.getClusterState(clusterId)?.getAttributeState(attrId)
                     ?.getValue()?.let { cast(it) }
@@ -168,6 +228,70 @@ internal object SubscriptionManager {
             intOf(ColorControl.ID, ColorControl.Attribute.ColorTemperatureMireds.id)   ?.let { r["colorTempMireds"]   = it }
             intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.SmokeState.id)               ?.let { r["smokeState"]        = it }
             intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.COState.id)                  ?.let { r["coState"]           = it }
+            intOf(Switch.ID,        Switch.Attribute.CurrentPosition.id)                ?.let { r["switchCurrentPosition"] = it }
+
+            // ── ElectricalPowerMeasurement (0x0090): nullable int64s –––––––––––––
+            fun longOf(clusterId: Long, attrId: Long): Long? =
+                get(clusterId, attrId) { (it as? Number)?.toLong() }
+
+            // ActivePower (0x0006) in mW — present on both AC and DC endpoints.
+            longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ActivePower.id)
+                ?.let { r["activePower"] = it }
+
+            // Voltage: prefer RMS (AC) over direct (DC) when both are available.
+            (longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.RMSVoltage.id)
+                ?: longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.Voltage.id))
+                ?.let { if (it > 0) r["voltage"] = it }
+
+            // Current: prefer RMS (AC) over direct (DC) when both are available.
+            (longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.RMSCurrent.id)
+                ?: longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ActiveCurrent.id))
+                ?.let { r["activeCurrent"] = it }
+
+            // ── ElectricalEnergyMeasurement (0x0091): struct attribute –––––––––––
+            // CumulativeEnergyImported is a nullable EnergyMeasurementStruct.
+            // Extract the `energy` field (mWh) via reflection to avoid importing
+            // SDK-generated ChipStructs types that are absent from the build stub.
+            ep.getClusterState(ElectricalEnergyMeasurement.ID)
+                ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id)
+                ?.getValue()
+                ?.let { extractEnergyMwh(it) }
+                ?.let { r["cumulativeEnergyWh"] = it / 1000L }
+
+            // ── Switch events: endpoint ID = which button/control, position = scroll direction ──
+            val switchCluster = ep.getClusterState(Switch.ID)
+            if (switchCluster != null) {
+                val pressPos =
+                    (switchCluster.getEventState(Switch.Event.InitialPress.id)
+                        ?.lastOrNull()?.getValue()
+                        as? ChipEventStructs.SwitchClusterInitialPressEvent)?.newPosition
+                    ?: (switchCluster.getEventState(Switch.Event.LongPress.id)
+                        ?.lastOrNull()?.getValue()
+                        as? ChipEventStructs.SwitchClusterLongPressEvent)?.newPosition
+                if (pressPos != null) {
+                    Log.d(TAG, "Switch press: endpoint=$endpointId position=$pressPos")
+                    r["switchCurrentEndpoint"] = endpointId
+                    r["switchCurrentPosition"] = pressPos
+                    r["switchLastEndpoint"]     = endpointId
+                    r["switchLastPosition"]     = pressPos
+                    // Monotonic timestamp used by the Dart layer to detect rapid
+                    // press+release cycles where switchCurrentEndpoint is already
+                    // 0 by the time the update is processed.
+                    r["switchPressTime"]        = System.currentTimeMillis()
+                }
+                val releasePos =
+                    (switchCluster.getEventState(Switch.Event.ShortRelease.id)
+                        ?.lastOrNull()?.getValue()
+                        as? ChipEventStructs.SwitchClusterShortReleaseEvent)?.previousPosition
+                    ?: (switchCluster.getEventState(Switch.Event.LongRelease.id)
+                        ?.lastOrNull()?.getValue()
+                        as? ChipEventStructs.SwitchClusterLongReleaseEvent)?.previousPosition
+                if (releasePos != null) {
+                    Log.d(TAG, "Switch release: endpoint=$endpointId position=$releasePos")
+                    r["switchCurrentEndpoint"] = 0
+                    r["switchCurrentPosition"] = 0
+                }
+            }
         }
         return r
     }

@@ -2,6 +2,7 @@ package com.fluxhome.app
 
 import android.content.Intent
 import android.util.Log
+import com.fluxhome.app.bridge.MatterBridge
 import com.fluxhome.app.chip.AndroidThreadCredentialReader
 import com.fluxhome.app.chip.ChipClient
 import com.fluxhome.app.chip.MatterCommissioner
@@ -96,6 +97,13 @@ class MainActivity : FlutterActivity() {
                         bridge.commissionViaIp(ip, port, disc, pin, nodeId, result)
                     }
 
+                    "commissionViaCode" -> {
+                        val setupCode = call.argument<String>("setupCode") ?: ""
+                        val nodeId    = call.nodeIdArg()
+                                        ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
+                        bridge.commissionViaCode(setupCode, nodeId, result)
+                    }
+
                     "toggleDevice" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         val on     = call.argument<Boolean>("on") ?: false
@@ -106,6 +114,12 @@ class MainActivity : FlutterActivity() {
                         val nodeId = call.nodeIdArg() ?: 0L
                         val level  = call.argument<Int>("level") ?: 0
                         bridge.setLevel(nodeId, level, result)
+                    }
+
+                    "stepLevel" -> {
+                        val nodeId  = call.nodeIdArg() ?: 0L
+                        val stepUp  = call.argument<Boolean>("stepUp") ?: true
+                        bridge.stepLevel(nodeId, stepUp, result)
                     }
 
                     "coveringUp" -> {
@@ -282,6 +296,9 @@ class MainActivity : FlutterActivity() {
 
                     "getVendorId" ->
                         bridge.getVendorId(result)
+
+                    "discoverCommissionableNodes" ->
+                        bridge.discoverCommissionableNodes(result)
 
                     else ->
                         result.notImplemented()

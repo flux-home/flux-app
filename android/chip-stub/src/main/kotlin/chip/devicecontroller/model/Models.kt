@@ -48,6 +48,12 @@ class ChipEventPath private constructor() {
             clusterId: Long,
             eventId: Long,
         ): ChipEventPath = throw ChipSdkStubException()
+
+        @JvmStatic fun newInstance(
+            endpointId: ChipPathId,
+            clusterId: ChipPathId,
+            eventId: ChipPathId,
+        ): ChipEventPath = throw ChipSdkStubException()
     }
 }
 
@@ -73,9 +79,16 @@ class EndpointState {
     fun getClusterStates(): Map<Long, ClusterState> = throw ChipSdkStubException()
 }
 
+class EventState {
+    fun getValue(): Any? = throw ChipSdkStubException()
+    fun getEventNumber(): Long = throw ChipSdkStubException()
+}
+
 class ClusterState {
     fun getAttributeState(attributeId: Long): AttributeState? = throw ChipSdkStubException()
     fun getAttributeStates(): Map<Long, AttributeState> = throw ChipSdkStubException()
+    fun getEventState(eventId: Long): ArrayList<EventState>? = throw ChipSdkStubException()
+    fun getEventStates(): Map<Long, ArrayList<EventState>> = throw ChipSdkStubException()
 }
 
 class AttributeState {

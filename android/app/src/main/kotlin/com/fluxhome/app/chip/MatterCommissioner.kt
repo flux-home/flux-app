@@ -230,7 +230,69 @@ object MatterCommissioner {
         return pairViaIp(context, ipAddress, port, discriminator, setupPinCode, nodeId, params, onEvent)
     }
 
-    // ── Private: reset CHIP SDK BLE state ────────────────────────────────────
+    /**
+     * Commissions a device that is already on the network using DNS-SD discovery.
+     *
+     * The SDK advertises commissionable devices under `_matterc._udp` and this
+     * method uses [ChipDeviceController.pairDeviceWithCode] with
+     * `useOnlyOnNetworkDiscovery = true` so no IP address is required from the
+     * user.  The short discriminator from the manual pairing code is sufficient
+     * to locate the device via mDNS.
+     */
+    suspend fun commissionViaCode(
+        context: Context,
+        setupCode: String,
+        nodeId: Long,
+        onEvent: (String) -> Unit = {},
+    ): Long {
+        val controller = ChipClient.getController()
+        val params = CommissionParameters.Builder()
+            .setCsrNonce(null)
+            .setICDRegistrationInfo(null)
+            .build()
+
+        onEvent("🔍 Discovering device on network via DNS-SD…")
+        onEvent("⚙ Starting CHIP commissioning (on-network PASE)…")
+
+        return suspendCancellableCoroutine { cont ->
+            controller.setCompletionListener(object : GenericChipDeviceListener() {
+                override fun onCommissioningComplete(nodeId: Long, errorCode: Long) {
+                    Log.i(TAG, "commissionViaCode complete nodeId=$nodeId errorCode=$errorCode")
+                    if (!cont.isActive) return
+                    if (errorCode == 0L) {
+                        onEvent("✓ Commissioning complete")
+                        cont.resume(nodeId)
+                    } else {
+                        val ex = CommissioningException(errorCode,
+                            "On-network commission failed (error $errorCode)")
+                        onEvent("✗ Error: ${ex.message}")
+                        cont.resumeWithException(ex)
+                    }
+                }
+                override fun onCommissioningStatusUpdate(nodeId: Long, stage: String, errorCode: Long) {
+                    onEvent("🔄 $stage")
+                }
+                override fun onICDRegistrationInfoRequired() {
+                    controller.updateCommissioningICDRegistrationInfo(buildIcdRegistrationInfo())
+                }
+                override fun onError(error: Throwable?) {
+                    if (!cont.isActive) return
+                    val msg = error?.message ?: "unknown"
+                    onEvent("✗ Error: $msg")
+                    Log.e(TAG, "onError during on-network commissioning: $msg", error)
+                    cont.resumeWithException(error ?: CommissioningException(-4, "On-network commission error: $msg"))
+                }
+            })
+            Log.i(TAG, "pairDeviceWithCode nodeId=$nodeId setupCode=$setupCode")
+            controller.pairDeviceWithCode(
+                nodeId,
+                setupCode,
+                /* discoverOnce            = */ false,
+                /* useOnlyOnNetworkDiscovery = */ true,
+                params,
+            )
+        }
+    }
 
     /**
      * Reads the private `connectionId` field from [ChipDeviceController] via
