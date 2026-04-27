@@ -2,13 +2,15 @@ import 'dart:convert';
 
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
+import 'package:matter_home/models/room.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persists the device list and live-state snapshots to SharedPreferences.
 class DeviceStore {
   DeviceStore._(this._prefs);
-  static const _kDevices = 'matter_devices';
+  static const _kDevices   = 'matter_devices';
   static const _kSnapshots = 'device_snapshots';
+  static const _kRooms     = 'rooms';
 
   final SharedPreferences _prefs;
 
@@ -36,6 +38,33 @@ class DeviceStore {
   Future<void> saveDevices(List<MatterDevice> devices) async {
     final raw = devices.map((d) => jsonEncode(d.toJson())).toList();
     await _prefs.setStringList(_kDevices, raw);
+  }
+
+  // ── Rooms ─────────────────────────────────────────────────────────────────
+
+  /// Returns persisted user-created rooms in creation order.
+  /// The "No Room" sentinel is never stored — the provider injects it.
+  List<Room> loadRooms() {
+    final raw = _prefs.getStringList(_kRooms) ?? [];
+    return raw
+        .map((s) {
+          try {
+            return Room.fromJson(jsonDecode(s) as Map<String, dynamic>);
+          } on Exception catch (_) {
+            return null;
+          }
+        })
+        .whereType<Room>()
+        .toList();
+  }
+
+  Future<void> saveRooms(List<Room> rooms) async {
+    // Never persist the sentinel.
+    final raw = rooms
+        .where((r) => !r.isNoRoom)
+        .map((r) => jsonEncode(r.toJson()))
+        .toList();
+    await _prefs.setStringList(_kRooms, raw);
   }
 
   // ── Snapshots (last-known live state) ─────────────────────────────────────

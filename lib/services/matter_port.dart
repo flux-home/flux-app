@@ -1,20 +1,12 @@
-import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
+import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
-import 'package:matter_home/providers/device_provider.dart' show DeviceProvider;
-import 'package:matter_home/services/matter_channel.dart' show MatterChannel;
-import 'package:matter_home/ui/screens/cluster_inspector_screen.dart' show ClusterInspectorScreen;
-import 'package:matter_home/ui/screens/commission_screen.dart' show CommissionScreen;
-import 'package:matter_home/ui/screens/device_detail_screen.dart' show DeviceDetailScreen;
-import 'package:matter_home/ui/screens/device_settings_screen.dart' show DeviceSettingsScreen;
-import 'package:matter_home/ui/screens/network_check_screen.dart' show NetworkCheckScreen;
-import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart' show MatterSettingsScreen;
-import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart' show ThreadSettingsScreen;
-import 'package:matter_home/ui/screens/thread_diag_screen.dart' show ThreadDiagScreen;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Four focused port interfaces — each caller depends only on what it uses
@@ -23,16 +15,16 @@ import 'package:matter_home/ui/screens/thread_diag_screen.dart' show ThreadDiagS
 /// Subscription lifecycle and live-state event stream.
 /// Used by [DeviceProvider].
 abstract interface class MatterSubscriptionPort {
-  /// Emits subscription updates from the Android CHIP SDK.
-  /// Each event has at least `nodeId` (int) and `type` (String).
-  Stream<Map<String, dynamic>> get deviceStateUpdates;
+  /// Typed events emitted by the Android CHIP SDK subscription layer.
+  /// Decoded from the raw platform-channel map by [MatterChannel].
+  Stream<DeviceStateEvent> get deviceStateUpdates;
 
   Future<bool> startSubscription(int nodeId);
   Future<void> stopSubscription(int nodeId);
 }
 
 /// Commissioning a new device into the fabric.
-/// Used by [DeviceProvider] and [CommissionScreen].
+/// Used by [CommissioningController].
 abstract interface class MatterCommissionPort {
   /// Emits plain-text progress lines from the Android commissioning flow.
   Stream<String> get commissionEvents;
@@ -51,6 +43,11 @@ abstract interface class MatterCommissionPort {
     required int discriminator, required int setupPinCode, int port,
   });
 
+  /// Commissions a device already on the network using DNS-SD discovery.
+  /// [setupCode] is the raw QR payload ("MT:…") or 11-digit manual pairing code.
+  /// No IP address required — the SDK discovers the device via [_matterc._udp].
+  Future<CommissionResult> commissionViaCode({required String setupCode});
+
   Future<List<WifiNetwork>> scanWifiNetworks();
 
   /// Responds to a CREDENTIALS_NEEDED event emitted during BLE commissioning.
@@ -63,8 +60,7 @@ abstract interface class MatterCommissionPort {
 }
 
 /// Per-device cluster reads, attribute writes, and control commands.
-/// Used by [DeviceProvider], [DeviceDetailScreen], [DeviceSettingsScreen],
-/// and [ClusterInspectorScreen].
+/// Screens import this interface file; this file does not import screens.
 abstract interface class MatterClusterPort {
   Future<DeviceStateResult>  readDeviceState(int nodeId);
   Future<int?>               readDeviceTypeId(int nodeId);
@@ -76,6 +72,7 @@ abstract interface class MatterClusterPort {
 
   Future<bool> toggleDevice(int nodeId, {required bool on});
   Future<bool> setLevel(int nodeId, int level);
+  Future<bool> stepLevel(int nodeId, {required bool stepUp});
   Future<bool> coveringUp(int nodeId);
   Future<bool> coveringDown(int nodeId);
   Future<bool> coveringStop(int nodeId);
@@ -89,8 +86,6 @@ abstract interface class MatterClusterPort {
 }
 
 /// Fabric-level operations: OTA, share/remove, diagnostics, fabric identity.
-/// Used by [DeviceProvider], [DeviceSettingsScreen], [MatterSettingsScreen],
-/// [ThreadSettingsScreen], [ThreadDiagScreen], and [NetworkCheckScreen].
 abstract interface class MatterFabricPort {
   Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0});
   Future<bool>  removeDevice(int nodeId);
@@ -107,6 +102,7 @@ abstract interface class MatterFabricPort {
 
   Future<String?> getFabricId();
   Future<int?>    getVendorId();
+  Future<List<CommissionableDevice>> discoverCommissionableNodes();
 
   Future<List<ThreadBorderRouter>>  discoverThreadNetworks();
   Future<String?>                   readAndroidThreadCredentials();

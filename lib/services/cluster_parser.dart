@@ -29,6 +29,8 @@ class ClusterReading {
     required this.unit,
     this.quality,
     this.subtitle,
+    this.endpoint,
+    this.group,
   });
   final IconData       icon;
   final Color          iconColor;
@@ -37,6 +39,12 @@ class ClusterReading {
   final String         unit;
   final ClusterQuality? quality;
   final String?        subtitle;
+  /// Non-null only for Switch cluster (0x003B) entries — carries the endpoint
+  /// so the switch card can build its per-control map.
+  final int?           endpoint;
+  /// Semantic group label (from tag ns=8, tag=6) — ties related switch
+  /// endpoints (press / CW / CCW) into one virtual switch row.
+  final String?        group;
 }
 
 // ── Parsed endpoint / cluster models ─────────────────────────────────────────
@@ -81,6 +89,25 @@ class LiveEndpoint {
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
+
+/// A virtual switch group — one logical control on a multi-button device.
+/// Each group has up to three sets of endpoints: press, clockwise, and
+/// counter-clockwise, derived from semantic tags on the Switch cluster.
+class SwitchGroup {
+  const SwitchGroup({
+    required this.label,
+    required this.pressEndpoints,
+    required this.cwEndpoints,
+    required this.ccwEndpoints,
+  });
+
+  final String   label;
+  final List<int> pressEndpoints;
+  final List<int> cwEndpoints;
+  final List<int> ccwEndpoints;
+
+  List<int> get allEndpoints => [...pressEndpoints, ...cwEndpoints, ...ccwEndpoints];
+}
 
 /// Parses a raw Matter cluster JSON string (from [MatterClusterPort.readClusters])
 /// into a structured list of [LiveEndpoint]s.
@@ -140,6 +167,54 @@ List<ClusterReading> liveReadings(DeviceView view) {
   ].whereType<ClusterReading>().toList();
 }
 
+/// Extracts [SwitchGroup]s from a list of [ClusterReading]s produced by
+/// [extractReadings] or [liveReadings] for a switch device.
+///
+/// Groups are built from the [ClusterReading.group] field (semantic tag
+/// ns=8, tag=6) and the icon is used to classify each endpoint as
+/// press / CW / CCW — the same logic used by the switch card.
+List<SwitchGroup> extractSwitchGroups(List<ClusterReading> readings) {
+  final groups  = <String, _GroupBuilder>{};
+  final order   = <String>[];
+
+  for (final r in readings) {
+    final ep    = r.endpoint;
+    final label = r.group ?? (ep?.toString() ?? '');
+    if (ep == null || label.isEmpty) continue;
+
+    final builder = groups.putIfAbsent(label, () {
+      order.add(label);
+      return _GroupBuilder(label);
+    });
+
+    if (r.icon == Icons.rotate_right || r.icon == Icons.swipe_up_outlined) {
+      builder.cw.add(ep);
+    } else if (r.icon == Icons.rotate_left || r.icon == Icons.swipe_down_outlined) {
+      builder.ccw.add(ep);
+    } else {
+      builder.press.add(ep);
+    }
+  }
+
+  return [
+    for (final label in order)
+      SwitchGroup(
+        label:          label,
+        pressEndpoints: groups[label]!.press,
+        cwEndpoints:    groups[label]!.cw,
+        ccwEndpoints:   groups[label]!.ccw,
+      ),
+  ];
+}
+
+class _GroupBuilder {
+  _GroupBuilder(this.label);
+  final String   label;
+  final List<int> press = [];
+  final List<int> cw    = [];
+  final List<int> ccw   = [];
+}
+
 // ── Live-reading registry ─────────────────────────────────────────────────────
 //
 // Maps subscription attribute keys to renderers.  Keys not listed here are
@@ -156,8 +231,14 @@ final _kLiveRenderers = <String, ClusterReading? Function(dynamic)>{
   'pm25':          _renderPm25,
   'co2Ppm':        _renderCo2,
   'coPpm':         _renderCo,
-  'batPercentRaw': _renderBatteryRaw,
-  'batChargeLevel':_renderBatteryLvl,
+  // Electrical Power Measurement (0x0090) and Energy Measurement (0x0091).
+  // activePower in mW; voltage in mV; activeCurrent in mA; energy in Wh.
+  'activePower':        _renderActivePower,
+  'voltage':            _renderVoltage,
+  'activeCurrent':      _renderActiveCurrent,
+  'cumulativeEnergyWh': _renderCumulativeEnergy,
+  // batPercentRaw / batChargeLevel intentionally omitted — battery is shown
+  // in device settings (DeviceView.batteryInfo), not the readings grid.
 };
 
 // ── Per-attribute renderers ───────────────────────────────────────────────────
@@ -206,12 +287,12 @@ ClusterReading? _renderOccupancy(dynamic v) {
 
 ClusterReading? _renderAirQuality(dynamic v) {
   final (label, color, quality) = switch (v as int) {
-    1 => ('Good',           Colors.green.shade500,      ClusterQuality.good),
-    2 => ('Fair',           Colors.lightGreen.shade400, ClusterQuality.moderate),
-    3 => ('Moderate',       Colors.yellow.shade600,     ClusterQuality.moderate),
-    4 => ('Poor',           Colors.orange.shade500,     ClusterQuality.bad),
-    5 => ('Very Poor',      Colors.red.shade400,        ClusterQuality.bad),
-    6 => ('Extremely Poor', Colors.red.shade700,        ClusterQuality.bad),
+    1 => ('Good',       Colors.green.shade500,      ClusterQuality.good),
+    2 => ('Fair',       Colors.lightGreen.shade400, ClusterQuality.moderate),
+    3 => ('Moderate',   Colors.yellow.shade600,     ClusterQuality.moderate),
+    4 => ('Poor',       Colors.orange.shade500,     ClusterQuality.bad),
+    5 => ('Very Poor',  Colors.red.shade400,        ClusterQuality.bad),
+    6 => ('X.Poor',     Colors.red.shade700,        ClusterQuality.bad),
     _ => ('Unknown',        Colors.grey.shade500,       null as ClusterQuality?),
   };
   return ClusterReading(
@@ -278,6 +359,56 @@ ClusterReading? _renderCo(dynamic v) {
   );
 }
 
+ClusterReading? _renderActivePower(dynamic v) {
+  final mw = v as int;
+  final w  = mw / 1000.0;
+  return ClusterReading(
+    icon:         Icons.bolt_outlined,
+    iconColor:    Colors.amber.shade600,
+    label:        'Power',
+    displayValue: w < 10 ? w.toStringAsFixed(1) : w.toStringAsFixed(0),
+    unit:         'W',
+  );
+}
+
+ClusterReading? _renderVoltage(dynamic v) {
+  final mv = v as int;
+  if (mv <= 0) return null;
+  return ClusterReading(
+    icon:         Icons.electrical_services_outlined,
+    iconColor:    Colors.blue.shade400,
+    label:        'Voltage',
+    displayValue: (mv / 1000.0).toStringAsFixed(1),
+    unit:         'V',
+  );
+}
+
+ClusterReading? _renderActiveCurrent(dynamic v) {
+  final ma   = v as int;
+  final amps = ma / 1000.0;
+  return ClusterReading(
+    icon:         Icons.electric_bolt_outlined,
+    iconColor:    Colors.orange.shade400,
+    label:        'Current',
+    displayValue: amps < 10 ? amps.toStringAsFixed(2) : amps.toStringAsFixed(1),
+    unit:         'A',
+  );
+}
+
+ClusterReading? _renderCumulativeEnergy(dynamic v) {
+  final wh = v as int;
+  final (display, unit) = wh >= 1000
+      ? ((wh / 1000.0).toStringAsFixed(2), 'kWh')
+      : ('$wh', 'Wh');
+  return ClusterReading(
+    icon:         Icons.energy_savings_leaf_outlined,
+    iconColor:    Colors.green.shade500,
+    label:        'Energy',
+    displayValue: display,
+    unit:         unit,
+  );
+}
+
 ClusterReading? _renderBatteryRaw(dynamic v) {
   final pct = (v as int) ~/ 2; // batPercentRaw is 0–200; half = percent
   final q   = pct > 60 ? ClusterQuality.good
@@ -312,6 +443,33 @@ ClusterReading? _renderBatteryLvl(dynamic v) {
   );
 }
 
+/// Returns true if any endpoint in [endpoints] exposes the On/Off cluster
+/// (0x0006) with a non-empty AcceptedCommandList (attr 0xFFF9).
+///
+/// This is the Matter-specified way to distinguish a *controllable* On/Off
+/// cluster (device accepts On / Off / Toggle commands) from a cluster that
+/// is only present for state reporting.  Devices like the IKEA APLSTUGA
+/// carry device-type IDs that do not map to [DeviceType.hasOnOff], but their
+/// AcceptedCommandList proves they are genuinely switchable.
+bool onOffClusterIsControllable(List<LiveEndpoint> endpoints) {
+  for (final ep in endpoints) {
+    for (final cluster in ep.clusters) {
+      if (cluster.clusterId != 0x0006) continue;
+      final cmdAttr = cluster.attrs.where((a) => a.id == 0xFFF9).firstOrNull;
+      if (cmdAttr == null) continue;
+      if (_parseCommandList(cmdAttr.raw).isNotEmpty) return true;
+    }
+  }
+  return false;
+}
+
+/// Parses a Kotlin / Java [List.toString] like `"[0, 1, 2]"` into integers.
+List<int> _parseCommandList(String raw) =>
+    RegExp(r'\d+').allMatches(raw)
+        .map((m) => int.tryParse(m.group(0)!))
+        .whereType<int>()
+        .toList();
+
 /// Converts [LiveEndpoint] list into display-ready [ClusterReading]s for [deviceType].
 List<ClusterReading> extractReadings(
     List<LiveEndpoint> endpoints, DeviceType deviceType) {
@@ -327,7 +485,10 @@ List<ClusterReading> extractReadings(
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
-const _kGlobalAttrIds = {0xFFF8, 0xFFF9, 0xFFFA, 0xFFFB, 0xFFFC, 0xFFFD};
+// Global attributes stripped from LiveCluster.attrs during parsing.
+// 0xFFF9 (AcceptedCommandList) is intentionally kept so that
+// onOffClusterIsControllable() can inspect it.
+const _kGlobalAttrIds = {0xFFF8, 0xFFFA, 0xFFFB, 0xFFFC, 0xFFFD};
 
 List<SemanticTag> _parseSemanticTagsForEp(LiveCluster? descriptor) {
   if (descriptor == null) return const [];
@@ -517,34 +678,9 @@ ClusterReading? _readingFromCluster(
         unit: '',
       );
 
-    // ── Power Source 0x002F (battery) ───────────────────────────────────────
+    // ── Power Source 0x002F (battery) — shown in device settings, not the grid
     case 0x002F:
-      final pctRaw  = int.tryParse(raw(0x000C) ?? '');
-      final lvlRaw  = int.tryParse(raw(0x000E) ?? '');
-      final voltRaw = int.tryParse(raw(0x000B) ?? '');
-      if (pctRaw == null && lvlRaw == null && voltRaw == null) return null;
-      String display; String unit; ClusterQuality? q; Color color;
-      if (pctRaw != null) {
-        final pct = pctRaw ~/ 2;
-        display = '$pct'; unit = '%';
-        q = pct > 60 ? ClusterQuality.good : pct > 20 ? ClusterQuality.moderate : ClusterQuality.bad;
-        color = qualityColor(q);
-      } else if (lvlRaw != null) {
-        display = switch (lvlRaw) { 0 => 'OK', 1 => 'Warning', 2 => 'Critical', _ => '?' };
-        unit = '';
-        q = switch (lvlRaw) { 0 => ClusterQuality.good, 1 => ClusterQuality.moderate, _ => ClusterQuality.bad };
-        color = qualityColor(q);
-      } else {
-        display = (voltRaw! / 1000.0).toStringAsFixed(2); unit = 'V';
-        color = Colors.green.shade500;
-      }
-      final icon = q == ClusterQuality.bad ? Icons.battery_alert
-                 : q == ClusterQuality.good ? Icons.battery_full
-                 : Icons.battery_3_bar;
-      return ClusterReading(
-        icon: icon, iconColor: color,
-        label: 'Battery', displayValue: display, unit: unit, quality: q,
-      );
+      return null;
 
     // ── Switch 0x003B ────────────────────────────────────────────────────────
     case 0x003B: {
@@ -586,6 +722,8 @@ ClusterReading? _readingFromCluster(
         label:        label,
         displayValue: '$current',
         unit:         '',
+        endpoint:     cluster.endpoint,
+        group:        groupLabel,
       );
     }
 
@@ -621,7 +759,7 @@ ClusterReading? _readingFromCluster(
     case 0x005B:
       final v = int.tryParse(raw(0x0000) ?? '');
       if (v == null || v == 0) return null;
-      const labels = {1:'Good', 2:'Fair', 3:'Moderate', 4:'Poor', 5:'Very Poor', 6:'Extremely Poor'};
+      const labels = {1:'Good', 2:'Fair', 3:'Moderate', 4:'Poor', 5:'Very Poor', 6:'X.Poor'};
       final label = labels[v]; if (label == null) return null;
       final q = switch (v) {
         1      => ClusterQuality.good,
@@ -714,6 +852,32 @@ ClusterReading? _readingFromCluster(
         displayValue: '$k',
         unit: 'K',
       );
+
+    // ── Electrical Power Measurement 0x0090 ──────────────────────────────────
+    // ActivePower (0x0006) is a nullable int64 in mW — serialised as a bare
+    // number by the cluster inspector so int.tryParse works directly.
+    // Voltage and current are shown via live-subscription renderers; only
+    // power is shown in the static grid to keep the cluster-read tile minimal.
+    case 0x0090: {
+      final mw = int.tryParse(raw(0x0006) ?? '');
+      if (mw == null) return null;
+      final w = mw / 1000.0;
+      return ClusterReading(
+        icon:         Icons.bolt_outlined,
+        iconColor:    Colors.amber.shade600,
+        label:        'Power',
+        displayValue: w < 10 ? w.toStringAsFixed(1) : w.toStringAsFixed(0),
+        unit:         'W',
+      );
+    }
+
+    // ── Electrical Energy Measurement 0x0091 ──────────────────────────────────
+    // CumulativeEnergyImported (0x0001) is an EnergyMeasurementStruct; the
+    // cluster inspector serialises it via the SDK struct’s toString(), which
+    // is not a parseable number.  Energy is shown only via the live
+    // subscription renderer (_renderCumulativeEnergy).
+    case 0x0091:
+      return null;
 
     // ── Nitrogen Dioxide 0x0413 ─────────────────────────────────────────────
     case 0x0413: {

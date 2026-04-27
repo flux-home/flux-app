@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -46,11 +48,44 @@ class MatterChannel implements MatterPort {
   @override
   Stream<String> get commissionEvents => _events.receiveBroadcastStream().map((e) => e as String);
 
-  /// Emits subscription updates from the Android CHIP SDK.
-  /// Each event has at least `nodeId` (int) and `type` (String).
+  /// Decodes the raw platform-channel map into a typed [DeviceStateEvent].
+  ///
+  /// This is the single place in Dart that knows about the map's key names.
+  /// Every consumer above this layer works with the sealed class instead.
   @override
-  Stream<Map<String, dynamic>> get deviceStateUpdates =>
-      _deviceEvents.receiveBroadcastStream().map((e) => Map<String, dynamic>.from(e as Map<Object?, Object?>));
+  Stream<DeviceStateEvent> get deviceStateUpdates =>
+      _deviceEvents.receiveBroadcastStream().map((e) {
+        final map = Map<String, dynamic>.from(e as Map<Object?, Object?>);
+        final nodeId = (map['nodeId'] as num?)?.toInt() ?? 0;
+        return switch (map['type'] as String?) {
+          'established' => SubscriptionEstablishedEvent(nodeId),
+          'resubscribing' => SubscriptionResubscribingEvent(
+            nodeId,
+            (map['nextMs'] as num?)?.toInt() ?? 0,
+          ),
+          'error' => SubscriptionErrorEvent(
+            nodeId,
+            map['message'] as String? ?? 'unknown',
+          ),
+          'otaProgress' => OtaProgressEvent(
+            nodeId,
+            phase:    map['phase']    as String? ?? '',
+            progress: (map['progress'] as num?)?.toInt(),
+            message:  map['message']  as String?,
+          ),
+          // Default branch covers 'update' and any future attr event types.
+          _ => SubscriptionUpdateEvent(nodeId, _stripEnvelope(map)),
+        };
+      });
+
+  /// Removes the envelope keys so [SubscriptionUpdateEvent.attrs] contains
+  /// only the attribute payload (the keys defined in SubscriptionManager.kt).
+  static Map<String, dynamic> _stripEnvelope(Map<String, dynamic> m) {
+    final attrs = Map<String, dynamic>.from(m);
+    attrs.remove('nodeId');
+    attrs.remove('type');
+    return attrs;
+  }
 
   // ── Subscription control ───────────────────────────────────────────────────
 
@@ -136,6 +171,19 @@ class MatterChannel implements MatterPort {
     }
   }
 
+  @override
+  Future<CommissionResult> commissionViaCode({required String setupCode}) async {
+    try {
+      final result = await _method.invokeMapMethod<String, dynamic>(
+          'commissionViaCode', {'setupCode': setupCode});
+      if (result == null) return CommissionResult.err('No result from channel');
+      return CommissionResult.ok(
+          nodeId: result['nodeId'] as int, deviceTypeId: result['deviceTypeId'] as int?);
+    } on PlatformException catch (e) {
+      return CommissionResult.err(e.message ?? 'On-network commission failed');
+    }
+  }
+
   // ── Device control ─────────────────────────────────────────────────────────
 
   @override
@@ -144,6 +192,10 @@ class MatterChannel implements MatterPort {
 
   @override
   Future<bool> setLevel(int nodeId, int level) => _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
+
+  @override
+  Future<bool> stepLevel(int nodeId, {required bool stepUp}) =>
+      _invoke('stepLevel', false, args: {'nodeId': nodeId, 'stepUp': stepUp});
 
   // ── Window Covering ────────────────────────────────────────────────────────
 
@@ -407,4 +459,18 @@ class MatterChannel implements MatterPort {
 
   @override
   Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);
+
+  @override
+  Future<List<CommissionableDevice>> discoverCommissionableNodes() =>
+      _invoke<List<CommissionableDevice>>(
+        'discoverCommissionableNodes',
+        const [],
+        decode: (raw) {
+          if (raw == null) return const [];
+          return (raw as List<dynamic>)
+              .map((e) => CommissionableDevice.fromMap(
+                    Map<String, dynamic>.from(e as Map<Object?, Object?>)))
+              .toList();
+        },
+      );
 }
