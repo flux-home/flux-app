@@ -363,7 +363,14 @@ class _ManualCodeFormatter extends TextInputFormatter {
 
     if (digits.isEmpty) return TextEditingValue.empty;
 
-    final formatted = digits.length > 5 ? '${digits.substring(0, 5)}-${digits.substring(5)}' : digits;
+    final String formatted;
+    if (digits.length <= 4) {
+      formatted = digits;
+    } else if (digits.length <= 7) {
+      formatted = '${digits.substring(0, 4)}-${digits.substring(4)}';
+    } else {
+      formatted = '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
+    }
 
     return TextEditingValue(
       text: formatted,

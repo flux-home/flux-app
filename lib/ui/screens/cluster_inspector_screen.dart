@@ -110,6 +110,8 @@ const _kClusterNames = <int, String>{
   0x0046: 'ICD Management',
   0x0050: 'Mode Select',
   0x0059: 'Scenes Management',
+  0x005B: 'Air Quality',
+  0x005C: 'Smoke / CO Alarm',
   0x0071: 'HEPA Filter Monitoring',
   0x0072: 'Activated Carbon Filter Monitoring',
   0x0080: 'Boolean State Configuration',
@@ -216,8 +218,26 @@ const _kAttrNames = <int, Map<int, String>>{
     0x0005: 'CurrentFabricIndex',
   },
   0x0046: {0x0000: 'IdleModeDuration', 0x0001: 'ActiveModeDuration', 0x0002: 'ActiveModeThreshold'},
+  // Air Quality (0x005B) — Matter spec §7.4
+  0x005B: {
+    0x0000: 'AirQuality',  // AirQualityEnum: 0=Unknown 1=Good 2=Fair 3=Moderate 4=Poor 5=VeryPoor 6=ExtremelyPoor
+  },
+  // Smoke / CO Alarm (0x005C) — Matter spec §7.7
+  0x005C: {
+    0x0001: 'SmokeState',           // AlarmStateEnum: 0=Normal 1=Warning 2=Critical
+    0x0002: 'COState',              // AlarmStateEnum
+    0x0003: 'BatteryAlert',         // AlarmStateEnum
+    0x0004: 'DeviceMuted',          // MuteStateEnum: 0=NotMuted 1=Muted
+    0x0005: 'TestInProgress',       // bool
+    0x0006: 'HardwareFaultAlert',   // bool
+    0x0007: 'EndOfServiceAlert',    // EndOfServiceEnum: 0=Normal 1=Expired
+    0x0008: 'InterconnectSmokeAlarm', // AlarmStateEnum
+    0x0009: 'InterconnectCOAlarm',    // AlarmStateEnum
+    0x000A: 'ContaminationState',   // ContaminationStateEnum: 0=Normal 1=Low 2=Warning 3=Critical
+    0x000B: 'SmokeSensitivityLevel', // SensitivityEnum: 0=High 1=Standard 2=Low
+    0x000C: 'ExpiryDate',           // epoch-s
+  },
   0x0201: {
-    0x0000: 'LocalTemperature',
     0x0001: 'OutdoorTemperature',
     0x0003: 'AbsMinHeatSetpointLimit',
     0x0004: 'AbsMaxHeatSetpointLimit',
@@ -301,6 +321,7 @@ const _kCommandNames = <int, Map<int, String>>{
   0x003F: {0: 'KeySetWrite', 1: 'KeySetRead', 3: 'KeySetRemove', 4: 'KeySetReadAllIndices'},
   0x0046: {0: 'RegisterClient', 2: 'UnregisterClient', 3: 'StayActiveRequest', 4: 'GetOperatingInfo'},
   0x0050: {0: 'ChangeToMode'},
+  0x005C: {0: 'SelfTestRequest'},
   0x0101: {0: 'LockDoor', 1: 'UnlockDoor', 3: 'UnlockWithTimeout'},
   0x0102: {
     0: 'UpOrOpen',
