@@ -41,6 +41,13 @@ class MainActivity : FlutterActivity() {
 
     private val bridge by lazy { MatterBridge(applicationContext) }
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Start the foreground service so automations keep running
+        // even when the user navigates away from the app.
+        startForegroundService(Intent(this, MatterForegroundService::class.java))
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
