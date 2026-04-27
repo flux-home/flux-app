@@ -169,25 +169,22 @@ object MatterCommissioner {
         val hasWifi   = safeSsid != null
         val hasThread = threadDatasetTlv != null
 
-        val networkCreds: NetworkCredentials = when {
-            // Both available or neither — ask Flutter to decide.
-            (!hasWifi && !hasThread) || (hasWifi && hasThread) -> {
-                onEvent("🔌 CREDENTIALS_NEEDED")
-                pendingCreds = CompletableDeferred()
-                val chosen = pendingCreds!!.await()
-                    ?: throw CommissioningException(-3, "Commissioning cancelled by user")
-                chosen
-            }
-            hasWifi -> {
+        // Provide best-guess credentials when we already know the type.
+        // When both or neither are available we pass null and defer the
+        // decision to onReadCommissioningInfo, which fires after the SDK
+        // has read the device's actual network interface endpoints.
+        val networkCreds: NetworkCredentials? = when {
+            hasWifi && !hasThread -> {
                 onEvent("📶 Using Wi-Fi SSID: $safeSsid")
                 NetworkCredentials.forWiFi(
                     NetworkCredentials.WiFiCredentials(safeSsid!!, wifiPassword ?: ""))
             }
-            else -> {
+            hasThread && !hasWifi -> {
                 onEvent("🧵 Using Thread operational dataset (${threadDatasetTlv!!.size} bytes)")
                 NetworkCredentials.forThread(
                     NetworkCredentials.ThreadCredentials(threadDatasetTlv))
             }
+            else -> null  // resolved in onReadCommissioningInfo
         }
 
         // 4 ── CHIP pairing ────────────────────────────────────────────────────
@@ -343,7 +340,7 @@ object MatterCommissioner {
         connId: Int,
         nodeId: Long,
         pinCode: Long,
-        network: NetworkCredentials,
+        network: NetworkCredentials?,
         wifiSsid: String?,
         wifiPassword: String?,
         threadDatasetTlv: ByteArray?,
@@ -352,7 +349,7 @@ object MatterCommissioner {
         val controller = ChipClient.getController()
         val params = CommissionParameters.Builder()
             .setCsrNonce(null)
-            .setNetworkCredentials(network)
+            .apply { if (network != null) setNetworkCredentials(network) }
             .setICDRegistrationInfo(null)
             .build()
 
@@ -401,25 +398,25 @@ object MatterCommissioner {
                                 NetworkCredentials.ThreadCredentials(threadDatasetTlv))
                         ).also { onEvent("🧵 Confirmed: Thread dataset") }
 
-                    // WiFi device but we started with Thread (or no) creds:
-                    // block this callback thread (= pause the CHIP state machine)
-                    // and wait for Flutter to collect WiFi credentials.
+                    // WiFi device but no WiFi credentials — block the JNI thread
+                    // and wait for Flutter to collect them.
                     isWifi && safeSsid == null -> {
-                        onEvent("🔌 CREDENTIALS_NEEDED")
+                        onEvent("🔌 CREDENTIALS_NEEDED:WIFI")
                         pendingCreds = CompletableDeferred()
-                        // runBlocking is safe here: this callback runs on a background
-                        // JNI thread (confirmed via logcat), not the main looper.
-                        // Blocking it pauses the commissioning state machine until
-                        // Flutter calls provideCredentials().
                         val chosen = runBlocking { pendingCreds!!.await() }
                         if (chosen != null) {
                             controller.updateCommissioningNetworkCredentials(chosen)
                         }
-                        // If null (user cancelled), commissioning continues and will
-                        // fail at RequestWiFiCredentials — Flutter handles the error.
                     }
-                    isThread && threadDatasetTlv == null ->
-                        onEvent("⚠ Thread device but no Thread dataset — commissioning will fail")
+                    // Thread device but no Thread dataset — same pattern.
+                    isThread && threadDatasetTlv == null -> {
+                        onEvent("🔌 CREDENTIALS_NEEDED:THREAD")
+                        pendingCreds = CompletableDeferred()
+                        val chosen = runBlocking { pendingCreds!!.await() }
+                        if (chosen != null) {
+                            controller.updateCommissioningNetworkCredentials(chosen)
+                        }
+                    }
                 }
             }
 

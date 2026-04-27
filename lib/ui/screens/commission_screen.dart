@@ -135,16 +135,34 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   // ── Credential callback (injected into controller) ────────────────────────
 
-  Future<CommissionCredentials?> _credentialCallback() async {
-    final confirmed = await _collectWifiCredentials();
-    if (confirmed) {
-      return CommissionCredentials.wifi(_ssidCtrl.text.trim(), _passCtrl.text);
+  Future<CommissionCredentials?> _credentialCallback(bool isThread) async {
+    if (isThread) {
+      // Show the Thread dataset picker — same sheet as _ensureThreadDataset.
+      final datasets = await ThreadSettingsService.loadDatasets();
+      if (!mounted) return null;
+      final picked = await showModalBottomSheet<ThreadDataset>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => _ThreadDatasetPromptSheet(datasets: datasets),
+      );
+      if (picked == null) return null;
+      await ThreadSettingsService.setActive(picked.hex);
+      if (!picked.isEmpty) await ThreadSettingsService.addDataset(picked);
+      if (mounted) {
+        setState(() {
+          _activeDataset = picked;
+          _threadExplicitlySelected = true;
+          _threadCtrl.text = picked.hex;
+        });
+      }
+      return CommissionCredentials.thread(picked.hex);
+    } else {
+      final confirmed = await _collectWifiCredentials();
+      if (confirmed) {
+        return CommissionCredentials.wifi(_ssidCtrl.text.trim(), _passCtrl.text);
+      }
+      return null;
     }
-    final threadHex = _threadCtrl.text.trim();
-    if (threadHex.isNotEmpty) {
-      return CommissionCredentials.thread(threadHex);
-    }
-    return null;
   }
 
   // ── Payload handling ───────────────────────────────────────────────────────

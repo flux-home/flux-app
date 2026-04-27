@@ -190,7 +190,9 @@ class CommissioningController extends ChangeNotifier {
   final DeviceProvider _provider;
 
   final Future<bool> Function() requestBlePermissions;
-  final Future<CommissionCredentials?> Function() onNeedsCredentials;
+  /// Called when the device needs credentials during commissioning.
+  /// [isThread] is true when the device is a Thread device, false for WiFi.
+  final Future<CommissionCredentials?> Function(bool isThread) onNeedsCredentials;
   final String Function() threadDataset;
 
   // ── Public state ──────────────────────────────────────────────────────────
@@ -286,13 +288,14 @@ class CommissioningController extends ChangeNotifier {
 
     _eventSub = _port.commissionEvents.listen(_onEvent);
 
-    // Pre-collect Wi-Fi credentials for BLE+WiFi when the form was left empty.
+    // Pre-collect Wi-Fi credentials for BLE+WiFi when SSID is not filled in.
+    // Only fires when the user has explicitly selected WiFi (netType 1) — for
+    // unknown/auto-detect (netType 2) we let onReadCommissioningInfo decide.
     var cfg = config;
     if (config.method == CommissionMethod.ble &&
         config.netType == 1 &&
-        config.wifiSsid.isEmpty &&
-        threadDataset().trim().isEmpty) {
-      final creds = await onNeedsCredentials();
+        config.wifiSsid.isEmpty) {
+      final creds = await onNeedsCredentials(false); // false = WiFi
       if (sessionId != _sessionId) return; // cancelled while awaiting
       if (creds == null) {
         await _eventSub?.cancel();
@@ -424,7 +427,10 @@ class CommissioningController extends ChangeNotifier {
     if (p.hasOnNetwork) return 2;
     if (p.discoveryCapabilities.contains(DiscoveryCapability.wifiPaf)) return 1;
     if (threadSelected || threadDataset.trim().isNotEmpty) return 0;
-    return 1;
+    // Unknown BLE device with no credentials configured: default to None (2)
+    // so the app doesn't assume WiFi. The actual type is learned from
+    // onReadCommissioningInfo after BLE connects.
+    return 2;
   }
 
   // ── Name generation ───────────────────────────────────────────────────────
@@ -454,8 +460,11 @@ class CommissioningController extends ChangeNotifier {
       if (idx >= 0) stageIdx = idx;
     }
 
-    if (event.contains('CREDENTIALS_NEEDED')) {
-      scheduleMicrotask(_handleCredentialsNeeded);
+    if (event.contains('CREDENTIALS_NEEDED:THREAD')) {
+      scheduleMicrotask(() => _handleCredentialsNeeded(true));
+    } else if (event.contains('CREDENTIALS_NEEDED')) {
+      // CREDENTIALS_NEEDED:WIFI or legacy plain CREDENTIALS_NEEDED
+      scheduleMicrotask(() => _handleCredentialsNeeded(false));
     }
 
     final human = _eventToHumanText(event);
@@ -469,8 +478,8 @@ class CommissioningController extends ChangeNotifier {
     _appendRaw(event, level: lvl);
   }
 
-  Future<void> _handleCredentialsNeeded() async {
-    final creds = await onNeedsCredentials();
+  Future<void> _handleCredentialsNeeded(bool isThread) async {
+    final creds = await onNeedsCredentials(isThread);
     if (creds?.wifiSsid != null && creds!.wifiSsid!.isNotEmpty) {
       await _port.provideCredentials(ssid: creds.wifiSsid, password: creds.wifiPassword);
     } else if (creds?.threadDatasetHex != null && creds!.threadDatasetHex!.isNotEmpty) {
