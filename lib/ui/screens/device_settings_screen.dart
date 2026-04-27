@@ -9,6 +9,9 @@ import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/models/automation_rule.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/switch_group.dart';
+import 'package:collection/collection.dart';
 import 'package:matter_home/services/cluster_parser.dart';
 import 'package:matter_home/services/dcl_service.dart';
 import 'package:matter_home/models/device_type.dart';
@@ -1232,9 +1235,9 @@ class _BatteryCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────
-// Linked devices summary tile — shows target device chips, taps into config
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Linked devices summary tile → pushes to connections screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _AutomationsSummaryTile extends StatelessWidget {
   const _AutomationsSummaryTile({required this.device});
@@ -1242,13 +1245,9 @@ class _AutomationsSummaryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
-    final rules    = context.watch<DeviceProvider>().rulesFor(device.id);
-    // Collect unique target device IDs across all rules.
-    final targetIds = rules
-        .expand((r) => r.targetDeviceIds)
-        .toSet()
-        .toList();
+    final cs          = Theme.of(context).colorScheme;
+    final connections = context.watch<DeviceProvider>().connectionsFor(device.id);
+    final targetIds   = connections.map((c) => c.targetDeviceId).toSet().toList();
 
     return Card(
       color: cs.surface,
@@ -1257,15 +1256,14 @@ class _AutomationsSummaryTile extends StatelessWidget {
             ? Text('No linked devices',
                 style: TextStyle(color: cs.onSurfaceVariant))
             : Wrap(
-                spacing: 6,
-                runSpacing: 4,
+                spacing: 6, runSpacing: 4,
                 children: _DeviceChips(deviceIds: targetIds).chips(context),
               ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute<void>(
-            builder: (_) => _AutomationsScreen(device: device),
+            builder: (_) => _ConnectionsScreen(device: device),
           ),
         ),
       ),
@@ -1273,276 +1271,393 @@ class _AutomationsSummaryTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────
-// Automations screen — full gesture configuration (pushed)
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Connections screen — one card per (target device × slot)
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _AutomationsScreen extends StatelessWidget {
-  const _AutomationsScreen({required this.device});
+class _ConnectionsScreen extends StatelessWidget {
+  const _ConnectionsScreen({required this.device});
   final MatterDevice device;
+
+  List<SwitchGroup> _groups(DeviceProvider provider) {
+    final json = provider.clusterCacheFor(device.id);
+    if (json == null) return [];
+    return extractSwitchGroups(
+        extractReadings(parseClusters(json), device.deviceType));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final provider    = context.watch<DeviceProvider>();
+    final connections = provider.connectionsFor(device.id);
+    final groups      = _groups(provider);
+    final cs          = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Linked devices')),
-      body: _AutomationsSection(device: device),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────────
-// Automations section — dispatches to switch or contact variant
-// ─────────────────────────────────────────────────────────────────────────────────
-
-class _AutomationsSection extends StatelessWidget {
-  const _AutomationsSection({required this.device});
-  final MatterDevice device;
-
-  @override
-  Widget build(BuildContext context) {
-    if (device.deviceType == DeviceType.contactSensor) {
-      return ListView(
+      body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-        children: [_ContactAutomationsCard(device: device)],
-      );
-    }
-    final provider = context.watch<DeviceProvider>();
-    final json     = provider.clusterCacheFor(device.id);
-    final groups   = json != null
-        ? extractSwitchGroups(extractReadings(parseClusters(json), device.deviceType))
-        : <SwitchGroup>[];
-
-    if (groups.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Text(
-            'Open the device screen first to load button data.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13),
-          ),
-        ),
-      );
-    }
-
-    final rules = provider.rulesFor(device.id);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-      children: [
-        for (int i = 0; i < groups.length; i++) ...[
-          if (i > 0) const SizedBox(height: 12),
+        children: [
+          for (final conn in connections)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ConnectionCard(
+                source:     device,
+                connection: conn,
+                groups:     groups,
+              ),
+            ),
+          const SizedBox(height: 4),
           Card(
-            color: Theme.of(context).colorScheme.surface,
-            child: _SwitchSlotSection(
-              device: device,
-              group:  groups[i],
-              rules:  rules.where((r) => r.switchGroup == groups[i].label).toList(),
+            color: cs.surface,
+            child: ListTile(
+              leading: Icon(Icons.add_circle_outline, color: cs.primary),
+              title: const Text('Connect a device'),
+              onTap: () => showModalBottomSheet<void>(
+                context:            context,
+                isScrollControlled: true,
+                useSafeArea:        true,
+                backgroundColor:    cs.surface,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                builder: (_) => _AddConnectionSheet(
+                  source: device,
+                  groups: groups,
+                ),
+              ),
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────
-// One slot: header + three gesture rows (press / CW / CCW)
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Connection card: target device + gesture summary + edit tap
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _SwitchSlotSection extends StatelessWidget {
-  const _SwitchSlotSection({
-    required this.device,
-    required this.group,
-    required this.rules,
+class _ConnectionCard extends StatelessWidget {
+  const _ConnectionCard({
+    required this.source,
+    required this.connection,
+    required this.groups,
   });
-  final MatterDevice       device;
-  final SwitchGroup        group;
-  final List<AutomationRule> rules;
+  final MatterDevice       source;
+  final DeviceConnection   connection;
+  final List<SwitchGroup>  groups;
 
-  AutomationRule? _ruleFor(TriggerType t) =>
-      rules.where((r) => r.trigger == t).firstOrNull;
+  @override
+  Widget build(BuildContext context) {
+    final cs     = Theme.of(context).colorScheme;
+    final view   = context.read<DeviceProvider>().viewFor(connection.targetDeviceId);
+    if (view == null) return const SizedBox.shrink();
+
+    // Gesture summary pills
+    final pills = <Widget>[];
+    for (final rule in connection.rules) {
+      pills.add(_GesturePill(rule: rule));
+    }
+
+    return Card(
+      color: cs.surface,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => showModalBottomSheet<void>(
+          context:            context,
+          isScrollControlled: true,
+          useSafeArea:        true,
+          backgroundColor:    cs.surface,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          builder: (_) => _ConnectionDetailSheet(
+            source:     source,
+            connection: connection,
+            targetView: view,
+            groups:     groups,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Device icon
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(view.deviceType.icon,
+                    size: 20, color: cs.onPrimaryContainer),
+              ),
+              const SizedBox(width: 14),
+              // Name + pills
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(view.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 14)),
+                        ),
+                        if (connection.switchGroup != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('Slot ${connection.switchGroup}',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: cs.onSecondaryContainer)),
+                          ),
+                      ],
+                    ),
+                    if (pills.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, runSpacing: 4, children: pills),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.edit_outlined, size: 16, color: cs.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gesture pill — compact label for a rule in the connection card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GesturePill extends StatelessWidget {
+  const _GesturePill({required this.rule});
+  final AutomationRule rule;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(
-            'SLOT ${group.label}',
-            style: TextStyle(
-              fontSize: 10, letterSpacing: 1.2,
-              fontWeight: FontWeight.w600,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
-          ),
-        ),
-        _GestureRow(
-          device:    device,
-          trigger:   TriggerType.switchPress,
-          endpoints: group.pressEndpoints,
-          group:     group.label,
-          rule:      _ruleFor(TriggerType.switchPress),
-        ),
-        Divider(height: 1, indent: 44, endIndent: 0, color: cs.outlineVariant),
-        _GestureRow(
-          device:    device,
-          trigger:   TriggerType.switchCw,
-          endpoints: group.cwEndpoints,
-          group:     group.label,
-          rule:      _ruleFor(TriggerType.switchCw),
-        ),
-        Divider(height: 1, indent: 44, endIndent: 0, color: cs.outlineVariant),
-        _GestureRow(
-          device:    device,
-          trigger:   TriggerType.switchCcw,
-          endpoints: group.ccwEndpoints,
-          group:     group.label,
-          rule:      _ruleFor(TriggerType.switchCcw),
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────────
-// Contact sensor: when opened / when closed rows
-// ─────────────────────────────────────────────────────────────────────────────────
-
-class _ContactAutomationsCard extends StatelessWidget {
-  const _ContactAutomationsCard({required this.device});
-  final MatterDevice device;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs    = Theme.of(context).colorScheme;
-    final rules = context.watch<DeviceProvider>().rulesFor(device.id);
-
-    AutomationRule? ruleFor(TriggerType t) =>
-        rules.where((r) => r.trigger == t).firstOrNull;
-
-    return Card(
-      color: cs.surface,
-      child: Column(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color:        cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _GestureRow(
-            device:  device,
-            trigger: TriggerType.contactOpen,
-            group:   null,
-            endpoints: const [],
-            rule:    ruleFor(TriggerType.contactOpen),
-          ),
-          Divider(height: 1, indent: 44, endIndent: 0, color: cs.outlineVariant),
-          _GestureRow(
-            device:  device,
-            trigger: TriggerType.contactClose,
-            group:   null,
-            endpoints: const [],
-            rule:    ruleFor(TriggerType.contactClose),
-          ),
+          Icon(_triggerIcon(rule.trigger), size: 11,
+              color: cs.onSurfaceVariant),
+          const SizedBox(width: 3),
+          Text(rule.action.label,
+              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
         ],
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────
-// One gesture row: icon + label + current rule summary + edit button
-// ─────────────────────────────────────────────────────────────────────────────────
+IconData _triggerIcon(TriggerType t) => switch (t) {
+  TriggerType.switchPress  => Icons.radio_button_checked_outlined,
+  TriggerType.switchCw     => Icons.keyboard_arrow_up,
+  TriggerType.switchCcw    => Icons.keyboard_arrow_down,
+  TriggerType.contactOpen  => Icons.meeting_room_outlined,
+  TriggerType.contactClose => Icons.sensor_door_outlined,
+};
 
-class _GestureRow extends StatelessWidget {
-  const _GestureRow({
-    required this.device,
-    required this.trigger,
-    required this.endpoints,
-    required this.group,
-    required this.rule,
+// ─────────────────────────────────────────────────────────────────────────────
+// Connection detail sheet — per-gesture action dropdowns + delete
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ConnectionDetailSheet extends StatefulWidget {
+  const _ConnectionDetailSheet({
+    required this.source,
+    required this.connection,
+    required this.targetView,
+    required this.groups,
   });
-  final MatterDevice    device;
-  final TriggerType     trigger;
-  final List<int>       endpoints;
-  final String?         group;
-  final AutomationRule? rule;
+  final MatterDevice      source;
+  final DeviceConnection  connection;
+  final DeviceView        targetView;
+  final List<SwitchGroup> groups;
 
-  Future<void> _openSheet(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context:          context,
-      isScrollControlled: true,
-      useSafeArea:      true,
-      backgroundColor:  Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (_) => _AutomationEditSheet(
-        device:    device,
-        trigger:   trigger,
-        endpoints: endpoints,
-        group:     group,
-        existing:  rule,
-      ),
-    );
+  @override
+  State<_ConnectionDetailSheet> createState() => _ConnectionDetailSheetState();
+}
+
+class _ConnectionDetailSheetState extends State<_ConnectionDetailSheet> {
+  // mutable state: trigger → selected action (null = disabled)
+  late final Map<TriggerType, AutomationAction?> _selections;
+
+  @override
+  void initState() {
+    super.initState();
+    _selections = {};
+    for (final rule in widget.connection.rules) {
+      _selections[rule.trigger] = rule.action;
+    }
   }
+
+  List<TriggerType> get _triggers {
+    if (widget.source.deviceType == DeviceType.contactSensor) {
+      return [TriggerType.contactOpen, TriggerType.contactClose];
+    }
+    final group = widget.groups.firstWhereOrNull(
+        (g) => g.label == widget.connection.switchGroup);
+    if (group == null) return [TriggerType.switchPress];
+    return [
+      if (group.pressEndpoints.isNotEmpty) TriggerType.switchPress,
+      if (group.cwEndpoints.isNotEmpty)    TriggerType.switchCw,
+      if (group.ccwEndpoints.isNotEmpty)   TriggerType.switchCcw,
+    ];
+  }
+
+  bool get _hasOnOff   => widget.targetView.deviceType.hasOnOff   ||
+      (context.read<DeviceProvider>()
+          .liveDataFor(widget.targetView.id)?.attrs.containsKey('onOff') ?? false);
+  bool get _hasBrightness => widget.targetView.deviceType.hasBrightness ||
+      (context.read<DeviceProvider>()
+          .liveDataFor(widget.targetView.id)?.attrs.containsKey('level') ?? false);
+  bool get _isThermostat  => widget.targetView.deviceType == DeviceType.thermostat ||
+      (context.read<DeviceProvider>()
+          .liveDataFor(widget.targetView.id)?.attrs.containsKey('localTempCenti') ?? false);
+
+  void _save() {
+    final provider = context.read<DeviceProvider>();
+    // Delete all existing rules for this connection then recreate from selections.
+    provider.disconnectTarget(
+      sourceDeviceId: widget.source.id,
+      targetDeviceId: widget.connection.targetDeviceId,
+      switchGroup:    widget.connection.switchGroup,
+    );
+    final group = widget.groups.firstWhereOrNull(
+        (g) => g.label == widget.connection.switchGroup);
+    for (final entry in _selections.entries) {
+      final action = entry.value;
+      if (action == null) continue;
+      provider.upsertRule(AutomationRule(
+        sourceDeviceId: widget.source.id,
+        trigger:        entry.key,
+        switchGroup:    widget.connection.switchGroup,
+        endpoints:      _endpointsFor(entry.key, group),
+        action:         action,
+        targetDeviceIds: [widget.connection.targetDeviceId],
+      ));
+    }
+    Navigator.pop(context);
+  }
+
+  List<int> _endpointsFor(TriggerType t, SwitchGroup? group) => switch (t) {
+    TriggerType.switchPress => group?.pressEndpoints ?? [],
+    TriggerType.switchCw    => group?.cwEndpoints    ?? [],
+    TriggerType.switchCcw   => group?.ccwEndpoints   ?? [],
+    _                       => [],
+  };
 
   @override
   Widget build(BuildContext context) {
-    final cs   = Theme.of(context).colorScheme;
-    final hasRule = rule != null && rule!.targetDeviceIds.isNotEmpty;
+    final cs = Theme.of(context).colorScheme;
+    final triggers = _triggers;
 
-    final triggerIcon = _triggerIcon(trigger);
-
-    return InkWell(
-      onTap: () => _openSheet(context),
+    return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Gesture icon
-            SizedBox(
-              width: 28,
-              child: Icon(triggerIcon, size: 16,
-                  color: hasRule ? cs.primary : cs.onSurfaceVariant.withValues(alpha: 0.4)),
-            ),
-            // Trigger label
-            SizedBox(
-              width: 90,
-              child: Text(
-                trigger.label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: hasRule ? FontWeight.w600 : FontWeight.normal,
-                  color: hasRule ? cs.onSurface : cs.onSurfaceVariant,
-                ),
+            // Handle
+            const SizedBox(height: 12),
+            Center(child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
+            )),
+            // Title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: cs.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(widget.targetView.deviceType.icon,
+                      size: 18, color: cs.onPrimaryContainer),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.targetView.name,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    if (widget.connection.switchGroup != null)
+                      Text('Slot ${widget.connection.switchGroup}',
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant)),
+                  ],
+                )),
+              ]),
             ),
-            // Action + targets or empty indicator
-            Expanded(
-              child: hasRule
-                  ? Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _ActionBadge(action: rule!.action),
-                        ..._DeviceChips(deviceIds: rule!.targetDeviceIds).chips(context),
-                      ],
-                    )
-                  : Text(
-                      '—',
-                      style: TextStyle(
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.35),
-                        fontSize: 13,
-                      ),
-                    ),
-            ),
-            // Add/edit icon
-            Icon(
-              hasRule ? Icons.edit_outlined : Icons.add_circle_outline,
-              size: 18,
-              color: cs.primary,
+            const Divider(height: 24, indent: 24, endIndent: 24),
+            // Gesture rows
+            for (final trigger in triggers)
+              _GestureActionRow(
+                trigger:     trigger,
+                selected:    _selections[trigger],
+                actions:     actionsFor(
+                  trigger:       trigger,
+                  hasOnOff:      _hasOnOff,
+                  hasBrightness: _hasBrightness,
+                  isThermostat:  _isThermostat,
+                ),
+                onChanged: (a) => setState(() => _selections[trigger] = a),
+              ),
+            // Buttons
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              child: Row(children: [
+                OutlinedButton.icon(
+                  icon:  const Icon(Icons.link_off, size: 16),
+                  label: const Text('Disconnect'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: cs.error,
+                    side: BorderSide(color: cs.error),
+                  ),
+                  onPressed: () {
+                    context.read<DeviceProvider>().disconnectTarget(
+                      sourceDeviceId: widget.source.id,
+                      targetDeviceId: widget.connection.targetDeviceId,
+                      switchGroup:    widget.connection.switchGroup,
+                    );
+                    Navigator.pop(context);
+                  },
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: FilledButton(
+                  onPressed: _save,
+                  child: const Text('Save'),
+                )),
+              ]),
             ),
           ],
         ),
@@ -1551,45 +1666,152 @@ class _GestureRow extends StatelessWidget {
   }
 }
 
-IconData _triggerIcon(TriggerType t) => switch (t) {
-  TriggerType.switchPress    => Icons.radio_button_checked_outlined,
-  TriggerType.switchCw       => Icons.keyboard_arrow_up,
-  TriggerType.switchCcw      => Icons.keyboard_arrow_down,
-  TriggerType.contactOpen    => Icons.meeting_room_outlined,
-  TriggerType.contactClose   => Icons.sensor_door_outlined,
-};
-
-// ─────────────────────────────────────────────────────────────────────────────────
-// Action badge
-// ─────────────────────────────────────────────────────────────────────────────────
-
-class _ActionBadge extends StatelessWidget {
-  const _ActionBadge({required this.action});
-  final AutomationAction action;
+// One gesture row inside the detail sheet
+class _GestureActionRow extends StatelessWidget {
+  const _GestureActionRow({
+    required this.trigger,
+    required this.selected,
+    required this.actions,
+    required this.onChanged,
+  });
+  final TriggerType              trigger;
+  final AutomationAction?        selected;
+  final List<AutomationAction?>  actions;
+  final ValueChanged<AutomationAction?> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: cs.primaryContainer,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        action.label,
-        style: TextStyle(
-          fontSize: 11, fontWeight: FontWeight.w600,
-          color: cs.onPrimaryContainer,
+    if (actions.isEmpty || (actions.length == 1 && actions.first == null)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      child: Row(children: [
+        Icon(_triggerIcon(trigger), size: 16, color: cs.onSurfaceVariant),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 100,
+          child: Text(trigger.label,
+              style: TextStyle(fontSize: 13, color: cs.onSurface)),
+        ),
+        Expanded(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<AutomationAction?>(
+              value:        actions.contains(selected) ? selected : null,
+              isExpanded:   true,
+              style:        TextStyle(fontSize: 13, color: cs.onSurface),
+              dropdownColor: cs.surfaceContainerHigh,
+              items: [
+                for (final a in actions)
+                  DropdownMenuItem(
+                    value: a,
+                    child: Text(
+                      a?.label ?? '— none —',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: a == null
+                              ? cs.onSurfaceVariant.withValues(alpha: 0.5)
+                              : cs.onSurface),
+                    ),
+                  ),
+              ],
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Add connection sheet — pick a target device, smart preset applied
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AddConnectionSheet extends StatelessWidget {
+  const _AddConnectionSheet({required this.source, required this.groups});
+  final MatterDevice      source;
+  final List<SwitchGroup> groups;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final provider = context.watch<DeviceProvider>();
+    // All devices that have at least one compatible action, excluding self.
+    final candidates = provider.linkableTargets(excludingDeviceId: source.id);
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            Center(child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              child: Text('Connect a device',
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            if (candidates.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                child: Text('No compatible devices found.',
+                    style: TextStyle(
+                        fontSize: 13, color: cs.onSurfaceVariant)),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.45),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: candidates.length,
+                  itemBuilder: (_, i) {
+                    final v = candidates[i];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: cs.primaryContainer,
+                        child: Icon(v.deviceType.icon,
+                            size: 18, color: cs.onPrimaryContainer),
+                      ),
+                      title:    Text(v.name),
+                      subtitle: Text(v.deviceType.displayName,
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant)),
+                      onTap: () {
+                        provider.connectDevice(
+                          sourceDeviceId: source.id,
+                          sourceType:     source.deviceType,
+                          targetDeviceId: v.id,
+                          switchGroups:   groups,
+                        );
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────────
-// Device chips helper
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Device chips helper (used in summary tile)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _DeviceChips {
   const _DeviceChips({required this.deviceIds});
@@ -1601,223 +1823,12 @@ class _DeviceChips {
       for (final id in deviceIds)
         if (provider.viewFor(id) case final view?)
           Chip(
-            label:      Text(view.name, style: const TextStyle(fontSize: 11)),
-            avatar:     Icon(view.deviceType.icon, size: 13),
-            padding:    const EdgeInsets.symmetric(horizontal: 4),
+            label:    Text(view.name, style: const TextStyle(fontSize: 11)),
+            avatar:   Icon(view.deviceType.icon, size: 13),
+            padding:  const EdgeInsets.symmetric(horizontal: 4),
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
           ),
     ];
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────────
-// Edit sheet: action picker + live-filtered device list
-// ─────────────────────────────────────────────────────────────────────────────────
-
-class _AutomationEditSheet extends StatefulWidget {
-  const _AutomationEditSheet({
-    required this.device,
-    required this.trigger,
-    required this.endpoints,
-    required this.group,
-    required this.existing,
-  });
-  final MatterDevice    device;
-  final TriggerType     trigger;
-  final List<int>       endpoints;
-  final String?         group;
-  final AutomationRule? existing;
-
-  @override
-  State<_AutomationEditSheet> createState() => _AutomationEditSheetState();
-}
-
-class _AutomationEditSheetState extends State<_AutomationEditSheet> {
-  late AutomationAction _action;
-  late Set<String>      _targets;
-
-  @override
-  void initState() {
-    super.initState();
-    _action  = widget.existing?.action ?? suggestedActions(widget.trigger).first;
-    _targets = Set<String>.from(widget.existing?.targetDeviceIds ?? []);
-  }
-
-  void _onActionChanged(AutomationAction a) {
-    setState(() {
-      _action = a;
-      // Remove targets that no longer support the new action.
-      final provider = context.read<DeviceProvider>();
-      final valid = provider
-          .linkableTargets(excludingDeviceId: widget.device.id, action: _action)
-          .map((v) => v.id)
-          .toSet();
-      _targets = _targets.intersection(valid);
-    });
-  }
-
-  Future<void> _save() async {
-    final provider = context.read<DeviceProvider>();
-    if (_targets.isEmpty) {
-      if (widget.existing != null) provider.removeRule(widget.existing!.id);
-    } else {
-      provider.upsertRule(AutomationRule(
-        id:              widget.existing?.id,
-        sourceDeviceId:  widget.device.id,
-        trigger:         widget.trigger,
-        switchGroup:     widget.group,
-        endpoints:       widget.endpoints,
-        action:          _action,
-        targetDeviceIds: _targets.toList(),
-      ));
-    }
-    if (mounted) Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs      = Theme.of(context).colorScheme;
-    final ordered = suggestedActions(widget.trigger);
-    final targets = context.read<DeviceProvider>()
-        .linkableTargets(excludingDeviceId: widget.device.id, action: _action);
-
-    String title = widget.trigger.label;
-    if (widget.group != null) title = 'Slot ${widget.group} — $title';
-
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ─ Handle + title ────────────────────────────────────────
-            const SizedBox(height: 12),
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
-                children: [
-                  Icon(_triggerIcon(widget.trigger), size: 18, color: cs.primary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(title,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
-
-            // ─ Action chips ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Text('Action',
-                  style: TextStyle(
-                    fontSize: 11, letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant,
-                  )),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Wrap(
-                spacing: 8, runSpacing: 8,
-                children: [
-                  for (final a in ordered)
-                    ChoiceChip(
-                      label:    Text(a.label),
-                      selected: _action == a,
-                      onSelected: (_) => _onActionChanged(a),
-                    ),
-                ],
-              ),
-            ),
-
-            // ─ Device list ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Text('Devices',
-                  style: TextStyle(
-                    fontSize: 11, letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant,
-                  )),
-            ),
-            if (targets.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                child: Text('No compatible devices found.',
-                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
-              )
-            else
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.35,
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: targets.length,
-                  itemBuilder: (_, i) {
-                    final v        = targets[i];
-                    final selected = _targets.contains(v.id);
-                    return CheckboxListTile(
-                      value:     selected,
-                      secondary: Icon(v.deviceType.icon, color: cs.primary),
-                      title:     Text(v.name),
-                      subtitle:  Text(v.deviceType.displayName,
-                          style: TextStyle(
-                              fontSize: 12, color: cs.onSurfaceVariant)),
-                      onChanged: (_) => setState(() {
-                        if (selected) { _targets.remove(v.id); }
-                        else          { _targets.add(v.id); }
-                      }),
-                    );
-                  },
-                ),
-              ),
-
-            // ─ Save button ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              child: Row(
-                children: [
-                  if (widget.existing != null) ...[
-                    OutlinedButton.icon(
-                      icon:  const Icon(Icons.delete_outline, size: 16),
-                      label: const Text('Remove'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: cs.error,
-                        side: BorderSide(color: cs.error),
-                      ),
-                      onPressed: () {
-                        context.read<DeviceProvider>().removeRule(widget.existing!.id);
-                        Navigator.pop(context);
-                      },
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _save,
-                      child: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

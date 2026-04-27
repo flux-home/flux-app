@@ -14,6 +14,7 @@ enum AutomationAction {
   toggle,
   turnOn,
   turnOff,
+  thermostatOff,          // turn off heating (semantic alias used in contact-sensor presets)
   brightnessStepUp,
   brightnessStepDown,
   thermostatSetpointUp,   // +0.5 °C fixed step
@@ -42,6 +43,7 @@ extension AutomationActionX on AutomationAction {
     AutomationAction.toggle                => 'Toggle',
     AutomationAction.turnOn                => 'Turn on',
     AutomationAction.turnOff               => 'Turn off',
+    AutomationAction.thermostatOff         => 'Heating off',
     AutomationAction.brightnessStepUp      => 'Dim ↑',
     AutomationAction.brightnessStepDown    => 'Dim ↓',
     AutomationAction.thermostatSetpointUp  => 'Temp ↑',
@@ -110,7 +112,66 @@ class AutomationRule {
   );
 }
 
-// ── Action ordering per trigger (for the edit sheet) ─────────────────────────
+// ── Connection (UI grouping of rules sharing source → target) ───────────────────
+
+/// All rules for a single source → target relationship.
+/// For switch sources [switchGroup] is the slot label; null for contact sensors.
+class DeviceConnection {
+  const DeviceConnection({
+    required this.targetDeviceId,
+    required this.switchGroup,
+    required this.rules,
+  });
+  final String             targetDeviceId;
+  final String?            switchGroup;
+  final List<AutomationRule> rules;
+
+  AutomationRule? ruleFor(TriggerType t) =>
+      rules.where((r) => r.trigger == t).firstOrNull;
+}
+
+// ── Action list per (trigger, target) for the connection detail sheet ─────────
+
+/// Returns the ordered list of valid actions for [trigger] given target
+/// capabilities.  [null] represents “no action” (gesture disabled).
+List<AutomationAction?> actionsFor({
+  required TriggerType trigger,
+  required bool hasOnOff,
+  required bool hasBrightness,
+  required bool isThermostat,
+}) {
+  final out = <AutomationAction?>[];
+  switch (trigger) {
+    case TriggerType.switchPress:
+    case TriggerType.contactOpen:
+    case TriggerType.contactClose:
+      if (hasOnOff) {
+        out.addAll([
+          AutomationAction.toggle,
+          AutomationAction.turnOn,
+          AutomationAction.turnOff,
+        ]);
+      }
+      if (isThermostat) {
+        out.addAll([
+          AutomationAction.thermostatOff,
+          AutomationAction.thermostatSetpointUp,
+          AutomationAction.thermostatSetpointDown,
+        ]);
+      }
+    case TriggerType.switchCw:
+      if (hasBrightness) out.add(AutomationAction.brightnessStepUp);
+      if (isThermostat)  out.add(AutomationAction.thermostatSetpointUp);
+    case TriggerType.switchCcw:
+      if (hasBrightness) out.add(AutomationAction.brightnessStepDown);
+      if (isThermostat)  out.add(AutomationAction.thermostatSetpointDown);
+  }
+  // “No action” is always available (disables the gesture).
+  out.add(null);
+  return out;
+}
+
+// ── Action ordering per trigger (for the edit sheet) ─────────────────────
 
 /// Returns actions ordered by relevance to [trigger].
 /// The first item is the default when creating a new rule.
@@ -119,6 +180,7 @@ List<AutomationAction> suggestedActions(TriggerType trigger) => switch (trigger)
     AutomationAction.toggle,
     AutomationAction.turnOn,
     AutomationAction.turnOff,
+    AutomationAction.thermostatOff,
     AutomationAction.brightnessStepUp,
     AutomationAction.brightnessStepDown,
     AutomationAction.thermostatSetpointUp,
@@ -130,6 +192,7 @@ List<AutomationAction> suggestedActions(TriggerType trigger) => switch (trigger)
     AutomationAction.toggle,
     AutomationAction.turnOn,
     AutomationAction.turnOff,
+    AutomationAction.thermostatOff,
     AutomationAction.brightnessStepDown,
     AutomationAction.thermostatSetpointDown,
   ],
@@ -139,10 +202,12 @@ List<AutomationAction> suggestedActions(TriggerType trigger) => switch (trigger)
     AutomationAction.toggle,
     AutomationAction.turnOn,
     AutomationAction.turnOff,
+    AutomationAction.thermostatOff,
     AutomationAction.brightnessStepUp,
     AutomationAction.thermostatSetpointUp,
   ],
   TriggerType.contactOpen => [
+    AutomationAction.thermostatOff,
     AutomationAction.turnOff,
     AutomationAction.toggle,
     AutomationAction.turnOn,
@@ -155,6 +220,7 @@ List<AutomationAction> suggestedActions(TriggerType trigger) => switch (trigger)
     AutomationAction.turnOn,
     AutomationAction.toggle,
     AutomationAction.turnOff,
+    AutomationAction.thermostatOff,
     AutomationAction.brightnessStepUp,
     AutomationAction.thermostatSetpointUp,
     AutomationAction.brightnessStepDown,

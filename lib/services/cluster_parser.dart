@@ -4,7 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/switch_group.dart';
 import 'package:matter_home/services/matter_port.dart' show MatterClusterPort;
+
+export 'package:matter_home/models/switch_group.dart';
 
 // ── Quality ───────────────────────────────────────────────────────────────────
 
@@ -93,21 +96,7 @@ class LiveEndpoint {
 /// A virtual switch group — one logical control on a multi-button device.
 /// Each group has up to three sets of endpoints: press, clockwise, and
 /// counter-clockwise, derived from semantic tags on the Switch cluster.
-class SwitchGroup {
-  const SwitchGroup({
-    required this.label,
-    required this.pressEndpoints,
-    required this.cwEndpoints,
-    required this.ccwEndpoints,
-  });
 
-  final String   label;
-  final List<int> pressEndpoints;
-  final List<int> cwEndpoints;
-  final List<int> ccwEndpoints;
-
-  List<int> get allEndpoints => [...pressEndpoints, ...cwEndpoints, ...ccwEndpoints];
-}
 
 /// Parses a raw Matter cluster JSON string (from [MatterClusterPort.readClusters])
 /// into a structured list of [LiveEndpoint]s.

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/automation_rule.dart';
+import 'package:matter_home/models/switch_group.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_state_event.dart';
@@ -199,7 +200,8 @@ class DeviceProvider extends ChangeNotifier {
     return switch (action) {
       AutomationAction.toggle ||
       AutomationAction.turnOn  ||
-      AutomationAction.turnOff =>
+      AutomationAction.turnOff ||
+      AutomationAction.thermostatOff =>
           v.deviceType.hasOnOff || (live?.attrs.containsKey('onOff') ?? false),
       AutomationAction.brightnessStepUp ||
       AutomationAction.brightnessStepDown =>
@@ -825,6 +827,9 @@ class DeviceProvider extends ChangeNotifier {
       case AutomationAction.turnOff:
         _mergeLiveCache(deviceId, (e) => e.merge({'onOff': false}));
         await _channel.toggleDevice(device.nodeId, on: false);
+      case AutomationAction.thermostatOff:
+        _mergeLiveCache(deviceId, (e) => e.merge({'onOff': false}));
+        await _channel.toggleDevice(device.nodeId, on: false);
       case AutomationAction.brightnessStepUp:
         await stepBrightness(deviceId, up: true);
       case AutomationAction.brightnessStepDown:
@@ -844,5 +849,152 @@ class DeviceProvider extends ChangeNotifier {
     final next = (current + (deltaCelsius * 100).round()).clamp(500, 3500);
     _mergeLiveCache(deviceId, (e) => e.merge({'heatingSetptCenti': next}));
     await _channel.writeHeatingSetpoint(device.nodeId, next);
+  }
+
+  // ── Connection API ─────────────────────────────────────────────────────────
+
+  /// Groups rules for [sourceDeviceId] by (targetDeviceId, switchGroup).
+  List<DeviceConnection> connectionsFor(String sourceDeviceId) {
+    final rules = rulesFor(sourceDeviceId);
+    final map = <(String, String?), List<AutomationRule>>{};
+    for (final rule in rules) {
+      for (final tid in rule.targetDeviceIds) {
+        (map[(tid, rule.switchGroup)] ??= []).add(rule);
+      }
+    }
+    return map.entries
+        .map((e) => DeviceConnection(
+              targetDeviceId: e.key.$1,
+              switchGroup:    e.key.$2,
+              rules:          e.value,
+            ))
+        .toList();
+  }
+
+  /// Returns the first slot label that has no existing rules for [sourceDeviceId].
+  /// Falls back to the first slot if all are in use.
+  String? nextFreeSlot(String sourceDeviceId, List<SwitchGroup> groups) {
+    if (groups.isEmpty) return null;
+    final usedSlots = _rules
+        .where((r) => r.sourceDeviceId == sourceDeviceId && r.switchGroup != null)
+        .map((r) => r.switchGroup!)
+        .toSet();
+    return groups
+        .map((g) => g.label)
+        .firstWhere((label) => !usedSlots.contains(label),
+            orElse: () => groups.first.label);
+  }
+
+  /// Creates smart-preset rules connecting [sourceDeviceId] to [targetDeviceId].
+  /// Derives gesture→action mapping from device-type capabilities.
+  void connectDevice({
+    required String         sourceDeviceId,
+    required DeviceType     sourceType,
+    required String         targetDeviceId,
+    required List<SwitchGroup> switchGroups,
+  }) {
+    final targetView = viewFor(targetDeviceId);
+    if (targetView == null) return;
+
+    if (sourceType == DeviceType.contactSensor) {
+      // Contact sensor presets
+      if (_supportsAction(targetView, AutomationAction.thermostatOff)) {
+        upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.contactOpen,
+          action:         AutomationAction.thermostatOff,
+          targetDeviceIds: [targetDeviceId],
+        ));
+      } else if (_supportsAction(targetView, AutomationAction.turnOn)) {
+        upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.contactOpen,
+          action:         AutomationAction.turnOn,
+          targetDeviceIds: [targetDeviceId],
+        ));
+        upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.contactClose,
+          action:         AutomationAction.turnOff,
+          targetDeviceIds: [targetDeviceId],
+        ));
+      }
+    } else {
+      // Switch presets — assign to next free slot
+      final slot = nextFreeSlot(sourceDeviceId, switchGroups);
+      if (slot == null) return;
+      final group = switchGroups.firstWhere((g) => g.label == slot);
+
+      if (group.pressEndpoints.isNotEmpty) {
+        upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.switchPress,
+          switchGroup:    slot,
+          endpoints:      group.pressEndpoints,
+          action:         AutomationAction.toggle,
+          targetDeviceIds: [targetDeviceId],
+        ));
+      }
+      if (group.cwEndpoints.isNotEmpty) {
+        final a = _supportsAction(targetView, AutomationAction.brightnessStepUp)
+            ? AutomationAction.brightnessStepUp
+            : _supportsAction(targetView, AutomationAction.thermostatSetpointUp)
+                ? AutomationAction.thermostatSetpointUp
+                : null;
+        if (a != null) upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.switchCw,
+          switchGroup:    slot,
+          endpoints:      group.cwEndpoints,
+          action:         a,
+          targetDeviceIds: [targetDeviceId],
+        ));
+      }
+      if (group.ccwEndpoints.isNotEmpty) {
+        final a = _supportsAction(targetView, AutomationAction.brightnessStepDown)
+            ? AutomationAction.brightnessStepDown
+            : _supportsAction(targetView, AutomationAction.thermostatSetpointDown)
+                ? AutomationAction.thermostatSetpointDown
+                : null;
+        if (a != null) upsertRule(AutomationRule(
+          sourceDeviceId: sourceDeviceId,
+          trigger:        TriggerType.switchCcw,
+          switchGroup:    slot,
+          endpoints:      group.ccwEndpoints,
+          action:         a,
+          targetDeviceIds: [targetDeviceId],
+        ));
+      }
+    }
+  }
+
+  /// Removes all rules linking [sourceDeviceId] to [targetDeviceId] on [switchGroup].
+  /// If a rule has multiple targets, only removes this target from it.
+  void disconnectTarget({
+    required String  sourceDeviceId,
+    required String  targetDeviceId,
+    required String? switchGroup,
+  }) {
+    final toProcess = _rules
+        .where((r) =>
+            r.sourceDeviceId == sourceDeviceId &&
+            r.switchGroup    == switchGroup &&
+            r.targetDeviceIds.contains(targetDeviceId))
+        .toList();
+
+    for (final rule in toProcess) {
+      if (rule.targetDeviceIds.length == 1) {
+        _rules.remove(rule);
+      } else {
+        final idx = _rules.indexWhere((r) => r.id == rule.id);
+        _rules[idx] = rule.copyWith(
+          targetDeviceIds: rule.targetDeviceIds
+              .where((id) => id != targetDeviceId)
+              .toList(),
+        );
+      }
+    }
+    _persistRules();
+    notifyListeners();
   }
 }
