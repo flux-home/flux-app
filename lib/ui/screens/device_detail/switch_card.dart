@@ -104,7 +104,7 @@ class _SwitchCard extends StatelessWidget {
     }
 
     final provider = context.read<DeviceProvider>();
-    final links    = provider.linksFor(view.id);
+    final rules    = provider.rulesFor(view.id);
 
     return Card(
       child: Padding(
@@ -121,7 +121,7 @@ class _SwitchCard extends StatelessWidget {
                       child: _SlotPill(
                         label:      switches[i].label,
                         isActive:   i == activeIdx,
-                        linkedName: _linkedName(links, switches[i].label, provider),
+                        linkedName: _linkedName(rules, switches[i].label, provider),
                       ),
                     ),
                     if (i < switches.length - 1) const SizedBox(width: 8),
@@ -147,13 +147,15 @@ class _SwitchCard extends StatelessWidget {
   }
 
   String? _linkedName(
-    List<SwitchLink> links,
+    List<AutomationRule> rules,
     String groupLabel,
     DeviceProvider provider,
   ) {
-    final link = links.where((l) => l.switchGroup == groupLabel).firstOrNull;
-    if (link == null || link.targetDeviceIds.isEmpty) return null;
-    return provider.viewFor(link.targetDeviceIds.first)?.name;
+    final rule = rules
+        .where((r) => r.switchGroup == groupLabel && r.targetDeviceIds.isNotEmpty)
+        .firstOrNull;
+    if (rule == null) return null;
+    return provider.viewFor(rule.targetDeviceIds.first)?.name;
   }
 }
 

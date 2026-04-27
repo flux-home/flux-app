@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_state_event.dart';
@@ -9,7 +10,6 @@ import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/ota_progress.dart';
 import 'package:matter_home/models/room.dart';
-import 'package:matter_home/models/switch_link.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -43,13 +43,9 @@ class DeviceProvider extends ChangeNotifier {
   final Map<String, OtaProgressState>   _otaProgress   = {};
   final Map<String, PersistedSnapshot>  _snapshots     = {};
 
-  // ── Switch links (in-app binding table) ───────────────────────────────────
-  // Keyed by source deviceId.  Execution happens when a press event is
-  // received on any endpoint listed in the link's pressEndpoints.
-  final Map<String, List<SwitchLink>> _switchLinks        = {};
-  final Map<String, int>              _lastSwitchPressTime = {}; // debounce: deviceId → last switchPressTime
-  final Map<String, ContactLink>      _contactLinks        = {};
-  final Map<String, bool>             _lastContactState    = {}; // debounce: deviceId → last acted state
+  // ── Automation rules ────────────────────────────────────────────────────
+  final List<AutomationRule> _rules               = [];
+  final Map<String, int>     _lastSwitchPressTime = {}; // debounce
 
   final Set<int> _subscribedNodeIds = {};
 
@@ -111,6 +107,7 @@ class DeviceProvider extends ChangeNotifier {
   // ── Persistence ───────────────────────────────────────────────────────────
 
   void _load() {
+    _rules.addAll(_store.loadRules());
     _snapshots.addAll(_store.loadSnapshots());
     // Rooms: sentinel first, then persisted user-created rooms.
     _rooms = [Room.noRoom, ..._store.loadRooms()];
@@ -154,6 +151,8 @@ class DeviceProvider extends ChangeNotifier {
     await _store.saveSnapshots(_snapshots);
   }
 
+  Future<void> _persistRules() => _store.saveRules(_rules);
+
   /// Persists the user-created rooms list (excludes the sentinel).
   Future<void> _persistRooms() => _store.saveRooms(_rooms);
 
@@ -177,70 +176,51 @@ class DeviceProvider extends ChangeNotifier {
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
-  // ── Switch link management ──────────────────────────────────────────────────
+  // ── Automation rule management ────────────────────────────────────────────
 
-  /// All links whose source is [deviceId], in insertion order.
-  List<SwitchLink> linksFor(String deviceId) =>
-      List.unmodifiable(_switchLinks[deviceId] ?? const []);
+  /// All rules whose source is [deviceId].
+  List<AutomationRule> rulesFor(String deviceId) =>
+      _rules.where((r) => r.sourceDeviceId == deviceId).toList();
 
-  /// All commissioned devices that accept commands matching the switch group.
-  ///
-  /// [requiresOnOff]  include devices that accept On/Off commands (press).
-  /// [requiresLevel]  include devices that accept LevelControl commands (CW/CCW).
-  ///
-  /// A device is included when it satisfies *any* of the requested capabilities
-  /// so that a device supporting only OnOff is still offered even when the
-  /// group also has CW/CCW endpoints.
+  /// Devices that can be targeted by [action], excluding [excludingDeviceId].
   List<DeviceView> linkableTargets({
     String? excludingDeviceId,
-    bool requiresOnOff = true,
-    bool requiresLevel = false,
+    AutomationAction? action,
   }) {
     return _devices
         .where((d) => d.id != excludingDeviceId)
         .map((d) => DeviceView(d, _liveCache[d.id]))
-        .where((v) {
-          final id = v.id;
-          if (requiresOnOff) {
-            final ok = v.deviceType.hasOnOff ||
-                (_liveCache[id]?.attrs.containsKey('onOff') ?? false);
-            if (ok) return true;
-          }
-          if (requiresLevel) {
-            final ok = v.deviceType.hasBrightness ||
-                (_liveCache[id]?.attrs.containsKey('level') ?? false);
-            if (ok) return true;
-          }
-          return false;
-        })
+        .where((v) => action == null || _supportsAction(v, action))
         .toList();
   }
 
-  /// Adds or replaces a [SwitchLink] for its source device.
-  void upsertSwitchLink(SwitchLink link) {
-    final list = _switchLinks.putIfAbsent(link.sourceDeviceId, () => []);
-    final idx  = list.indexWhere((l) => l.id == link.id);
-    if (idx >= 0) list[idx] = link; else list.add(link);
+  bool _supportsAction(DeviceView v, AutomationAction action) {
+    final live = _liveCache[v.id];
+    return switch (action) {
+      AutomationAction.toggle ||
+      AutomationAction.turnOn  ||
+      AutomationAction.turnOff =>
+          v.deviceType.hasOnOff || (live?.attrs.containsKey('onOff') ?? false),
+      AutomationAction.brightnessStepUp ||
+      AutomationAction.brightnessStepDown =>
+          v.deviceType.hasBrightness || (live?.attrs.containsKey('level') ?? false),
+      AutomationAction.thermostatSetpointUp ||
+      AutomationAction.thermostatSetpointDown =>
+          v.deviceType == DeviceType.thermostat ||
+          (live?.attrs.containsKey('localTempCenti') ?? false),
+    };
+  }
+
+  void upsertRule(AutomationRule rule) {
+    final idx = _rules.indexWhere((r) => r.id == rule.id);
+    if (idx >= 0) { _rules[idx] = rule; } else { _rules.add(rule); }
+    unawaited(_persistRules());
     notifyListeners();
   }
 
-  /// Removes the link identified by [linkId] from [sourceDeviceId].
-  void removeSwitchLink(String sourceDeviceId, String linkId) {
-    _switchLinks[sourceDeviceId]?.removeWhere((l) => l.id == linkId);
-    notifyListeners();
-  }
-
-  // ── Contact link management ──────────────────────────────────────────────
-
-  ContactLink? contactLinkFor(String deviceId) => _contactLinks[deviceId];
-
-  void upsertContactLink(ContactLink link) {
-    _contactLinks[link.sourceDeviceId] = link;
-    notifyListeners();
-  }
-
-  void removeContactLink(String sourceDeviceId) {
-    _contactLinks.remove(sourceDeviceId);
+  void removeRule(String ruleId) {
+    _rules.removeWhere((r) => r.id == ruleId);
+    unawaited(_persistRules());
     notifyListeners();
   }
 
@@ -797,10 +777,6 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Switch-link execution ──────────────────────────────────────────────────────────
 
-  /// Executes contact-sensor links when [contactState] transitions.
-  ///
-  /// [prevContact] is the value from the live cache *before* the current
-  /// update was merged, so a true transition (null→value excluded) fires once.
   void _handleContactChange(
     String deviceId,
     Map<String, dynamic> attrs,
@@ -808,58 +784,65 @@ class DeviceProvider extends ChangeNotifier {
   ) {
     if (!attrs.containsKey('contactState')) return;
     final newState = attrs['contactState'] as bool?;
-    if (newState == null) return;
-    // Skip the first reading (no previous state to transition from).
-    if (prevContact == null) return;
-    // Skip if the state hasn't changed.
-    if (newState == prevContact) return;
-
-    final link = _contactLinks[deviceId];
-    if (link == null) return;
-
-    // true  = closed, false = open (BooleanState semantics).
-    final targets = newState ? link.onClose : link.onOpen;
-    for (final targetId in targets) {
-      unawaited(toggle(targetId));
+    if (newState == null || prevContact == null || newState == prevContact) return;
+    // true = closed, false = open (BooleanState semantics).
+    final trigger = newState ? TriggerType.contactClose : TriggerType.contactOpen;
+    for (final rule in _rules.where((r) => r.sourceDeviceId == deviceId && r.trigger == trigger)) {
+      for (final targetId in rule.targetDeviceIds) {
+        unawaited(_executeAction(targetId, rule.action));
+      }
     }
   }
 
-  /// Called on every subscription update.  When the event carries a new
-  /// [switchPressTime]
-  ///
-  /// Using [switchPressTime] rather than [switchCurrentEndpoint] > 0 correctly
-  /// handles the BILRESA scroll wheel, which fires InitialPress + ShortRelease
-  /// so rapidly that both events arrive in the same subscription report and
-  /// [switchCurrentEndpoint] is already 0 by the time Dart processes the map.
   void _handleSwitchPress(String deviceId, Map<String, dynamic> attrs) {
-    // Only process updates that contain a press event.
     final pressTime = attrs['switchPressTime'] as int?;
     if (pressTime == null) return;
-
-    // Deduplicate: skip if we already acted on this exact timestamp.
     if (pressTime == (_lastSwitchPressTime[deviceId] ?? 0)) return;
     _lastSwitchPressTime[deviceId] = pressTime;
 
-    // switchLastEndpoint is set by the press and not cleared by the release,
-    // so it reliably holds the endpoint even after rapid press+release.
     final ep = (attrs['switchLastEndpoint'] as int?) ?? 0;
     if (ep == 0) return;
 
-    final links = _switchLinks[deviceId] ?? [];
-    for (final link in links) {
-      if (link.pressEndpoints.contains(ep)) {
-        for (final targetId in link.targetDeviceIds) {
-          unawaited(toggle(targetId));
-        }
-      } else if (link.cwEndpoints.contains(ep)) {
-        for (final targetId in link.targetDeviceIds) {
-          unawaited(stepBrightness(targetId, up: true));
-        }
-      } else if (link.ccwEndpoints.contains(ep)) {
-        for (final targetId in link.targetDeviceIds) {
-          unawaited(stepBrightness(targetId, up: false));
-        }
+    for (final rule in _rules.where((r) => r.sourceDeviceId == deviceId && r.trigger.isSwitch)) {
+      if (!rule.endpoints.contains(ep)) continue;
+      for (final targetId in rule.targetDeviceIds) {
+        unawaited(_executeAction(targetId, rule.action));
       }
     }
+  }
+
+  // ── Action execution ─────────────────────────────────────────────────────────────
+
+  Future<void> _executeAction(String deviceId, AutomationAction action) async {
+    final device = findById(deviceId);
+    if (device == null) return;
+    switch (action) {
+      case AutomationAction.toggle:
+        await toggle(deviceId);
+      case AutomationAction.turnOn:
+        _mergeLiveCache(deviceId, (e) => e.merge({'onOff': true}));
+        await _channel.toggleDevice(device.nodeId, on: true);
+      case AutomationAction.turnOff:
+        _mergeLiveCache(deviceId, (e) => e.merge({'onOff': false}));
+        await _channel.toggleDevice(device.nodeId, on: false);
+      case AutomationAction.brightnessStepUp:
+        await stepBrightness(deviceId, up: true);
+      case AutomationAction.brightnessStepDown:
+        await stepBrightness(deviceId, up: false);
+      case AutomationAction.thermostatSetpointUp:
+        await _adjustSetpoint(deviceId, 0.5);
+      case AutomationAction.thermostatSetpointDown:
+        await _adjustSetpoint(deviceId, -0.5);
+    }
+  }
+
+  Future<void> _adjustSetpoint(String deviceId, double deltaCelsius) async {
+    final device = findById(deviceId);
+    if (device == null) return;
+    const defaultCenti = 2000; // 20.0 °C fallback
+    final current = _liveCache[deviceId]?.heatingSetptCenti ?? defaultCenti;
+    final next = (current + (deltaCelsius * 100).round()).clamp(500, 3500);
+    _mergeLiveCache(deviceId, (e) => e.merge({'heatingSetptCenti': next}));
+    await _channel.writeHeatingSetpoint(device.nodeId, next);
   }
 }
