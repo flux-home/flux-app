@@ -1,0 +1,41 @@
+Flux Home
+Copyright 2024-2026 The Flux Home Contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+---
+
+This product includes software developed by the project-chip/connectedhomeip
+contributors (the CHIP SDK / Matter SDK):
+
+  connectedhomeip — https://github.com/project-chip/connectedhomeip
+  Copyright (c) 2020-2024 Project CHIP Authors
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  The full list of project-chip/connectedhomeip copyright holders and
+  contributors is maintained in the upstream repository:
+  https://github.com/project-chip/connectedhomeip/graphs/contributors
+
+---
+
+This product uses the Google Play Services Thread Network API
+(com.google.android.gms:play-services-threadnetwork), which is a proprietary
+Google library distributed via Maven Central. Its use is governed by the
+Google APIs Terms of Service: https://developers.google.com/terms
+
+---
+
+This product queries the CSA Distributed Compliance Ledger (DCL) REST API
+at https://on.dcl.csa-iot.org for OTA firmware version information.
+The DCL is operated by the Connectivity Standards Alliance (CSA).
+"Matter" is a trademark of the Connectivity Standards Alliance.
+"Thread" is a trademark of the Thread Group, Inc.
+Use of these trademarks in this project is nominative/descriptive only;
+this project is not certified by, endorsed by, or affiliated with the CSA
+or the Thread Group.

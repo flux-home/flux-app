@@ -2,12 +2,9 @@ package com.fluxhome.app.chip
 
 import android.content.Context
 import android.net.wifi.WifiManager
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import chip.devicecontroller.ChipDeviceController
 import chip.devicecontroller.ControllerParams
-import chip.devicecontroller.DeviceAttestationDelegate
 import chip.devicecontroller.GetConnectedDeviceCallbackJni.GetConnectedDeviceCallback
 import chip.platform.AndroidBleManager
 import chip.platform.AndroidChipPlatform
@@ -32,7 +29,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 object ChipClient {
     private const val TAG = "ChipClient"
 
-    /** Vendor ID used when creating the fabric.  0xFFF4 = CHIP test VID. */
+    /** Vendor ID used when creating the fabric.  0xFFF1 = CHIP test VID (range 0xFFF1–0xFFF4 reserved by CSA for development). */
     const val VENDOR_ID = 0xFFF1
 
     private lateinit var _controller: ChipDeviceController
@@ -75,7 +72,6 @@ object ChipClient {
                 ControllerParams.newBuilder()
                     .setControllerVendorId(VENDOR_ID)
                     .setEnableServerInteractions(true)
-                    .setSkipAttestationCertificateValidation(true)
                     // Extend the failsafe to 600 s before the CASE phase begins.
                     // Without this, devices like the Hue bridge that reboot after
                     // receiving the NOC expire the default 30-second failsafe and
@@ -83,19 +79,9 @@ object ChipClient {
                     .setCASEFailsafeTimerSeconds(600)
                     .build(),
             )
-            // Permissive attestation delegate.
-            // continueCommissioning MUST be posted to the main thread to avoid
-            // a reentrant JNI deadlock (same pattern as CHIPTool's DeviceProvisioningFragment).
-            val mainHandler = Handler(Looper.getMainLooper())
-            _controller.setDeviceAttestationDelegate(
-                600,
-                DeviceAttestationDelegate { devicePtr, _, errorCode ->
-                    Log.w(TAG, "DeviceAttestationDelegate errorCode=$errorCode – continuing")
-                    mainHandler.post {
-                        _controller.continueCommissioning(devicePtr, true)
-                    }
-                },
-            )
+            // The per-session attestation delegate is installed by MatterCommissioner before
+            // each pairDevice* call, so it has access to the live onEvent callback and can
+            // surface a warning to the user via the commissioning event stream.
             isAvailable = true
             Log.i(TAG, "CHIP SDK initialised – fabric 0x${_controller.compressedFabricId.toULong().toString(16)}")
 
@@ -134,6 +120,9 @@ object ChipClient {
 
     val fabricId: Long
         get() = if (isAvailable) _controller.compressedFabricId else 0L
+
+    val fabricIndex: Int
+        get() = if (isAvailable) _controller.getFabricIndex() else 0
 
     // ── CASE session helper ──────────────────────────────────────────────────
 

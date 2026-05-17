@@ -262,7 +262,33 @@ adb -s 192.168.1.123:5555 install -r build/app/outputs/flutter-apk/app-release.a
 
 ## Known limitations / production TODOs
 
-- Attestation validation is disabled (`setSkipAttestationCertificateValidation(true)`)
-- Vendor ID is the CSA test VID `0xFFF4` — not valid for production
-- No DAC revocation checking
-- `openCommissioningWindow` (multi-admin sharing) is a stub
+- Attestation validation is bypassed — the commissioning flow surfaces a warning to the user
+  when device attestation fails, but allows them to proceed. This means the app does **not**
+  cryptographically verify that a device is a genuine, CSA-certified Matter product.
+- No DAC revocation checking.
+- Vendor ID is the CSA test VID `0xFFF1` (range `0xFFF1`–`0xFFF4` reserved by CSA for
+  development/testing). This is the standard practice for open source controller tools that
+  are not CSA-certified. Do not use this VID to represent a commercial product.
+- `openCommissioningWindow` (multi-admin sharing) is a stub.
+
+---
+
+## Legal notices
+
+This project is licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE).
+See [`NOTICE`](NOTICE) for third-party attributions.
+
+**Trademarks**
+- *Matter* is a trademark of the Connectivity Standards Alliance (CSA).
+- *Thread* is a trademark of the Thread Group, Inc.
+- Use of these names in this project is nominative/descriptive only. This project is not
+  certified by, endorsed by, or affiliated with the CSA or the Thread Group.
+
+**connectedhomeip (CHIP SDK)**
+This app is built on top of [`project-chip/connectedhomeip`](https://github.com/project-chip/connectedhomeip),
+licensed under Apache 2.0. The compiled AAR is not bundled in this repository;
+use `android/get_chip_sdk.sh` to obtain it.
+
+**CSA Distributed Compliance Ledger (DCL)**
+The OTA update feature queries the public DCL REST API at `https://on.dcl.csa-iot.org`.
+This is a CSA-operated service; its use is subject to CSA's terms.
