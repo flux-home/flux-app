@@ -75,7 +75,7 @@ dependencies {
             implementation(files("libs/SetupPayloadParser.jar"))
         }
         // Transitive deps required by CHIPController
-        implementation("com.google.protobuf:protobuf-java:3.22.0")
+        implementation("com.google.protobuf:protobuf-java:4.34.1")
         implementation("com.google.code.gson:gson:2.10.1")
     } else {
         // ── Compile-time stubs (simulation mode at runtime) ──────────────────
