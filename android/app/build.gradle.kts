@@ -83,7 +83,7 @@ dependencies {
     }
 
     // Thread Network credential store (Play Services, all build variants)
-    implementation("com.google.android.gms:play-services-threadnetwork:16.0.0")
+    implementation("com.google.android.gms:play-services-threadnetwork:16.3.0")
 
     // Coroutines (used by MatterCommissioner, ClusterClient, BleConnectionManager)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
