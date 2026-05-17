@@ -50,3 +50,7 @@ android/key.properties
 
 # Real CHIP SDK AAR — not tracked, obtain via android/get_chip_sdk.sh
 android/app/libs/CHIPController.aar
+
+# Signing keystore — never commit
+android/app/keystore.jks
+android/key.properties
