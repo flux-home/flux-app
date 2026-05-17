@@ -48,5 +48,5 @@ app.*.map.json
 android/local.properties
 android/key.properties
 
-# Real CHIP SDK AAR is tracked in the repo (prebuilt binary)
-# android/app/libs/CHIPController.aar
+# Real CHIP SDK AAR — not tracked, obtain via android/get_chip_sdk.sh
+android/app/libs/CHIPController.aar

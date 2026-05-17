@@ -108,7 +108,14 @@ standardised type organised by category. ✅ = fully supported in the current bu
 | Android SDK | API 36 (compile), API 27 (min) |
 | NDK | 28.2.13676358 |
 
-The real CHIP SDK AAR (`CHIPController.aar`, ~31 MB) must be placed at:
+The real CHIP SDK AAR (`CHIPController.aar`, ~31 MB) is **not bundled** in this repository.
+Obtain it by running the helper script:
+
+```bash
+bash android/get_chip_sdk.sh
+```
+
+Or place it manually at:
 
 ```
 android/app/libs/CHIPController.aar
