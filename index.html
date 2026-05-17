@@ -2,10 +2,238 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0; url=privacypolicy.html" />
-  <title>Flux Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flux Home — Local Matter Controller for Android</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black:  #0a0a0a;
+      --white:  #f0f0f0;
+      --green:  #4affa0;
+      --dim:    #666;
+      --border: #1e1e1e;
+    }
+
+    html, body {
+      background: var(--black);
+      color: var(--white);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── HERO ─────────────────────────────────────────────────────────────── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 100px 24px 80px;
+      gap: 0;
+    }
+
+    /* dot-matrix house logo — pure CSS */
+    .logo {
+      display: grid;
+      grid-template-columns: repeat(7, 10px);
+      grid-template-rows:    repeat(7, 10px);
+      gap: 5px;
+      margin-bottom: 48px;
+    }
+    .logo .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: transparent;
+    }
+    .logo .dot.on { background: var(--white); }
+
+    .wordmark {
+      font-size: clamp(2.4rem, 8vw, 5rem);
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--white);
+      line-height: 1;
+    }
+
+    .accent-line {
+      width: 100%;
+      max-width: 440px;
+      height: 2px;
+      background: var(--green);
+      margin: 20px 0 18px;
+    }
+
+    .tagline {
+      font-size: 0.75rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--white);
+      opacity: 0.8;
+    }
+
+    .sub-tagline {
+      font-size: 0.65rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-top: 8px;
+    }
+
+    .cta {
+      display: inline-block;
+      margin-top: 48px;
+      padding: 14px 36px;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .cta:hover {
+      background: var(--green);
+      color: var(--black);
+    }
+
+    /* ── FEATURES ─────────────────────────────────────────────────────────── */
+    .features {
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .feature {
+      padding: 40px 32px;
+      border-right: 1px solid var(--border);
+    }
+    .feature:last-child { border-right: none; }
+
+    .feature h3 {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 10px;
+    }
+
+    .feature p {
+      font-size: 0.875rem;
+      color: var(--dim);
+      line-height: 1.6;
+    }
+
+    /* ── FOOTER ───────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 32px 24px;
+      font-size: 0.75rem;
+      color: var(--dim);
+      letter-spacing: 0.05em;
+    }
+
+    footer a {
+      color: var(--dim);
+      text-decoration: none;
+    }
+    footer a:hover { color: var(--white); }
+
+    footer .sep { margin: 0 12px; opacity: 0.3; }
+
+    @media (max-width: 600px) {
+      .feature { border-right: none; border-bottom: 1px solid var(--border); }
+      .feature:last-child { border-bottom: none; }
+    }
+  </style>
 </head>
 <body>
-  <a href="privacypolicy.html">Privacy Policy</a>
+
+  <!-- ── HERO ──────────────────────────────────────────────────────────────── -->
+  <section class="hero">
+
+    <!-- dot-matrix house: 7×7 grid, dots on = house outline -->
+    <div class="logo" aria-hidden="true">
+      <!-- row 0: roof peak -->
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot on"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <!-- row 1 -->
+      <div class="dot"></div><div class="dot"></div><div class="dot on"></div>
+      <div class="dot"></div>
+      <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
+      <!-- row 2 -->
+      <div class="dot"></div><div class="dot on"></div><div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div><div class="dot on"></div><div class="dot"></div>
+      <!-- row 3 -->
+      <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot on"></div>
+      <!-- row 4: walls -->
+      <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot on"></div>
+      <!-- row 5 -->
+      <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot on"></div>
+      <!-- row 6: floor -->
+      <div class="dot on"></div><div class="dot on"></div><div class="dot on"></div>
+      <div class="dot on"></div>
+      <div class="dot on"></div><div class="dot on"></div><div class="dot on"></div>
+    </div>
+
+    <h1 class="wordmark">Flux Home</h1>
+    <div class="accent-line"></div>
+    <p class="tagline">Local &nbsp;·&nbsp; Private &nbsp;·&nbsp; Open</p>
+    <p class="sub-tagline">Matter Compatible</p>
+
+    <a class="cta" href="https://github.com/locomuco/fluxhome/releases/latest">
+      Download for Android
+    </a>
+
+  </section>
+
+  <!-- ── FEATURES ──────────────────────────────────────────────────────────── -->
+  <div class="features">
+
+    <div class="feature">
+      <h3>No Cloud</h3>
+      <p>Commissions and controls Matter devices entirely on-device. No account, no subscription, no data leaves your home.</p>
+    </div>
+
+    <div class="feature">
+      <h3>Thread & Wi-Fi</h3>
+      <p>Supports Thread and Wi-Fi Matter devices. Imports Thread credentials directly from Android and discovers border routers via mDNS.</p>
+    </div>
+
+    <div class="feature">
+      <h3>Cluster Inspector</h3>
+      <p>Wildcard-reads every attribute, command, and feature map from every endpoint. Essential for Matter device development.</p>
+    </div>
+
+    <div class="feature">
+      <h3>OTA Updates</h3>
+      <p>Delivers firmware updates over the Matter BDX protocol with automatic version lookup via the CSA Distributed Compliance Ledger.</p>
+    </div>
+
+  </div>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+  <footer>
+    <span>Apache 2.0</span>
+    <span class="sep">|</span>
+    <a href="https://github.com/locomuco/fluxhome">GitHub</a>
+    <span class="sep">|</span>
+    <a href="docs/privacy-policy.html">Privacy Policy</a>
+  </footer>
+
 </body>
 </html>
