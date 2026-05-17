@@ -76,7 +76,7 @@ dependencies {
         }
         // Transitive deps required by CHIPController
         implementation("com.google.protobuf:protobuf-java:3.22.0")
-        implementation("com.google.code.gson:gson:2.10.1")
+        implementation("com.google.code.gson:gson:2.14.0")
     } else {
         // ── Compile-time stubs (simulation mode at runtime) ──────────────────
         implementation(project(":chip-stub"))
