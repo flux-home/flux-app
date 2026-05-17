@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Java 17 + Gradle cache ───────────────────────────────────────────────
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      # ── Android SDK: API 36 ─────────────────────────────────────────────────
+      - name: Install Android SDK platform 36
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-36" \
+            "build-tools;36.0.0" 2>&1 | tail -5
+
+      # ── NDK (cached) ────────────────────────────────────────────────────────
+      - name: Cache NDK 28.2.13676358
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          key: ndk-28.2.13676358
+
+      - name: Install NDK 28.2.13676358
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;28.2.13676358" 2>&1 | tail -5
+
+      # ── Flutter (cached) ────────────────────────────────────────────────────
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # ── Pub cache ───────────────────────────────────────────────────────────
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-
+
+      # ── Download CHIPController.aar from this repo's chip-sdk release ───────
+      - name: Download CHIPController.aar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p android/app/libs
+          gh release download chip-sdk-v1.5.0.0 \
+            --repo ${{ github.repository }} \
+            --pattern 'CHIPController.aar' \
+            --dir android/app/libs
+
+      # ── Signing keystore ────────────────────────────────────────────────────
+      - name: Write keystore and key.properties
+        env:
+          KEYSTORE_BASE64:   ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/keystore.jks
+          printf 'storeFile=keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" \
+            > android/key.properties
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release --split-per-abi
+
+      # ── Publish ──────────────────────────────────────────────────────────────
+      - name: Create GitHub release and upload APKs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Flux ${{ github.ref_name }}" \
+            --generate-notes \
+            "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk#flux-${{ github.ref_name }}-arm64.apk" \
+            "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk#flux-${{ github.ref_name }}-arm.apk" \
+            "build/app/outputs/flutter-apk/app-x86_64-release.apk#flux-${{ github.ref_name }}-x86_64.apk"
