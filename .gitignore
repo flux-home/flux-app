@@ -54,3 +54,12 @@ android/app/libs/CHIPController.aar
 # Signing keystore — never commit
 android/app/keystore.jks
 android/key.properties
+
+# Local build/workaround artifacts (not part of the build)
+classes.jar
+.ld-workaround
+ld_workaround
+
+# Local agent / tool state
+.antigravitycli/
+.agents/REVIEW_PLAN.md
