@@ -199,18 +199,30 @@ event stream.
 
 ## `DeviceProvider` responsibility breakdown
 
-`DeviceProvider` currently owns 7 distinct concern clusters (down from 8;
-commissioning logic moved to `CommissioningController`).
+`DeviceProvider` currently owns 7 distinct concern clusters in ~1,016 LOC
+(down from 8; commissioning logic moved to `CommissioningController`).
 
 | Concern | Methods | Notes |
 |---|---|---|
 | **Persistence** | `_load`, `_persist`, `_flushSnapshot` | Delegated to `DeviceStore`; provider glues it |
-| **Subscription lifecycle** | `_startAllSubscriptions`, `_startSubscription`, `_stopSubscription`, `_onDeviceStateEvent` | Natural extraction: `DeviceSubscriptionManager` |
-| **Live state cache** | `_liveCache`, `_mergeLiveCache`, `updateBasicInfo`, `clusterCacheFor`, `cacheClusterJson` | Moves with subscription manager |
+| **Subscription lifecycle** | `_startAllSubscriptions`, `_startSubscription`, `_stopSubscription`, `_onDeviceStateEvent` | Natural extraction candidate |
+| **Live state cache** | `_liveCache`, `_mergeLiveCache`, `updateBasicInfo`, `clusterCacheFor`, `cacheClusterJson` | Would move with the subscription extraction |
 | **Device-type inference** | `_inferTypeFromEvent`, `_resolveUnknownDeviceType`, `_applyStateUpdate` | Three writers, no single authority (see friction #4) |
 | **Commission lifecycle** | `beginCommissioning`, `registerCommissionedDevice`, `failCommissioning` | Thin callbacks only — logic lives in `CommissioningController` |
 | **Device controls** | `toggle`, `setBrightness`, `coveringUp/Down/Stop`, `setFanMode/Percent`, `setColorTemperature` | Pure command dispatch; no state |
 | **Device management** | `renameDevice`, `removeDevice`, `clearAllDevices`, `shareWithGoogleHome`, `refreshDevice`, `refreshAll` | Admin + one-shot reads |
+| **Rooms** | `_rooms`, `createRoom`, `renameRoom`, `deleteRoom`, `assignRoom`, `_persistRooms` | CRUD over an in-memory room list |
+| **Automation rules** | `_rules`, `_lastSwitchPressTime`, `upsertRule`, `removeRule`, switch-press matching | Rule storage + matching inline |
+| **OTA progress** | `_otaProgress`, `clearOtaProgress`, OTA event handling | Progress map fed by `OtaProgressEvent`s |
+
+> **A previous attempt** to split these into per-domain managers
+> (`SubscriptionManager`, `DeviceControlService`, `RoomManager`,
+> `RoomProvider`, `OtaProvider`, `AutomationProvider`) left half-extracted
+> Dart files that were never wired into `main.dart`. Those files were
+> deleted in May 2026; see the `refactor: delete dead ...` commits in
+> `git log` for the previous shape if the split is revived. Any future
+> attempt must update `main.dart`, all call sites, and the architecture
+> doc in the same change — not leave parallel copies in the tree.
 
 ---
 
@@ -318,4 +330,4 @@ the typed sealed class rather than a string type check.
 | 4 | Device type — three independent writers in `DeviceProvider` | Non-symmetric eligibility conditions; no single authority | Open |
 | 5 | `matter_port.dart` UI screen imports | Interface file importing from UI layer | **Fixed** — all 8 UI imports removed |
 | 6 | OTA progress multiplexed on `device_state` EventChannel | Unrelated lifecycles share one channel | Partially mitigated — `OtaProgressEvent` is a typed sealed-class case; channel sharing remains |
-| 7 | `DeviceProvider` god object (621 LOC, 7 concern clusters) | Commissioning extracted; subscription lifecycle and controls remain bundled | Partially mitigated — commissioning concern removed |
+| 7 | `DeviceProvider` god object (1,016 LOC, ~10 concern clusters) | Commissioning extracted; subscription lifecycle, controls, rooms, automation, and OTA all remain bundled | Partially mitigated — commissioning concern removed. Earlier extraction attempts for subscription / rooms / OTA / automation produced unused parallel files and were deleted; future splits must wire through `main.dart` in the same change |
