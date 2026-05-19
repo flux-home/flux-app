@@ -7,6 +7,13 @@
 
 include: package:very_good_analysis/analysis_options.yaml
 
+analyzer:
+  exclude:
+    # In-flight Matter cluster feature work — Dart cards drafted before the
+    # matching DeviceLiveData / DeviceProvider API exists. Resurrect once
+    # the supporting API is in place, then remove this exclude.
+    - lib/_wip/**
+
 # Use 120-char line length instead of the default 80.
 formatter:
   page_width: 120
