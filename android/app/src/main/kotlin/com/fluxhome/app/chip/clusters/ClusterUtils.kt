@@ -155,6 +155,7 @@ internal suspend fun writeAttribute(
 internal suspend fun invoke(
     devicePointer: Long,
     element: InvokeElement,
+    timedRequestTimeoutMs: Int = 0,
 ) = suspendCancellableCoroutine<Unit> { cont ->
     ChipClient.getController().invoke(
         object : InvokeCallback {
@@ -167,13 +168,17 @@ internal suspend fun invoke(
                 if (cont.isActive) cont.resume(Unit)
             }
         },
-        devicePointer, element, 0, 0,
+        devicePointer, element, timedRequestTimeoutMs, 0,
     )
 }
 
 /** Convenience overload: resolves the device pointer from [context] + [nodeId]. */
-internal suspend fun invoke(context: Context, nodeId: Long, element: InvokeElement) =
-    invoke(ChipClient.getConnectedDevicePointer(context, nodeId), element)
+internal suspend fun invoke(
+    context: Context,
+    nodeId: Long,
+    element: InvokeElement,
+    timedRequestTimeoutMs: Int = 0,
+) = invoke(ChipClient.getConnectedDevicePointer(context, nodeId), element, timedRequestTimeoutMs)
 
 // ── JSON escaping ─────────────────────────────────────────────────────────────
 
