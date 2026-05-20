@@ -95,20 +95,17 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── Odometer (imported kWh) ───────────────────────────────────
-            if (live.cumulativeEnergyMwh != null) ...[
-              const SizedBox(height: 18),
-              Divider(height: 1, color: Colors.white.withAlpha(15)),
-              const SizedBox(height: 14),
-              Center(child: _OdometerDisplay(mwh: live.cumulativeEnergyMwh!, label: 'IMPORTED')),
-            ],
+            const SizedBox(height: 18),
+            Divider(height: 1, color: Colors.white.withAlpha(15)),
+            const SizedBox(height: 14),
+            if (live.cumulativeEnergyMwh != null)
+              Center(child: _OdometerDisplay(mwh: live.cumulativeEnergyMwh!, label: 'IMPORTED'))
+            else
+              _WaitingChip(label: 'Waiting for cumulative energy…'),
 
             // ── Odometer (exported kWh) ─────────────────────────────────────────
             if (exportedMwh != null) ...[
               const SizedBox(height: 14),
-              if (live.cumulativeEnergyMwh == null) ...[
-                Divider(height: 1, color: Colors.white.withAlpha(15)),
-                const SizedBox(height: 14),
-              ],
               Center(
                 child: _OdometerDisplay(
                   mwh:   exportedMwh,
@@ -119,36 +116,31 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── History chart ───────────────────────────────────────────────
-    // Only render if the device reports cumulative energy at all.
-            // If cumulativeEnergyWh is null the device only reports power
-            // (no odometer), so the chart section is omitted entirely.
-            if (live.cumulativeEnergyWh != null) ...[
-              const SizedBox(height: 18),
-              Divider(height: 1, color: Colors.white.withAlpha(15)),
-              const SizedBox(height: 14),
-              if (history.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.hourglass_top_outlined,
-                          size: 13, color: Colors.white.withAlpha(60)),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Collecting… first bar after 15 min',
-                        style: TextStyle(
-                          color:      Colors.white.withAlpha(60),
-                          fontSize:   11,
-                          fontWeight: FontWeight.w500,
-                        ),
+            const SizedBox(height: 18),
+            Divider(height: 1, color: Colors.white.withAlpha(15)),
+            const SizedBox(height: 14),
+            if (history.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.hourglass_top_outlined,
+                        size: 13, color: Colors.white.withAlpha(60)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Collecting… first bar after 15 min',
+                      style: TextStyle(
+                        color:      Colors.white.withAlpha(60),
+                        fontSize:   11,
+                        fontWeight: FontWeight.w500,
                       ),
-                    ],
-                  ),
-                )
-              else
-                _EnergyHistoryChart(history: history),
-            ],
+                    ),
+                  ],
+                ),
+              )
+            else
+              _EnergyHistoryChart(history: history),
           ],
         ),
       ),
@@ -353,6 +345,29 @@ class _DiscStripPainter extends CustomPainter {
 // Odometer — drum-window kWh counter
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Waiting chip — shown when the device hasn't pushed a value yet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WaitingChip extends StatelessWidget {
+  const _WaitingChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(Icons.hourglass_top_outlined, size: 12, color: Colors.white.withAlpha(60)),
+      const SizedBox(width: 6),
+      Text(
+        label,
+        style: TextStyle(color: Colors.white.withAlpha(60), fontSize: 11, fontWeight: FontWeight.w500),
+      ),
+    ],
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
 class _OdometerDisplay extends StatelessWidget {
   const _OdometerDisplay({
     required this.mwh,
