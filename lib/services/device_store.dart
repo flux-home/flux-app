@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:matter_home/models/automation_rule.dart';
+import 'package:matter_home/models/energy_bucket.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/models/room.dart';
@@ -98,4 +99,21 @@ class DeviceStore {
     final raw = snapshots.values.map((s) => jsonEncode(s.toJson())).toList();
     await _prefs.setStringList(_kSnapshots, raw);
   }
+
+  // ── Energy history (15-min buckets, 7-day retention) ───────────────────────
+
+  List<EnergyBucket> loadEnergyHistory(String deviceId) {
+    final raw = _prefs.getStringList(_energyKey(deviceId)) ?? [];
+    return raw.map((s) {
+      try { return EnergyBucket.fromJson(jsonDecode(s) as Map<String, dynamic>); }
+      on Exception catch (_) { return null; }
+    }).whereType<EnergyBucket>().toList();
+  }
+
+  Future<void> saveEnergyHistory(String deviceId, List<EnergyBucket> buckets) async {
+    final raw = buckets.map((b) => jsonEncode(b.toJson())).toList();
+    await _prefs.setStringList(_energyKey(deviceId), raw);
+  }
+
+  static String _energyKey(String deviceId) => 'energy_history_$deviceId';
 }

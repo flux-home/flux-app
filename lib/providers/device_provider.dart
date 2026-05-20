@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/automation_rule.dart';
+import 'package:matter_home/models/energy_bucket.dart';
 import 'package:matter_home/models/switch_group.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_live_data.dart';
@@ -13,6 +14,7 @@ import 'package:matter_home/models/ota_progress.dart';
 import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/energy_history_recorder.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -39,10 +41,11 @@ class DeviceProvider extends ChangeNotifier {
   List<Room> _rooms = [Room.noRoom];
 
   // ── In-memory caches ──────────────────────────────────────────────────────
-  final Map<String, DeviceLiveData>     _liveCache     = {};
-  final Map<String, String>             _clusterCache  = {}; // deviceId → JSON
-  final Map<String, OtaProgressState>   _otaProgress   = {};
-  final Map<String, PersistedSnapshot>  _snapshots     = {};
+  final Map<String, DeviceLiveData>        _liveCache     = {};
+  final Map<String, String>                _clusterCache  = {}; // deviceId → JSON
+  final Map<String, OtaProgressState>      _otaProgress   = {};
+  final Map<String, PersistedSnapshot>     _snapshots     = {};
+  final Map<String, EnergyHistoryRecorder> _energyRecorders = {};
 
   // ── Automation rules ────────────────────────────────────────────────────
   final List<AutomationRule> _rules               = [];
@@ -173,6 +176,10 @@ class DeviceProvider extends ChangeNotifier {
   /// Returns the raw live cache for [deviceId].
   /// Prefer [viewFor] when you also need commissioning fields.
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
+
+  /// Sealed 15-minute energy buckets for [deviceId], oldest first.
+  List<EnergyBucket> energyHistoryFor(String deviceId) =>
+      _energyRecorders[deviceId]?.history ?? const [];
 
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
@@ -366,6 +373,16 @@ class DeviceProvider extends ChangeNotifier {
     _handleSwitchPress(device.id, attrs);
     // Execute any contact sensor links triggered by a state transition.
     _handleContactChange(device.id, attrs, prevContact);
+
+    // Feed energy history recorder if this update carries cumulative energy.
+    final cumulativeWh = attrs['cumulativeEnergyWh'] as int?;
+    if (cumulativeWh != null) {
+      (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
+        deviceId:  device.id,
+        store:     _store,
+        onUpdated: notifyListeners,
+      )).record(DateTime.now(), cumulativeWh);
+    }
 
     // Infer device type from subscription attributes when the stored type
     // is unknown or is a stale commissioning fallback.

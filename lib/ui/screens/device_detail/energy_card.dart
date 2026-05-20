@@ -20,9 +20,10 @@ part of '../device_detail_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EnergyCard extends StatelessWidget {
-  const EnergyCard({required this.live, super.key});
+  const EnergyCard({required this.live, required this.history, super.key});
 
-  final DeviceLiveData live;
+  final DeviceLiveData       live;
+  final List<EnergyBucket>   history;
 
   // ── Formatters ────────────────────────────────────────────────────────────
 
@@ -116,6 +117,14 @@ class EnergyCard extends StatelessWidget {
                   color: Colors.green.shade400,
                 ),
               ),
+            ],
+
+            // ── History chart ───────────────────────────────────────────────
+            if (history.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Divider(height: 1, color: Colors.white.withAlpha(15)),
+              const SizedBox(height: 14),
+              _EnergyHistoryChart(history: history),
             ],
           ],
         ),
@@ -482,13 +491,200 @@ class _MetricTile extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Energy footer row (unchanged)
+// Energy history — scrollable 15-min bar chart
+//
+// Layout:
+//   • Fixed height 140 px, full card width.
+//   • Each 15-min slot = 4 px bar + 2 px gap = 6 px/slot.
+//   • 672 slots (7 days) → total scroll width = 4 032 px.
+//   • "Now" pinned to the right edge on first render.
+//   • Missing slots leave a hole (no bar drawn).
+//   • Y-axis auto-scales to the tallest bar in the full dataset.
+//   • Day-boundary lines at midnight as faint vertical guides.
+//   • Three Y labels on the right margin; day labels below bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _EnergyHistoryChart extends StatefulWidget {
+  const _EnergyHistoryChart({required this.history});
+  final List<EnergyBucket> history;
 
+  @override
+  State<_EnergyHistoryChart> createState() => _EnergyHistoryChartState();
+}
 
+class _EnergyHistoryChartState extends State<_EnergyHistoryChart> {
+  late final ScrollController _scroll;
+  static const _slotPx  = 6.0;   // bar (4) + gap (2)
+  static const _barPx   = 4.0;
+  static const _chartH  = 100.0; // bar area height
+  static const _labelH  = 24.0;  // day-label strip height
+  static const _totalH  = _chartH + _labelH;
 
+  @override
+  void initState() {
+    super.initState();
+    _scroll = ScrollController();
+    // Pin to the right after the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
 
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final maxWh = widget.history.isEmpty
+        ? 1
+        : widget.history.map((b) => b.wh).reduce(math.max);
+
+    return SizedBox(
+      height: _totalH,
+      child: SingleChildScrollView(
+        controller:     _scroll,
+        scrollDirection: Axis.horizontal,
+        child: CustomPaint(
+          size: Size(_slotPx * _slotsNeeded(widget.history), _totalH),
+          painter: _HistoryPainter(
+            history: widget.history,
+            maxWh:   maxWh,
+            slotPx:  _slotPx,
+            barPx:   _barPx,
+            chartH:  _chartH,
+            labelH:  _labelH,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Total slots to render = span from oldest bucket to now, floored to
+  /// 15-min boundaries, capped at 7 days.
+  static int _slotsNeeded(List<EnergyBucket> history) {
+    if (history.isEmpty) return 0;
+    const kSlots = 7 * 24 * 4; // 672
+    final oldest = history.first.time;
+    final now    = DateTime.now();
+    final span   = now.difference(oldest).inMinutes ~/ 15 + 1;
+    return math.min(span, kSlots);
+  }
+}
+
+class _HistoryPainter extends CustomPainter {
+  const _HistoryPainter({
+    required this.history,
+    required this.maxWh,
+    required this.slotPx,
+    required this.barPx,
+    required this.chartH,
+    required this.labelH,
+  });
+
+  final List<EnergyBucket> history;
+  final int    maxWh;
+  final double slotPx;
+  final double barPx;
+  final double chartH;
+  final double labelH;
+
+  static const _barColor      = Colors.amber;
+  static const _guideColor    = Colors.white;
+  static const _labelStyle    = TextStyle(
+    color:      Colors.white54,
+    fontSize:   9,
+    fontWeight: FontWeight.w500,
+  );
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (history.isEmpty) return;
+
+    final now    = DateTime.now();
+    // Slot index 0 = oldest possible slot (7 days ago, floored).
+    // Slot index n = now's slot.
+    final epoch = _floorSlot(now.subtract(const Duration(days: 7)));
+
+    // Build a lookup: slotIndex → Wh
+    final lookup = <int, int>{};
+    for (final b in history) {
+      final idx = b.time.difference(epoch).inMinutes ~/ 15;
+      if (idx >= 0) lookup[idx] = b.wh;
+    }
+
+    final totalSlots = size.width ~/ slotPx;
+    final barPaint   = Paint()..color = _barColor.withAlpha(200);
+    final guidePaint = Paint()
+      ..color     = _guideColor.withAlpha(15)
+      ..strokeWidth = 0.5;
+
+    // Render right-to-left: slot 0 is rightmost in the scroll view.
+    // Actually left-to-right: slot 0 at x=0 (oldest), current slot at right.
+    for (var s = 0; s < totalSlots; s++) {
+      final wh = lookup[s];
+      if (wh == null || wh <= 0) continue;
+
+      final frac = wh / maxWh;
+      final barH = (frac * chartH).clamp(1.0, chartH);
+      final x    = s * slotPx;
+
+      canvas.drawRect(
+        Rect.fromLTWH(x, chartH - barH, barPx, barH),
+        barPaint,
+      );
+    }
+
+    // ── Day-boundary guides + labels ───────────────────────────────────────
+    var cursor = epoch;
+    while (cursor.isBefore(now)) {
+      final next = DateTime(cursor.year, cursor.month, cursor.day + 1);
+      final midnightSlot = next.difference(epoch).inMinutes ~/ 15;
+      final x = midnightSlot * slotPx;
+
+      if (x > 0 && x < size.width) {
+        canvas.drawLine(Offset(x, 0), Offset(x, chartH), guidePaint);
+
+        // Day label centred in the day to the left of this midnight.
+        final dayStartSlot = cursor.difference(epoch).inMinutes ~/ 15;
+        final labelX = (dayStartSlot + (midnightSlot - dayStartSlot) / 2) * slotPx;
+        _drawLabel(canvas, _dayLabel(cursor), labelX, chartH + 4);
+      }
+      cursor = next;
+    }
+    // Label for the final (partial) day
+    final lastMidnight = DateTime(now.year, now.month, now.day);
+    final lastDayStart = lastMidnight.difference(epoch).inMinutes ~/ 15;
+    final lastLabelX   = (lastDayStart + (totalSlots - lastDayStart) / 2.0) * slotPx;
+    _drawLabel(canvas, _dayLabel(lastMidnight), lastLabelX, chartH + 4);
+  }
+
+  static DateTime _floorSlot(DateTime dt) {
+    final m = (dt.minute ~/ 15) * 15;
+    return DateTime(dt.year, dt.month, dt.day, dt.hour, m);
+  }
+
+  static String _dayLabel(DateTime dt) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[dt.weekday - 1];
+  }
+
+  void _drawLabel(Canvas canvas, String text, double cx, double cy) {
+    final tp = TextPainter(
+      text:            TextSpan(text: text, style: _labelStyle),
+      textDirection:   TextDirection.ltr,
+      textAlign:       TextAlign.center,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width / 2, cy));
+  }
+
+  @override
+  bool shouldRepaint(_HistoryPainter old) =>
+      old.history != history || old.maxWh != maxWh;
+}
 
 

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/energy_bucket.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/automation_rule.dart';
@@ -329,7 +330,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             if ((view.deviceType.hasEnergyMeasurement ||
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
-              EnergyCard(live: view.live!),
+              EnergyCard(
+                live:    view.live!,
+                history: context.read<DeviceProvider>().energyHistoryFor(view.id),
+              ),
               const SizedBox(height: 12),
             ],
             // For switch devices, filter out per-endpoint switch readings
