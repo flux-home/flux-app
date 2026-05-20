@@ -46,9 +46,11 @@ class EnergyHistoryRecorder {
   List<EnergyBucket> _history = [];
 
   // ── Bucket state ──────────────────────────────────────────────────────────
-  DateTime? _openBucketStart;  // floored to 15-min boundary
-  int?      _bucketStartMwh;   // device reading when bucket opened
-  int?      _latestMwh;        // most recent device reading
+  DateTime? _openBucketStart;
+  int?      _bucketStartMwh;          // imported baseline for open bucket
+  int?      _latestMwh;               // latest imported cumulative
+  int?      _exportedBucketStartMwh;  // exported baseline for open bucket
+  int?      _latestExportedMwh;       // latest exported cumulative
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -56,44 +58,61 @@ class EnergyHistoryRecorder {
   List<EnergyBucket> get history => List.unmodifiable(_history);
 
   /// Energy accumulated in the current (unsealed) 15-min bucket, in Wh.
-  /// Zero until the first reading arrives.
   int get currentBucketWh {
     if (_bucketStartMwh == null || _latestMwh == null) return 0;
-    final mwh = (_latestMwh! - _bucketStartMwh!).clamp(0, 999999999);
-    return (mwh / 1000).round();
+    return ((_latestMwh! - _bucketStartMwh!).clamp(0, 999999999) / 1000).round();
   }
 
+  /// Exported energy accumulated in the current (unsealed) 15-min bucket, Wh.
+  int get currentExportedBucketWh {
+    if (_exportedBucketStartMwh == null || _latestExportedMwh == null) return 0;
+    return ((_latestExportedMwh! - _exportedBucketStartMwh!).clamp(0, 999999999) / 1000).round();
+  }
 
-  /// Called on every periodic read of CumulativeEnergyImported.
-  ///
-  /// [cumulativeMwh] is the absolute device odometer value in mWh.
-  void record(DateTime now, int cumulativeMwh) {
-    _latestMwh = cumulativeMwh;
+  /// Called on every cumulative-energy update from the device.
+  /// [exportedMwh] is null if the device doesn't report exported energy.
+  void record(DateTime now, int importedMwh, {int? exportedMwh}) {
+    _latestMwh = importedMwh;
+    if (exportedMwh != null) _latestExportedMwh = exportedMwh;
 
     final bucketStart = _floorToBucket(now);
 
     if (_openBucketStart == null) {
-      _openBucketStart = bucketStart;
-      _bucketStartMwh  = cumulativeMwh;
-      _onUpdated();   // first reading — refresh odometer display
+      _openBucketStart        = bucketStart;
+      _bucketStartMwh         = importedMwh;
+      _exportedBucketStartMwh = exportedMwh;
+      _onUpdated();
       return;
     }
 
     if (bucketStart == _openBucketStart) {
-      // Still within the current slot — update odometer display.
       _onUpdated();
       return;
     }
 
     // ── New slot: seal the previous bucket ────────────────────────────────────
-    final deltaMwh = cumulativeMwh - _bucketStartMwh!;
-    final sealedWh = (deltaMwh / 1000.0).round().clamp(0, deltaMwh ~/ 1000 + 1);
-    _history.add(EnergyBucket(time: _openBucketStart!, wh: sealedWh));
+    final deltaImportedMwh = importedMwh - _bucketStartMwh!;
+    final sealedImportedWh = (deltaImportedMwh / 1000.0).round()
+        .clamp(0, deltaImportedMwh ~/ 1000 + 1);
+
+    int sealedExportedWh = 0;
+    if (_exportedBucketStartMwh != null && _latestExportedMwh != null) {
+      final deltaExportedMwh = _latestExportedMwh! - _exportedBucketStartMwh!;
+      sealedExportedWh = (deltaExportedMwh / 1000.0).round()
+          .clamp(0, deltaExportedMwh ~/ 1000 + 1);
+    }
+
+    _history.add(EnergyBucket(
+      time:       _openBucketStart!,
+      wh:         sealedImportedWh,
+      exportedWh: sealedExportedWh,
+    ));
     _prune();
     unawaited(_store.saveEnergyHistory(_deviceId, _history));
 
-    _openBucketStart = bucketStart;
-    _bucketStartMwh  = cumulativeMwh;
+    _openBucketStart        = bucketStart;
+    _bucketStartMwh         = importedMwh;
+    _exportedBucketStartMwh = exportedMwh ?? _exportedBucketStartMwh;
     _onUpdated();
   }
 

@@ -185,6 +185,10 @@ class DeviceProvider extends ChangeNotifier {
   int energyCurrentBucketWhFor(String deviceId) =>
       _energyRecorders[deviceId]?.currentBucketWh ?? 0;
 
+  /// Energy exported in the current (unsealed) 15-min slot, in Wh.
+  int energyCurrentExportedBucketWhFor(String deviceId) =>
+      _energyRecorders[deviceId]?.currentExportedBucketWh ?? 0;
+
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
@@ -391,21 +395,31 @@ class DeviceProvider extends ChangeNotifier {
     //     known cumulative so the odometer keeps ticking between exact reads.
     //     This is NOT estimation — both values come straight from the device.
 
-    final newCumulativeMwh = attrs['cumulativeEnergyMwh'] as int?;
-    final periodicMwh      = attrs['periodicEnergyMwh']   as int?;
+    final newCumulativeMwh         = attrs['cumulativeEnergyMwh']         as int?;
+    final newCumulativeExportedMwh   = attrs['cumulativeEnergyExportedMwh'] as int?;
+    final periodicMwh                = attrs['periodicEnergyMwh']           as int?;
+    final periodicExportedMwh        = attrs['periodicEnergyExportedMwh']   as int?;
 
     EnergyHistoryRecorder recorder() => _energyRecorders[device.id] ??=
         EnergyHistoryRecorder(deviceId: device.id, store: _store, onUpdated: notifyListeners);
 
     if (newCumulativeMwh != null) {
-      // Fresh exact cumulative from device — record and update odometer.
-      recorder().record(DateTime.now(), newCumulativeMwh);
+      recorder().record(DateTime.now(), newCumulativeMwh,
+          exportedMwh: newCumulativeExportedMwh);
     } else if (periodicMwh != null && periodicMwh > 0) {
-      // Periodic delta arrived without a fresh cumulative — accumulate.
       final baseline = _liveCache[device.id]?.cumulativeEnergyMwh ?? 0;
       final updated  = baseline + periodicMwh;
-      _liveCache[device.id] = _liveCache[device.id]!.merge({'cumulativeEnergyMwh': updated});
-      recorder().record(DateTime.now(), updated);
+      final cacheUpdate = <String, dynamic>{'cumulativeEnergyMwh': updated};
+
+      int? updatedExported;
+      if (periodicExportedMwh != null && periodicExportedMwh > 0) {
+        final exportBaseline = _liveCache[device.id]?.cumulativeEnergyExportedMwh ?? 0;
+        updatedExported = exportBaseline + periodicExportedMwh;
+        cacheUpdate['cumulativeEnergyExportedMwh'] = updatedExported;
+      }
+
+      _liveCache[device.id] = _liveCache[device.id]!.merge(cacheUpdate);
+      recorder().record(DateTime.now(), updated, exportedMwh: updatedExported);
     }
 
     // Infer device type from subscription attributes when the stored type

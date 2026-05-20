@@ -17,6 +17,7 @@ import 'package:matter_home/ui/screens/device_settings_screen.dart';
 import 'package:matter_home/ui/theme.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:provider/provider.dart';
+import 'package:matter_home/ui/screens/device_detail/energy_history_chart.dart';
 
 part 'device_detail/switch_card.dart';
 part 'device_detail/on_off_card.dart';
@@ -331,9 +332,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
               EnergyCard(
-                live:             view.live!,
-                history:          context.read<DeviceProvider>().energyHistoryFor(view.id),
-                currentBucketWh:  context.read<DeviceProvider>().energyCurrentBucketWhFor(view.id),
+                live:                    view.live!,
+                history:                 context.read<DeviceProvider>().energyHistoryFor(view.id),
+                currentBucketWh:         context.read<DeviceProvider>().energyCurrentBucketWhFor(view.id),
+                currentExportedBucketWh: context.read<DeviceProvider>().energyCurrentExportedBucketWhFor(view.id),
               ),
               const SizedBox(height: 12),
             ],
