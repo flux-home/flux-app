@@ -45,7 +45,7 @@ class _EnergyHistoryChartState extends State<EnergyHistoryChart> {
   static const _barPx   = 4.0;
   static const _importH = 80.0;
   static const _exportH = 36.0;
-  static const _labelH  = 30.0;
+  static const _labelH  = 38.0;
   static const _totalH  = _importH + 1 + _exportH + _labelH;
 
   @override
@@ -337,13 +337,44 @@ class _MirroredPainter extends CustomPainter {
     fontSize:   8,
     fontWeight: FontWeight.w400,
   );
+  static const _totalImportStyle = TextStyle(
+    color:      Color(0xAAE8A838),
+    fontSize:   8,
+    fontWeight: FontWeight.w600,
+  );
+  static const _totalExportStyle = TextStyle(
+    color:      Color(0x993EC9A7),
+    fontSize:   8,
+    fontWeight: FontWeight.w600,
+  );
+
+  static String _fmtWh(int wh) {
+    if (wh >= 10000) return '${(wh / 1000).toStringAsFixed(0)}k';
+    if (wh >= 1000)  return '${(wh / 1000).toStringAsFixed(1)}k';
+    return '$wh';
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final zeroY      = importH;
-    final labelTop   = importH + 1 + exportH; // y=0 of label zone
-    final totalSlots = size.width ~/ slotPx;
+    final zeroY       = importH;
+    final labelTop    = importH + 1 + exportH;
+    final totalSlots  = size.width ~/ slotPx;
     final currentSlot = now.difference(epoch).inMinutes ~/ 15;
+
+    // ── Pre-compute daily totals ───────────────────────────────────────────
+    final dailyImportWh = <DateTime, int>{};
+    final dailyExportWh = <DateTime, int>{};
+    for (final b in history) {
+      final day = DateTime(b.time.year, b.time.month, b.time.day);
+      dailyImportWh[day] = (dailyImportWh[day] ?? 0) + b.wh;
+      if (b.exportedWh > 0)
+        dailyExportWh[day] = (dailyExportWh[day] ?? 0) + b.exportedWh;
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    if (currentBucketWh > 0)
+      dailyImportWh[today] = (dailyImportWh[today] ?? 0) + currentBucketWh;
+    if (currentExportedBucketWh > 0)
+      dailyExportWh[today] = (dailyExportWh[today] ?? 0) + currentExportedBucketWh;
 
     // ── Zero-axis hairline ─────────────────────────────────────────────────
     canvas.drawLine(
@@ -393,59 +424,57 @@ class _MirroredPainter extends CustomPainter {
       }
     }
 
-    // ── Day boundaries + hour ticks + labels ──────────────────────────────
-    final guidePaint = Paint()
-      ..color      = Colors.white.withAlpha(12)
-      ..strokeWidth = 0.5;
-    final hourTickPaint = Paint()
-      ..color      = Colors.white.withAlpha(18)
-      ..strokeWidth = 0.5;
+    // ── Day loop: boundary lines, hour ticks, day name, daily total ───────
+    final guidePaint    = Paint()..color = Colors.white.withAlpha(12)..strokeWidth = 0.5;
+    final hourTickPaint = Paint()..color = Colors.white.withAlpha(18)..strokeWidth = 0.5;
 
     var cursor = epoch;
     while (cursor.isBefore(now)) {
       final next         = DateTime(cursor.year, cursor.month, cursor.day + 1);
       final dayStartSlot = cursor.difference(epoch).inMinutes ~/ 15;
-      final midnightSlot = next.difference(epoch).inMinutes ~/ 15;
-      final midnightX    = midnightSlot * slotPx;
+      // Clamp end to visible canvas so label centres on the visible portion
+      final dayEndSlot   = math.min(next.difference(epoch).inMinutes ~/ 15, totalSlots);
+      final midnightX    = next.difference(epoch).inMinutes ~/ 15 * slotPx;
 
-      // Midnight boundary line
-      if (midnightX > 0 && midnightX < size.width) {
+      // Midnight boundary line (only between days, not at right edge)
+      if (midnightX > 0 && midnightX < size.width)
         canvas.drawLine(Offset(midnightX, 0), Offset(midnightX, labelTop), guidePaint);
-      }
 
       // Hour ticks + labels at 06, 12, 18
       for (final h in [6, 12, 18]) {
-        final hourDt   = DateTime(cursor.year, cursor.month, cursor.day, h);
+        final hourDt = DateTime(cursor.year, cursor.month, cursor.day, h);
         if (hourDt.isAfter(epoch) && hourDt.isBefore(now)) {
-          final slot = hourDt.difference(epoch).inMinutes ~/ 15;
-          final x    = slot * slotPx;
-          // Tick
-          canvas.drawLine(
-            Offset(x, labelTop),
-            Offset(x, labelTop + 4),
-            hourTickPaint,
-          );
-          // Label: "06" / "12" / "18"
+          final x = hourDt.difference(epoch).inMinutes ~/ 15 * slotPx;
+          canvas.drawLine(Offset(x, labelTop), Offset(x, labelTop + 4), hourTickPaint);
           _drawText(canvas, h.toString().padLeft(2, '0'), x, labelTop + 5,
               style: _hourStyle, center: true);
         }
       }
 
-      // Day name centred in the day
-      final labelCx = (dayStartSlot + (midnightSlot - dayStartSlot) / 2.0) * slotPx;
+      // Day name centred in the visible portion of the day
+      final labelCx = (dayStartSlot + (dayEndSlot - dayStartSlot) / 2.0) * slotPx;
       _drawText(canvas, _dayLabel(cursor), labelCx, labelTop + 16,
           style: _dayStyle, center: true);
 
+      // Daily consumption total below the day name
+      final dayKey   = DateTime(cursor.year, cursor.month, cursor.day);
+      final impTotal = dailyImportWh[dayKey] ?? 0;
+      final expTotal = dailyExportWh[dayKey] ?? 0;
+      if (impTotal > 0 || expTotal > 0) {
+        if (expTotal > 0) {
+          // ↑import  ↓export side by side
+          _drawText(canvas, '\u2191${_fmtWh(impTotal)}', labelCx - 2, labelTop + 27,
+              style: _totalImportStyle, center: false, rightAlign: true);
+          _drawText(canvas, ' \u2193${_fmtWh(expTotal)}', labelCx - 2, labelTop + 27,
+              style: _totalExportStyle, center: false);
+        } else {
+          _drawText(canvas, '${_fmtWh(impTotal)} Wh', labelCx, labelTop + 27,
+              style: _totalImportStyle, center: true);
+        }
+      }
+
       cursor = next;
     }
-
-    // Current (partial) day
-    final todayMidnight = DateTime(now.year, now.month, now.day);
-    final todaySlot     = todayMidnight.difference(epoch).inMinutes ~/ 15;
-    _drawText(canvas, _dayLabel(todayMidnight),
-        (todaySlot + (totalSlots - todaySlot) / 2.0) * slotPx,
-        labelTop + 16,
-        style: _dayStyle, center: true);
   }
 
   static String _dayLabel(DateTime dt) {
@@ -454,12 +483,13 @@ class _MirroredPainter extends CustomPainter {
   }
 
   void _drawText(Canvas canvas, String text, double cx, double cy,
-      {required TextStyle style, bool center = false}) {
+      {required TextStyle style, bool center = false, bool rightAlign = false}) {
     final tp = TextPainter(
       text:          TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, Offset(center ? cx - tp.width / 2 : cx, cy));
+    final dx = rightAlign ? cx - tp.width : center ? cx - tp.width / 2 : cx;
+    tp.paint(canvas, Offset(dx, cy));
   }
 
   @override
