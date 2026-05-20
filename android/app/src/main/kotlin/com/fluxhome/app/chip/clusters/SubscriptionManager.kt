@@ -178,7 +178,6 @@ internal object SubscriptionManager {
      */
     private fun extractEnergyMwh(value: Any?): Long? {
         if (value == null) return null
-        // Some SDK versions decode the struct as a plain Number (legacy).
         if (value is Number) return value.toLong()
         return try {
             val field = value.javaClass.getDeclaredField("energy")
@@ -253,9 +252,9 @@ internal object SubscriptionManager {
                 ?.let { r["activeCurrent"] = it }
 
             // ── ElectricalEnergyMeasurement (0x0091): struct attribute –––––––––––
-            // CumulativeEnergyImported is a nullable EnergyMeasurementStruct.
-            // Extract the `energy` field (mWh) via reflection to avoid importing
-            // SDK-generated ChipStructs types that are absent from the build stub.
+            // CumulativeEnergyImported/Exported arrive on a different endpoint than
+            // ActivePower, so they are absent from most per-second subscription
+            // updates.  They are picked up whenever the device does include them.
             ep.getClusterState(ElectricalEnergyMeasurement.ID)
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id)
                 ?.getValue()
