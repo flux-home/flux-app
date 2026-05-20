@@ -1,7 +1,4 @@
-import 'dart:math' as math;
-import 'package:flutter/material.dart';
-import 'package:matter_home/models/device_live_data.dart';
-import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
+part of '../device_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EnergyCard — Ferraris-meter inspired visualisation

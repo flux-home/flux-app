@@ -163,7 +163,8 @@ class DeviceLiveData {
   int? get activeCurrent  => attrs['activeCurrent']  as int?;  // milliamps
 
   // Electrical Energy Measurement (0x0091) — converted to Wh on the Kotlin side.
-  int? get cumulativeEnergyWh => attrs['cumulativeEnergyWh'] as int?;
+  int? get cumulativeEnergyWh         => attrs['cumulativeEnergyWh']         as int?;
+  int? get cumulativeEnergyExportedWh  => attrs['cumulativeEnergyExportedWh']  as int?;
 
   // ── BasicInfo delegation (unchanged public API) ───────────────────────────
 

@@ -225,7 +225,8 @@ final _kLiveRenderers = <String, ClusterReading? Function(dynamic)>{
   'activePower':        _renderActivePower,
   'voltage':            _renderVoltage,
   'activeCurrent':      _renderActiveCurrent,
-  'cumulativeEnergyWh': _renderCumulativeEnergy,
+  'cumulativeEnergyWh':         _renderCumulativeEnergy,
+  'cumulativeEnergyExportedWh': _renderCumulativeEnergyExported,
   // batPercentRaw / batChargeLevel intentionally omitted — battery is shown
   // in device settings (DeviceView.batteryInfo), not the readings grid.
 };
@@ -392,7 +393,21 @@ ClusterReading? _renderCumulativeEnergy(dynamic v) {
   return ClusterReading(
     icon:         Icons.energy_savings_leaf_outlined,
     iconColor:    Colors.green.shade500,
-    label:        'Energy',
+    label:        'Energy imported',
+    displayValue: display,
+    unit:         unit,
+  );
+}
+
+ClusterReading? _renderCumulativeEnergyExported(dynamic v) {
+  final wh = v as int;
+  final (display, unit) = wh >= 1000
+      ? ((wh / 1000.0).toStringAsFixed(2), 'kWh')
+      : ('$wh', 'Wh');
+  return ClusterReading(
+    icon:         Icons.energy_savings_leaf_outlined,
+    iconColor:    Colors.lightGreen.shade400,
+    label:        'Energy exported',
     displayValue: display,
     unit:         unit,
   );

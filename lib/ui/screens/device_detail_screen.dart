@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -25,6 +26,7 @@ part 'device_detail/fan_control_card.dart';
 part 'device_detail/smoke_alarm_card.dart';
 part 'device_detail/thermostat_card.dart';
 part 'device_detail/connecting_banner.dart';
+part 'device_detail/energy_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -318,12 +320,20 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               _SmokeAlarmCard(view: view),
               const SizedBox(height: 12),
             ],
+            if ((view.deviceType.hasEnergyMeasurement ||
+                    (view.live?.activePower != null)) &&
+                view.live != null) ...[
+              EnergyCard(live: view.live!),
+              const SizedBox(height: 12),
+            ],
             // For switch devices, filter out per-endpoint switch readings
             // (already shown in _SwitchCard) — keep battery etc.
             // When a device is controllable via AcceptedCommandList but its
             // DeviceType doesn't declare hasOnOff, the dedicated _OnOffCard is
             // already shown above; suppress the fallback 0x0006 sensor tile
             // (label='Power', unit='') so the two don't coexist.
+            // When EnergyCard is shown, suppress the individual power/energy
+            // readings that would duplicate its display.
             _ReadingsSection(
               readings: () {
                 var r = _readings;
@@ -332,6 +342,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 }
                 if (_onOffIsControllable && !view.deviceType.hasOnOff) {
                   r = r?.where((x) => !(x.label == 'Power' && x.unit.isEmpty)).toList();
+                }
+                if (view.deviceType.hasEnergyMeasurement ||
+                    (view.live?.activePower != null)) {
+                  const energyLabels = {
+                    'Active power', 'Voltage', 'Current',
+                    'Energy imported', 'Energy exported',
+                  };
+                  r = r?.where((x) => !energyLabels.contains(x.label)).toList();
                 }
                 return r;
               }(),

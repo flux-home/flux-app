@@ -147,6 +147,7 @@ internal object SubscriptionManager {
             // Electrical Energy Measurement (0x0091) — CumulativeEnergyImported is a
             // nullable EnergyMeasurementStruct; energy field = mWh (int64).
             wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id),
+            wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.CumulativeEnergyExported.id),
         )
     }
 
@@ -257,6 +258,11 @@ internal object SubscriptionManager {
                 ?.getValue()
                 ?.let { extractEnergyMwh(it) }
                 ?.let { r["cumulativeEnergyWh"] = it / 1000L }
+            ep.getClusterState(ElectricalEnergyMeasurement.ID)
+                ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyExported.id)
+                ?.getValue()
+                ?.let { extractEnergyMwh(it) }
+                ?.let { r["cumulativeEnergyExportedWh"] = it / 1000L }
 
             // ── Switch events: endpoint ID = which button/control, position = scroll direction ──
             val switchCluster = ep.getClusterState(Switch.ID)

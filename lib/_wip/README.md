@@ -17,4 +17,3 @@ When a file here is ready to ship:
 |---|---|
 | `device_detail/door_lock_card.dart` | References `DeviceView.lockState`, `DeviceProvider.lockDoor/unlockDoor` — none of which exist yet. Matching Kotlin work in `android/app/.../bridge/DoorLockBridge.kt` + `chip/clusters/DoorLockCluster.kt`. |
 | `device_detail/water_heater_card.dart` | Compiles today but is not part-of `device_detail_screen.dart`, so it never gets included in any device-type switch. Matching Kotlin work in `WaterHeaterBridge.kt` + `WaterHeaterCluster.kt`. |
-| `device_detail/energy_card.dart` | References `DeviceLiveData.cumulativeEnergyExportedWh` which doesn't exist. No matching Kotlin work; experimental alternative visualisation. |
