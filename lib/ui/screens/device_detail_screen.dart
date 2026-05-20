@@ -331,8 +331,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
               EnergyCard(
-                live:    view.live!,
-                history: context.read<DeviceProvider>().energyHistoryFor(view.id),
+                live:         view.live!,
+                history:      context.read<DeviceProvider>().energyHistoryFor(view.id),
+                estimatedMwh: context.read<DeviceProvider>().energyEstimateMwhFor(view.id),
               ),
               const SizedBox(height: 12),
             ],

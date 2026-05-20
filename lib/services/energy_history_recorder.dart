@@ -49,10 +49,33 @@ class EnergyHistoryRecorder {
   double    _accumulatedWh = 0;      // fractional Wh accumulated in open bucket
   int?      _lastSampleMs;           // epoch ms of the previous power sample
 
+  // ── Live estimate state ──────────────────────────────────────────────────
+  // Tracks the device-reported baseline + power-integrated delta so the
+  // odometer display updates every ~1 s without waiting for a new device report.
+  int?   _baselineMwh;               // last value pushed by the device
+  double _liveAccumulatedMwh = 0;    // mWh integrated since last device report
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Immutable view of sealed buckets, oldest first.
   List<EnergyBucket> get history => List.unmodifiable(_history);
+
+  /// Live odometer estimate: device baseline + power integrated since then.
+  /// Updates every ~1 s as [recordPower] is called.  Returns null until the
+  /// device has sent at least one [updateDeviceReport].
+  int? get estimatedCumulativeMwh {
+    final b = _baselineMwh;
+    if (b == null) return null;
+    return b + _liveAccumulatedMwh.round();
+  }
+
+  /// Called whenever the device pushes a new [CumulativeEnergyImported] value.
+  /// Resets the integration accumulator to avoid double-counting.
+  void updateDeviceReport(int mwh) {
+    if (_baselineMwh == mwh) return;
+    _baselineMwh           = mwh;
+    _liveAccumulatedMwh    = 0;
+  }
 
   /// Feed a new active-power reading.
   ///
@@ -70,21 +93,27 @@ class EnergyHistoryRecorder {
       return;
     }
 
+    final dtSeconds = (nowMs - _lastSampleMs!) / 1000.0;
+    final watts     = milliwatts / 1000.0;
+
     if (bucketStart == _openBucketStart) {
-      // Same slot: integrate E = P × Δt.
-      final dtSeconds = (nowMs - _lastSampleMs!) / 1000.0;
-      final watts     = milliwatts / 1000.0;
-      _accumulatedWh += (watts * dtSeconds) / 3600.0;
-      _lastSampleMs   = nowMs;
+      // Same slot: integrate both accumulators.
+      final deltaWh        = (watts * dtSeconds) / 3600.0;
+      _accumulatedWh      += deltaWh;
+      _liveAccumulatedMwh += deltaWh * 1000.0;
+      _lastSampleMs        = nowMs;
       return;
     }
 
-    // ── New slot: seal the previous bucket ───────────────────────────────────
-    // Include fractional energy from now up to the bucket boundary.
-    final boundaryMs  = bucketStart.millisecondsSinceEpoch;
-    final dtToSeal    = (boundaryMs - _lastSampleMs!) / 1000.0;
-    final watts       = milliwatts / 1000.0;
-    _accumulatedWh   += (watts * dtToSeal.abs()) / 3600.0;
+    // ── New slot: split energy at the bucket boundary, then seal ─────────────
+    final boundaryMs     = bucketStart.millisecondsSinceEpoch;
+    final dtToSeal       = ((boundaryMs - _lastSampleMs!) / 1000.0).clamp(0.0, dtSeconds);
+    final dtFromBoundary = (dtSeconds - dtToSeal).clamp(0.0, dtSeconds);
+
+    // Energy that belongs to the OLD bucket.
+    final sealDeltaWh    = (watts * dtToSeal) / 3600.0;
+    _accumulatedWh      += sealDeltaWh;
+    _liveAccumulatedMwh += sealDeltaWh * 1000.0;
 
     final sealedWh = _accumulatedWh.round();
     _history.add(EnergyBucket(time: _openBucketStart!, wh: sealedWh));
@@ -92,10 +121,12 @@ class EnergyHistoryRecorder {
     unawaited(_store.saveEnergyHistory(_deviceId, _history));
     _onUpdated();
 
-    // Open the new bucket — start with the remainder after the boundary.
-    _openBucketStart = bucketStart;
-    _accumulatedWh   = 0;
-    _lastSampleMs    = nowMs;
+    // Energy that belongs to the NEW bucket.
+    final newDeltaWh     = (watts * dtFromBoundary) / 3600.0;
+    _openBucketStart     = bucketStart;
+    _accumulatedWh       = newDeltaWh;
+    _liveAccumulatedMwh += newDeltaWh * 1000.0;
+    _lastSampleMs        = nowMs;
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

@@ -225,8 +225,8 @@ final _kLiveRenderers = <String, ClusterReading? Function(dynamic)>{
   'activePower':        _renderActivePower,
   'voltage':            _renderVoltage,
   'activeCurrent':      _renderActiveCurrent,
-  'cumulativeEnergyWh':         _renderCumulativeEnergy,
-  'cumulativeEnergyExportedWh': _renderCumulativeEnergyExported,
+  'cumulativeEnergyMwh':         _renderCumulativeEnergy,
+  'cumulativeEnergyExportedMwh': _renderCumulativeEnergyExported,
   // batPercentRaw / batChargeLevel intentionally omitted — battery is shown
   // in device settings (DeviceView.batteryInfo), not the readings grid.
 };
@@ -386,10 +386,11 @@ ClusterReading? _renderActiveCurrent(dynamic v) {
 }
 
 ClusterReading? _renderCumulativeEnergy(dynamic v) {
-  final wh = v as int;
-  final (display, unit) = wh >= 1000
-      ? ((wh / 1000.0).toStringAsFixed(2), 'kWh')
-      : ('$wh', 'Wh');
+  final mwh = v as int;
+  final kwh = mwh / 1_000_000.0;
+  final (display, unit) = kwh >= 1
+      ? (kwh.toStringAsFixed(3), 'kWh')
+      : ('${(mwh / 1000.0).toStringAsFixed(1)}', 'Wh');
   return ClusterReading(
     icon:         Icons.energy_savings_leaf_outlined,
     iconColor:    Colors.green.shade500,
@@ -400,10 +401,11 @@ ClusterReading? _renderCumulativeEnergy(dynamic v) {
 }
 
 ClusterReading? _renderCumulativeEnergyExported(dynamic v) {
-  final wh = v as int;
-  final (display, unit) = wh >= 1000
-      ? ((wh / 1000.0).toStringAsFixed(2), 'kWh')
-      : ('$wh', 'Wh');
+  final mwh = v as int;
+  final kwh = mwh / 1_000_000.0;
+  final (display, unit) = kwh >= 1
+      ? (kwh.toStringAsFixed(3), 'kWh')
+      : ('${(mwh / 1000.0).toStringAsFixed(1)}', 'Wh');
   return ClusterReading(
     icon:         Icons.energy_savings_leaf_outlined,
     iconColor:    Colors.lightGreen.shade400,

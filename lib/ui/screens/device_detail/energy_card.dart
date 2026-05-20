@@ -20,10 +20,18 @@ part of '../device_detail_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EnergyCard extends StatelessWidget {
-  const EnergyCard({required this.live, required this.history, super.key});
+  const EnergyCard({
+    required this.live,
+    required this.history,
+    required this.estimatedMwh,
+    super.key,
+  });
 
-  final DeviceLiveData       live;
-  final List<EnergyBucket>   history;
+  final DeviceLiveData     live;
+  final List<EnergyBucket> history;
+  /// Live odometer estimate in mWh: device baseline + power integrated since.
+  /// Null until the device has sent at least one cumulative-energy report.
+  final int?               estimatedMwh;
 
   // ── Formatters ────────────────────────────────────────────────────────────
 
@@ -38,10 +46,9 @@ class EnergyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mw         = live.activePower;
-    final mv         = live.voltage;
-    final ma         = live.activeCurrent;
-    final wh         = live.cumulativeEnergyWh;
-    final exportedWh = live.cumulativeEnergyExportedWh;
+    final mv          = live.voltage;
+    final ma          = live.activeCurrent;
+    final exportedMwh = live.cumulativeEnergyExportedMwh;
 
     final hasVoltage = mv != null && mv > 0;
     final hasCurrent  = ma != null && ma != 0;
@@ -96,23 +103,23 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── Odometer (imported kWh) ───────────────────────────────────
-            if (wh != null) ...[
+            if (estimatedMwh != null) ...[
               const SizedBox(height: 18),
               Divider(height: 1, color: Colors.white.withAlpha(15)),
               const SizedBox(height: 14),
-              Center(child: _OdometerDisplay(wh: wh, label: 'IMPORTED')),
+              Center(child: _OdometerDisplay(mwh: estimatedMwh!, label: 'IMPORTED')),
             ],
 
             // ── Odometer (exported kWh) ─────────────────────────────────────────
-            if (exportedWh != null) ...[
+            if (exportedMwh != null) ...[
               const SizedBox(height: 14),
-              if (wh == null) ...[
+              if (estimatedMwh == null) ...[
                 Divider(height: 1, color: Colors.white.withAlpha(15)),
                 const SizedBox(height: 14),
               ],
               Center(
                 child: _OdometerDisplay(
-                  wh:    exportedWh,
+                  mwh:   exportedMwh,
                   label: 'EXPORTED',
                   color: Colors.green.shade400,
                 ),
@@ -356,26 +363,28 @@ class _DiscStripPainter extends CustomPainter {
 
 class _OdometerDisplay extends StatelessWidget {
   const _OdometerDisplay({
-    required this.wh,
+    required this.mwh,
     required this.label,
     this.color = Colors.amber,
   });
 
-  final int    wh;
+  /// Raw milliwatt-hours from the device (or live estimate).
+  final int    mwh;
   final String label;
   final Color  color;
 
   @override
   Widget build(BuildContext context) {
-    final kwh   = wh / 1000.0;
-    // Always 5 integer digits + 1 decimal — true odometer style
+    // mWh → kWh with 3 decimal places (= 1 Wh precision)
+    final kwh     = mwh / 1_000_000.0;
     final intPart = kwh.floor().toString().padLeft(5, '0');
-    final decPart = ((kwh * 10).floor() % 10).toString();
+    // 3 fractional kWh digits = Wh resolution
+    final fracRaw = ((kwh * 1000).floor() % 1000).toString().padLeft(3, '0');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── Label ──────────────────────────────────────────────────────────────────────────────
+        // ── Label ────────────────────────────────────────────────────────────
         Text(
           label,
           style: TextStyle(
@@ -387,7 +396,7 @@ class _OdometerDisplay extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // ── Digit drums + decimal dot ────────────────────────────────────────────────────────────────────────
+        // ── Digit drums + decimal dot ─────────────────────────────────────────
         Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -410,7 +419,12 @@ class _OdometerDisplay extends StatelessWidget {
                 ),
               ),
             ),
-            _DigitDrum(digit: decPart, dim: true, color: color),
+            // 3 fractional digits (Wh precision within kWh)
+            for (final d in fracRaw.characters)
+              Padding(
+                padding: const EdgeInsets.only(right: 3),
+                child: _DigitDrum(digit: d, dim: true, color: color),
+              ),
             const SizedBox(width: 10),
             Text(
               'kWh',

@@ -181,6 +181,12 @@ class DeviceProvider extends ChangeNotifier {
   List<EnergyBucket> energyHistoryFor(String deviceId) =>
       _energyRecorders[deviceId]?.history ?? const [];
 
+  /// Live odometer estimate in mWh: device baseline + power integrated since.
+  /// Falls back to the last known device reading if no recorder exists yet.
+  int? energyEstimateMwhFor(String deviceId) =>
+      _energyRecorders[deviceId]?.estimatedCumulativeMwh ??
+      _liveCache[deviceId]?.cumulativeEnergyMwh;
+
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
@@ -375,7 +381,7 @@ class DeviceProvider extends ChangeNotifier {
     _handleContactChange(device.id, attrs, prevContact);
 
     // Feed energy history recorder with every active-power sample.
-    // We integrate P×dt rather than diffing cumulativeEnergyWh because the
+    // We integrate P×dt rather than diffing cumulativeEnergyMwh because the
     // device only pushes CumulativeEnergyImported when it changes (infrequently),
     // giving delta=0 for most 15-min seals.  activePower arrives every ~1 s.
     final activePower = _liveCache[device.id]?.activePower;
@@ -385,6 +391,16 @@ class DeviceProvider extends ChangeNotifier {
         store:     _store,
         onUpdated: notifyListeners,
       )).recordPower(DateTime.now(), activePower);
+    }
+    // When the device pushes a new cumulative-energy value, reset the live
+    // estimate accumulator so we don't double-count the device's own delta.
+    final newMwh = _liveCache[device.id]?.cumulativeEnergyMwh;
+    if (newMwh != null) {
+      (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
+        deviceId:  device.id,
+        store:     _store,
+        onUpdated: notifyListeners,
+      )).updateDeviceReport(newMwh);
     }
 
     // Infer device type from subscription attributes when the stored type

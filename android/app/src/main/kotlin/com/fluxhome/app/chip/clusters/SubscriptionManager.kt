@@ -51,7 +51,7 @@ internal object SubscriptionManager {
      *   liftPercent100ths, fanMode, fanPercent, colorTempMireds, smokeState, coState,
      *   pm25 (µg/m³ × 10 as int), co2Ppm (ppm as int), coPpm (ppm × 10 as int),
      *   activePower (mW as Long), voltage (mV as Long), activeCurrent (mA as Long),
-     *   cumulativeEnergyWh (Wh as Long).
+     *   cumulativeEnergyMwh (mWh as Long, raw from EnergyMeasurementStruct).
      */
     fun subscribeDeviceState(
         context:         Context,
@@ -260,12 +260,12 @@ internal object SubscriptionManager {
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id)
                 ?.getValue()
                 ?.let { extractEnergyMwh(it) }
-                ?.let { r["cumulativeEnergyWh"] = it / 1000L }
+                ?.let { r["cumulativeEnergyMwh"] = it }
             ep.getClusterState(ElectricalEnergyMeasurement.ID)
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyExported.id)
                 ?.getValue()
                 ?.let { extractEnergyMwh(it) }
-                ?.let { r["cumulativeEnergyExportedWh"] = it / 1000L }
+                ?.let { r["cumulativeEnergyExportedMwh"] = it }
 
             // ── Switch events: endpoint ID = which button/control, position = scroll direction ──
             val switchCluster = ep.getClusterState(Switch.ID)
