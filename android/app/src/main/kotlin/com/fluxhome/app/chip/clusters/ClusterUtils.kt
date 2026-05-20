@@ -196,7 +196,26 @@ internal fun jsonEscape(s: String): String = buildString(s.length + 8) {
     }
 }
 
-// ── Energy struct helper ──────────────────────────────────────────────────────
+// ── Energy event helper ─────────────────────────────────────────────────────
+
+/**
+ * Extracts the `energy` mWh from a named Optional<EnergyMeasurementStruct>
+ * field on an EEM event struct (PeriodicEnergyMeasured / CumulativeEnergyMeasured).
+ *
+ * e.g. extractEventEnergyMwh(event, "energyImported")
+ *
+ * Uses reflection so the code compiles without a direct import of the
+ * generated event class.
+ */
+internal fun extractEventEnergyMwh(event: Any?, field: String): Long? {
+    if (event == null) return null
+    return try {
+        val f = event.javaClass.getDeclaredField(field)
+        f.isAccessible = true
+        val optional = f.get(event) as? java.util.Optional<*>
+        extractEnergyMwh(optional?.orElse(null))
+    } catch (_: Exception) { null }
+}
 
 /**
  * Extracts the `energy` field (milliwatt-hours) from a nullable

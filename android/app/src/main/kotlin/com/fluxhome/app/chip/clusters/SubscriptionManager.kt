@@ -157,15 +157,21 @@ internal object SubscriptionManager {
 
     /** Subscribe to Switch cluster events (wildcard endpoint, all buttons). */
     private fun buildEventPaths(): List<ChipEventPath> {
-        fun wev(eventId: Long) = ChipEventPath.newInstance(
-            ChipPathId.forWildcard(), ChipPathId.forId(Switch.ID), ChipPathId.forId(eventId),
+        fun wev(clusterId: Long, eventId: Long) = ChipEventPath.newInstance(
+            ChipPathId.forWildcard(), ChipPathId.forId(clusterId), ChipPathId.forId(eventId),
         )
         return listOf(
-            wev(Switch.Event.InitialPress.id),
-            wev(Switch.Event.ShortRelease.id),
-            wev(Switch.Event.LongPress.id),
-            wev(Switch.Event.LongRelease.id),
-            wev(Switch.Event.MultiPressComplete.id),
+            // Switch cluster (0x003B) — button press / release events
+            wev(Switch.ID, Switch.Event.InitialPress.id),
+            wev(Switch.ID, Switch.Event.ShortRelease.id),
+            wev(Switch.ID, Switch.Event.LongPress.id),
+            wev(Switch.ID, Switch.Event.LongRelease.id),
+            wev(Switch.ID, Switch.Event.MultiPressComplete.id),
+            // Electrical Energy Measurement (0x0091) — runtime energy updates.
+            // The device fires events at measurement boundaries; subscribing to
+            // the attributes alone only delivers values in the initial report.
+            wev(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Event.CumulativeEnergyMeasured.id),
+            wev(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Event.PeriodicEnergyMeasured.id),
         )
     }
 
@@ -236,12 +242,13 @@ internal object SubscriptionManager {
 
             // ── ElectricalEnergyMeasurement (0x0091): struct attributes ––––––––––
             // CumulativeEnergyImported/Exported and PeriodicEnergyImported/Exported
-            // may arrive on a different endpoint than ActivePower.  Log when the
-            // EEM cluster is present so we can see which attributes the device sends.
+            // EEM cluster — attributes deliver the baseline in the initial report;
+            // events deliver runtime updates at every measurement boundary.
             val eemState = ep.getClusterState(ElectricalEnergyMeasurement.ID)
             if (eemState != null) {
-                Log.d(TAG, "EEM update ep=$endpointId attrs=${eemState.attributeStates?.keys}")
+                Log.d(TAG, "EEM update ep=$endpointId attrs=${eemState.attributeStates?.keys} events=${eemState.eventStates?.keys}")
             }
+            // Attribute-based extraction (initial report / occasional full reads)
             eemState
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id)
                 ?.getValue()?.let { extractEnergyMwh(it) }
@@ -258,6 +265,20 @@ internal object SubscriptionManager {
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.PeriodicEnergyExported.id)
                 ?.getValue()?.let { extractEnergyMwh(it) }
                 ?.let { r["periodicEnergyExportedMwh"] = it }
+            // Event-based extraction (runtime; fires at every measurement period).
+            // Uses reflection so the code compiles without direct struct imports.
+            eemState?.getEventState(ElectricalEnergyMeasurement.Event.PeriodicEnergyMeasured.id)
+                ?.lastOrNull()?.getValue()
+                ?.let { evt ->
+                    extractEventEnergyMwh(evt, "energyImported")?.let { r["periodicEnergyMwh"]         = it }
+                    extractEventEnergyMwh(evt, "energyExported")?.let { r["periodicEnergyExportedMwh"] = it }
+                }
+            eemState?.getEventState(ElectricalEnergyMeasurement.Event.CumulativeEnergyMeasured.id)
+                ?.lastOrNull()?.getValue()
+                ?.let { evt ->
+                    extractEventEnergyMwh(evt, "energyImported")?.let { r["cumulativeEnergyMwh"]         = it }
+                    extractEventEnergyMwh(evt, "energyExported")?.let { r["cumulativeEnergyExportedMwh"] = it }
+                }
 
             // ── Switch events: endpoint ID = which button/control, position = scroll direction ──
             val switchCluster = ep.getClusterState(Switch.ID)

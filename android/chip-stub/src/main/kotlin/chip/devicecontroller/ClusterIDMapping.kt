@@ -290,6 +290,11 @@ object ClusterIDMapping {
             object PeriodicEnergyImported    { const val id: Long = 0x00000003L }
             object PeriodicEnergyExported    { const val id: Long = 0x00000004L }
         }
+
+        object Event {
+            object CumulativeEnergyMeasured { const val id: Long = 0x00000000L }
+            object PeriodicEnergyMeasured   { const val id: Long = 0x00000001L }
+        }
     }
 
     object Identify {
