@@ -55,9 +55,14 @@ class EnergyHistoryRecorder {
   /// Immutable view of sealed buckets, oldest first.
   List<EnergyBucket> get history => List.unmodifiable(_history);
 
-  /// Latest known cumulative reading from the device in mWh.
-  /// Null until the first successful read arrives.
-  int? get latestCumulativeMwh => _latestMwh;
+  /// Energy accumulated in the current (unsealed) 15-min bucket, in Wh.
+  /// Zero until the first reading arrives.
+  int get currentBucketWh {
+    if (_bucketStartMwh == null || _latestMwh == null) return 0;
+    final mwh = (_latestMwh! - _bucketStartMwh!).clamp(0, 999999999);
+    return (mwh / 1000).round();
+  }
+
 
   /// Called on every periodic read of CumulativeEnergyImported.
   ///

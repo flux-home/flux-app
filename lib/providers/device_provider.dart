@@ -181,6 +181,10 @@ class DeviceProvider extends ChangeNotifier {
   List<EnergyBucket> energyHistoryFor(String deviceId) =>
       _energyRecorders[deviceId]?.history ?? const [];
 
+  /// Energy consumed in the current (unsealed) 15-min slot, in Wh.
+  int energyCurrentBucketWhFor(String deviceId) =>
+      _energyRecorders[deviceId]?.currentBucketWh ?? 0;
+
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
