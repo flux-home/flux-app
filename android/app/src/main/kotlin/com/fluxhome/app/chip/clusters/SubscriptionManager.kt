@@ -169,21 +169,6 @@ internal object SubscriptionManager {
         )
     }
 
-    /**
-     * Extracts the `energy` field (milliwatt-hours) from a nullable
-     * [EnergyMeasurementStruct] returned by [AttributeState.getValue].
-     *
-     * The real CHIP SDK returns a generated struct class instance whose exact
-     * name differs between SDK versions.  Using reflection keeps this code
-     * decoupled from the generated type, and lets the build stub (which throws
-     * on all attribute reads) remain stub-only.
-     */
-    /**
-     * Extracts the `energy` field from a nullable [EnergyMeasurementStruct].
-     * Delegated to the package-level [extractEnergyMwh] in [ClusterUtils].
-     */
-    private fun extractEnergyMwh(value: Any?): Long? = extractEnergyMwh(value)
-
     private fun extractAttrs(state: NodeState): Map<String, Any?> {
         val r = mutableMapOf<String, Any?>()
         state.getEndpointStates().entries.forEach { (endpointId, ep) ->
