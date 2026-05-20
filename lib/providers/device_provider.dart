@@ -374,15 +374,34 @@ class DeviceProvider extends ChangeNotifier {
     // Execute any contact sensor links triggered by a state transition.
     _handleContactChange(device.id, attrs, prevContact);
 
-    // Feed energy history recorder when a cumulative energy reading arrives
-    // from the device via subscription. No estimation — raw device values only.
-    final newMwh = attrs['cumulativeEnergyMwh'] as int?;
-    if (newMwh != null) {
-      (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
-        deviceId:  device.id,
-        store:     _store,
-        onUpdated: notifyListeners,
-      )).record(DateTime.now(), newMwh);
+    // ── Energy accounting ───────────────────────────────────────────────────
+    //
+    // CumulativeEnergyImported arrives once in the initial report (and
+    // occasionally on large jumps).  PeriodicEnergyImported arrives on every
+    // measurement interval once the device has PERE firmware support.
+    //
+    // Strategy:
+    //   • If a fresh CumulativeEnergyImported value arrives → use it directly
+    //     (exact device reading; also resets the accumulated periodic total).
+    //   • If only PeriodicEnergyImported arrives → add the delta to the last
+    //     known cumulative so the odometer keeps ticking between exact reads.
+    //     This is NOT estimation — both values come straight from the device.
+
+    final newCumulativeMwh = attrs['cumulativeEnergyMwh'] as int?;
+    final periodicMwh      = attrs['periodicEnergyMwh']   as int?;
+
+    EnergyHistoryRecorder recorder() => _energyRecorders[device.id] ??=
+        EnergyHistoryRecorder(deviceId: device.id, store: _store, onUpdated: notifyListeners);
+
+    if (newCumulativeMwh != null) {
+      // Fresh exact cumulative from device — record and update odometer.
+      recorder().record(DateTime.now(), newCumulativeMwh);
+    } else if (periodicMwh != null && periodicMwh > 0) {
+      // Periodic delta arrived without a fresh cumulative — accumulate.
+      final baseline = _liveCache[device.id]?.cumulativeEnergyMwh ?? 0;
+      final updated  = baseline + periodicMwh;
+      _liveCache[device.id] = _liveCache[device.id]!.merge({'cumulativeEnergyMwh': updated});
+      recorder().record(DateTime.now(), updated);
     }
 
     // Infer device type from subscription attributes when the stored type
