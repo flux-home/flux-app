@@ -374,14 +374,17 @@ class DeviceProvider extends ChangeNotifier {
     // Execute any contact sensor links triggered by a state transition.
     _handleContactChange(device.id, attrs, prevContact);
 
-    // Feed energy history recorder if this update carries cumulative energy.
-    final cumulativeWh = attrs['cumulativeEnergyWh'] as int?;
-    if (cumulativeWh != null) {
+    // Feed energy history recorder with every active-power sample.
+    // We integrate P×dt rather than diffing cumulativeEnergyWh because the
+    // device only pushes CumulativeEnergyImported when it changes (infrequently),
+    // giving delta=0 for most 15-min seals.  activePower arrives every ~1 s.
+    final activePower = _liveCache[device.id]?.activePower;
+    if (activePower != null) {
       (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
         deviceId:  device.id,
         store:     _store,
         onUpdated: notifyListeners,
-      )).record(DateTime.now(), cumulativeWh);
+      )).recordPower(DateTime.now(), activePower);
     }
 
     // Infer device type from subscription attributes when the stored type

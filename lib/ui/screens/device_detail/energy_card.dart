@@ -120,7 +120,7 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── History chart ───────────────────────────────────────────────
-            // Only render if the device reports cumulative energy at all.
+    // Only render if the device reports cumulative energy at all.
             // If cumulativeEnergyWh is null the device only reports power
             // (no odometer), so the chart section is omitted entirely.
             if (live.cumulativeEnergyWh != null) ...[

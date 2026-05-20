@@ -6,18 +6,23 @@ import 'package:matter_home/services/device_store.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // EnergyHistoryRecorder
 //
-// Receives a stream of (timestamp, cumulativeWh) readings from the live
-// subscription and folds them into 15-minute sealed buckets.
+// Integrates per-second activePower (mW) samples into 15-minute buckets.
 //
-// Sealing strategy — seal-on-next-slot:
-//   • The current (open) bucket is kept in memory only.
-//   • When the first sample of a *new* slot arrives, the previous slot is
-//     sealed: delta = currentWh − startWh, appended to history, persisted.
-//   • One disk write per 15 minutes per device.
+// Why activePower instead of cumulativeEnergyWh:
+//   activePower arrives every ~1 s from the subscription.
+//   CumulativeEnergyImported is only sent by devices when the attribute
+//   value changes, which can be once every few minutes — too infrequent
+//   to compute a non-zero 15-min delta reliably.
+//   By integrating power ourselves we get accurate Wh per bucket regardless
+//   of how often the device pushes its odometer.
 //
-// Retention: 7 days. Buckets older than that are pruned on each seal.
+// Sealing strategy:
+//   Each bucket accumulates E += P × Δt.  When the first sample of a new
+//   15-min slot arrives the current bucket is sealed, rounded to whole Wh,
+//   and persisted.  One disk write per 15 minutes.
+//   Buckets with 0 Wh are stored (device was truly idle during that window).
 //
-// Pure Dart — no Flutter imports, no ChangeNotifier.
+// Retention: 7 days, pruned on each seal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EnergyHistoryRecorder {
@@ -31,11 +36,7 @@ class EnergyHistoryRecorder {
     _history = store.loadEnergyHistory(deviceId);
   }
 
-  // _kBucketDuration is kept for documentation purposes; the 15-min
-  // boundary logic uses arithmetic directly for clarity.
-  // ignore: unused_field
-  static const _kBucketDuration = Duration(minutes: 15);
-  static const _kRetention      = Duration(days: 7);
+  static const _kRetention = Duration(days: 7);
 
   final String       _deviceId;
   final DeviceStore  _store;
@@ -43,47 +44,58 @@ class EnergyHistoryRecorder {
 
   List<EnergyBucket> _history = [];
 
-  // ── Open bucket state (in memory only until sealed) ───────────────────────
+  // ── Open bucket state ─────────────────────────────────────────────────────
   DateTime? _openBucketStart;
-  int?      _openBucketStartWh;
+  double    _accumulatedWh = 0;      // fractional Wh accumulated in open bucket
+  int?      _lastSampleMs;           // epoch ms of the previous power sample
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Immutable view of sealed buckets, oldest first.
   List<EnergyBucket> get history => List.unmodifiable(_history);
 
-  /// Feed a new cumulative-energy reading.
+  /// Feed a new active-power reading.
   ///
-  /// [cumulativeWh] is the device odometer value in whole watt-hours.
-  /// Call this every time a [SubscriptionUpdateEvent] contains
-  /// `'cumulativeEnergyWh'`.
-  void record(DateTime now, int cumulativeWh) {
+  /// [milliwatts] is the instantaneous active power in mW from the
+  /// ElectricalPowerMeasurement cluster.  Call this on every
+  /// [SubscriptionUpdateEvent] that contains `'activePower'`.
+  void recordPower(DateTime now, int milliwatts) {
     final bucketStart = _floorToBucket(now);
+    final nowMs       = now.millisecondsSinceEpoch;
 
     if (_openBucketStart == null) {
-      // First reading ever — open the first bucket.
-      _openBucketStart   = bucketStart;
-      _openBucketStartWh = cumulativeWh;
+      // First sample — open the first bucket, no energy to accumulate yet.
+      _openBucketStart = bucketStart;
+      _lastSampleMs    = nowMs;
       return;
     }
 
     if (bucketStart == _openBucketStart) {
-      // Still within the current slot — nothing to seal yet.
+      // Same slot: integrate E = P × Δt.
+      final dtSeconds = (nowMs - _lastSampleMs!) / 1000.0;
+      final watts     = milliwatts / 1000.0;
+      _accumulatedWh += (watts * dtSeconds) / 3600.0;
+      _lastSampleMs   = nowMs;
       return;
     }
 
-    // ── New slot arrived: seal the previous bucket ────────────────────────
-    final deltaWh = cumulativeWh - _openBucketStartWh!;
-    if (deltaWh > 0) {
-      _history.add(EnergyBucket(time: _openBucketStart!, wh: deltaWh));
-      _prune();
-      unawaited(_store.saveEnergyHistory(_deviceId, _history));
-      _onUpdated();
-    }
+    // ── New slot: seal the previous bucket ───────────────────────────────────
+    // Include fractional energy from now up to the bucket boundary.
+    final boundaryMs  = bucketStart.millisecondsSinceEpoch;
+    final dtToSeal    = (boundaryMs - _lastSampleMs!) / 1000.0;
+    final watts       = milliwatts / 1000.0;
+    _accumulatedWh   += (watts * dtToSeal.abs()) / 3600.0;
 
-    // Open the new bucket.
-    _openBucketStart   = bucketStart;
-    _openBucketStartWh = cumulativeWh;
+    final sealedWh = _accumulatedWh.round();
+    _history.add(EnergyBucket(time: _openBucketStart!, wh: sealedWh));
+    _prune();
+    unawaited(_store.saveEnergyHistory(_deviceId, _history));
+    _onUpdated();
+
+    // Open the new bucket — start with the remainder after the boundary.
+    _openBucketStart = bucketStart;
+    _accumulatedWh   = 0;
+    _lastSampleMs    = nowMs;
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
