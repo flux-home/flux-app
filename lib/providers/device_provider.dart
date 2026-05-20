@@ -181,12 +181,6 @@ class DeviceProvider extends ChangeNotifier {
   List<EnergyBucket> energyHistoryFor(String deviceId) =>
       _energyRecorders[deviceId]?.history ?? const [];
 
-  /// Live odometer estimate in mWh: device baseline + power integrated since.
-  /// Falls back to the last known device reading if no recorder exists yet.
-  int? energyEstimateMwhFor(String deviceId) =>
-      _energyRecorders[deviceId]?.estimatedCumulativeMwh ??
-      _liveCache[deviceId]?.cumulativeEnergyMwh;
-
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
@@ -380,27 +374,15 @@ class DeviceProvider extends ChangeNotifier {
     // Execute any contact sensor links triggered by a state transition.
     _handleContactChange(device.id, attrs, prevContact);
 
-    // Feed energy history recorder with every active-power sample.
-    // We integrate P×dt rather than diffing cumulativeEnergyMwh because the
-    // device only pushes CumulativeEnergyImported when it changes (infrequently),
-    // giving delta=0 for most 15-min seals.  activePower arrives every ~1 s.
-    final activePower = _liveCache[device.id]?.activePower;
-    if (activePower != null) {
-      (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
-        deviceId:  device.id,
-        store:     _store,
-        onUpdated: notifyListeners,
-      )).recordPower(DateTime.now(), activePower);
-    }
-    // When the device pushes a new cumulative-energy value, reset the live
-    // estimate accumulator so we don't double-count the device's own delta.
-    final newMwh = _liveCache[device.id]?.cumulativeEnergyMwh;
+    // Feed energy history recorder when a cumulative energy reading arrives
+    // from the device via subscription. No estimation — raw device values only.
+    final newMwh = attrs['cumulativeEnergyMwh'] as int?;
     if (newMwh != null) {
       (_energyRecorders[device.id] ??= EnergyHistoryRecorder(
         deviceId:  device.id,
         store:     _store,
         onUpdated: notifyListeners,
-      )).updateDeviceReport(newMwh);
+      )).record(DateTime.now(), newMwh);
     }
 
     // Infer device type from subscription attributes when the stored type

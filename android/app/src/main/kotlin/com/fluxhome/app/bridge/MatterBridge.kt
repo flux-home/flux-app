@@ -1,6 +1,7 @@
 package com.fluxhome.app.bridge
 
 import android.content.Context
+import com.fluxhome.app.chip.clusters.EnergyCluster
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
@@ -184,4 +185,16 @@ class MatterBridge(context: Context) {
 
     fun readLockState(nodeId: Long, result: MethodChannel.Result) =
         doorLock.readLockState(nodeId, result)
+
+    // ── Energy ────────────────────────────────────────────────────────────────
+    fun readCumulativeEnergy(nodeId: Long, endpoint: Int, result: MethodChannel.Result) =
+        core.requireChip(result) {
+            val data = EnergyCluster.readCumulativeEnergy(core.context, nodeId, endpoint)
+            core.main.post {
+                result.success(mapOf(
+                    "importedMwh" to data.importedMwh,
+                    "exportedMwh" to data.exportedMwh,
+                ))
+            }
+        }
 }

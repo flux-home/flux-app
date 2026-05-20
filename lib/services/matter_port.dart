@@ -86,6 +86,13 @@ abstract interface class MatterClusterPort {
 
   Future<bool> lockDoor(int nodeId, {String? pin});
   Future<bool> unlockDoor(int nodeId, {String? pin});
+
+  /// Reads CumulativeEnergyImported and CumulativeEnergyExported in one
+  /// interaction.  Returns null values when the device does not support them.
+  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
+    int nodeId, {
+    int endpoint = 1,
+  });
 }
 
 /// Fabric-level operations: OTA, share/remove, diagnostics, fabric identity.

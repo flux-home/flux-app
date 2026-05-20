@@ -150,6 +150,8 @@ internal object SubscriptionManager {
             // nullable EnergyMeasurementStruct; energy field = mWh (int64).
             wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id),
             wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.CumulativeEnergyExported.id),
+            wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.PeriodicEnergyImported.id),
+            wep(ElectricalEnergyMeasurement.ID, ElectricalEnergyMeasurement.Attribute.PeriodicEnergyExported.id),
         )
     }
 
@@ -176,15 +178,11 @@ internal object SubscriptionManager {
      * decoupled from the generated type, and lets the build stub (which throws
      * on all attribute reads) remain stub-only.
      */
-    private fun extractEnergyMwh(value: Any?): Long? {
-        if (value == null) return null
-        if (value is Number) return value.toLong()
-        return try {
-            val field = value.javaClass.getDeclaredField("energy")
-            field.isAccessible = true
-            (field.get(value) as? Number)?.toLong()
-        } catch (_: Exception) { null }
-    }
+    /**
+     * Extracts the `energy` field from a nullable [EnergyMeasurementStruct].
+     * Delegated to the package-level [extractEnergyMwh] in [ClusterUtils].
+     */
+    private fun extractEnergyMwh(value: Any?): Long? = extractEnergyMwh(value)
 
     private fun extractAttrs(state: NodeState): Map<String, Any?> {
         val r = mutableMapOf<String, Any?>()
@@ -251,20 +249,30 @@ internal object SubscriptionManager {
                 ?: longOf(ElectricalPowerMeasurement.ID, ElectricalPowerMeasurement.Attribute.ActiveCurrent.id))
                 ?.let { r["activeCurrent"] = it }
 
-            // ── ElectricalEnergyMeasurement (0x0091): struct attribute –––––––––––
-            // CumulativeEnergyImported/Exported arrive on a different endpoint than
-            // ActivePower, so they are absent from most per-second subscription
-            // updates.  They are picked up whenever the device does include them.
-            ep.getClusterState(ElectricalEnergyMeasurement.ID)
+            // ── ElectricalEnergyMeasurement (0x0091): struct attributes ––––––––––
+            // CumulativeEnergyImported/Exported and PeriodicEnergyImported/Exported
+            // may arrive on a different endpoint than ActivePower.  Log when the
+            // EEM cluster is present so we can see which attributes the device sends.
+            val eemState = ep.getClusterState(ElectricalEnergyMeasurement.ID)
+            if (eemState != null) {
+                Log.d(TAG, "EEM update ep=$endpointId attrs=${eemState.attributeStates?.keys}")
+            }
+            eemState
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyImported.id)
-                ?.getValue()
-                ?.let { extractEnergyMwh(it) }
+                ?.getValue()?.let { extractEnergyMwh(it) }
                 ?.let { r["cumulativeEnergyMwh"] = it }
-            ep.getClusterState(ElectricalEnergyMeasurement.ID)
+            eemState
                 ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.CumulativeEnergyExported.id)
-                ?.getValue()
-                ?.let { extractEnergyMwh(it) }
+                ?.getValue()?.let { extractEnergyMwh(it) }
                 ?.let { r["cumulativeEnergyExportedMwh"] = it }
+            eemState
+                ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.PeriodicEnergyImported.id)
+                ?.getValue()?.let { extractEnergyMwh(it) }
+                ?.let { r["periodicEnergyMwh"] = it }
+            eemState
+                ?.getAttributeState(ElectricalEnergyMeasurement.Attribute.PeriodicEnergyExported.id)
+                ?.getValue()?.let { extractEnergyMwh(it) }
+                ?.let { r["periodicEnergyExportedMwh"] = it }
 
             // ── Switch events: endpoint ID = which button/control, position = scroll direction ──
             val switchCluster = ep.getClusterState(Switch.ID)

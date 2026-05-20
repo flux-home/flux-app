@@ -6,29 +6,30 @@ import 'package:matter_home/services/device_store.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // EnergyHistoryRecorder
 //
-// Integrates per-second activePower (mW) samples into 15-minute buckets.
+// Consumes periodic one-shot reads of CumulativeEnergyImported (mWh) and
+// computes per-15-min consumption as the delta between consecutive readings.
 //
-// Why activePower instead of cumulativeEnergyWh:
-//   activePower arrives every ~1 s from the subscription.
-//   CumulativeEnergyImported is only sent by devices when the attribute
-//   value changes, which can be once every few minutes — too infrequent
-//   to compute a non-zero 15-min delta reliably.
-//   By integrating power ourselves we get accurate Wh per bucket regardless
-//   of how often the device pushes its odometer.
+// Why reads instead of subscription:
+//   The Matter device only pushes ActivePower (EPM 0x90) via the subscription
+//   stream.  CumulativeEnergyImported (EEM 0x91) is available only via direct
+//   attribute reads.  DeviceProvider polls it every second.
 //
-// Sealing strategy:
-//   Each bucket accumulates E += P × Δt.  When the first sample of a new
-//   15-min slot arrives the current bucket is sealed, rounded to whole Wh,
-//   and persisted.  One disk write per 15 minutes.
-//   Buckets with 0 Wh are stored (device was truly idle during that window).
+// Sealing strategy — cumulative delta:
+//   _bucketStartMwh  = device reading at the start of the current 15-min slot.
+//   On each new reading in the same slot: update _latestMwh only.
+//   On the first reading of a NEW slot: seal = latestMwh − bucketStartMwh.
+//   One disk write per 15 minutes.
+//
+// Live odometer:
+//   Returns the latest known cumulative reading directly — no estimation.
 //
 // Retention: 7 days, pruned on each seal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EnergyHistoryRecorder {
   EnergyHistoryRecorder({
-    required String       deviceId,
-    required DeviceStore  store,
+    required String          deviceId,
+    required DeviceStore     store,
     required void Function() onUpdated,
   })  : _deviceId  = deviceId,
         _store     = store,
@@ -38,95 +39,57 @@ class EnergyHistoryRecorder {
 
   static const _kRetention = Duration(days: 7);
 
-  final String       _deviceId;
-  final DeviceStore  _store;
+  final String          _deviceId;
+  final DeviceStore     _store;
   final void Function() _onUpdated;
 
   List<EnergyBucket> _history = [];
 
-  // ── Open bucket state ─────────────────────────────────────────────────────
-  DateTime? _openBucketStart;
-  double    _accumulatedWh = 0;      // fractional Wh accumulated in open bucket
-  int?      _lastSampleMs;           // epoch ms of the previous power sample
-
-  // ── Live estimate state ──────────────────────────────────────────────────
-  // Tracks the device-reported baseline + power-integrated delta so the
-  // odometer display updates every ~1 s without waiting for a new device report.
-  int?   _baselineMwh;               // last value pushed by the device
-  double _liveAccumulatedMwh = 0;    // mWh integrated since last device report
+  // ── Bucket state ──────────────────────────────────────────────────────────
+  DateTime? _openBucketStart;  // floored to 15-min boundary
+  int?      _bucketStartMwh;   // device reading when bucket opened
+  int?      _latestMwh;        // most recent device reading
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Immutable view of sealed buckets, oldest first.
   List<EnergyBucket> get history => List.unmodifiable(_history);
 
-  /// Live odometer estimate: device baseline + power integrated since then.
-  /// Updates every ~1 s as [recordPower] is called.  Returns null until the
-  /// device has sent at least one [updateDeviceReport].
-  int? get estimatedCumulativeMwh {
-    final b = _baselineMwh;
-    if (b == null) return null;
-    return b + _liveAccumulatedMwh.round();
-  }
+  /// Latest known cumulative reading from the device in mWh.
+  /// Null until the first successful read arrives.
+  int? get latestCumulativeMwh => _latestMwh;
 
-  /// Called whenever the device pushes a new [CumulativeEnergyImported] value.
-  /// Resets the integration accumulator to avoid double-counting.
-  void updateDeviceReport(int mwh) {
-    if (_baselineMwh == mwh) return;
-    _baselineMwh           = mwh;
-    _liveAccumulatedMwh    = 0;
-  }
-
-  /// Feed a new active-power reading.
+  /// Called on every periodic read of CumulativeEnergyImported.
   ///
-  /// [milliwatts] is the instantaneous active power in mW from the
-  /// ElectricalPowerMeasurement cluster.  Call this on every
-  /// [SubscriptionUpdateEvent] that contains `'activePower'`.
-  void recordPower(DateTime now, int milliwatts) {
+  /// [cumulativeMwh] is the absolute device odometer value in mWh.
+  void record(DateTime now, int cumulativeMwh) {
+    _latestMwh = cumulativeMwh;
+
     final bucketStart = _floorToBucket(now);
-    final nowMs       = now.millisecondsSinceEpoch;
 
     if (_openBucketStart == null) {
-      // First sample — open the first bucket, no energy to accumulate yet.
       _openBucketStart = bucketStart;
-      _lastSampleMs    = nowMs;
+      _bucketStartMwh  = cumulativeMwh;
+      _onUpdated();   // first reading — refresh odometer display
       return;
     }
-
-    final dtSeconds = (nowMs - _lastSampleMs!) / 1000.0;
-    final watts     = milliwatts / 1000.0;
 
     if (bucketStart == _openBucketStart) {
-      // Same slot: integrate both accumulators.
-      final deltaWh        = (watts * dtSeconds) / 3600.0;
-      _accumulatedWh      += deltaWh;
-      _liveAccumulatedMwh += deltaWh * 1000.0;
-      _lastSampleMs        = nowMs;
+      // Still within the current slot — update odometer display.
+      _onUpdated();
       return;
     }
 
-    // ── New slot: split energy at the bucket boundary, then seal ─────────────
-    final boundaryMs     = bucketStart.millisecondsSinceEpoch;
-    final dtToSeal       = ((boundaryMs - _lastSampleMs!) / 1000.0).clamp(0.0, dtSeconds);
-    final dtFromBoundary = (dtSeconds - dtToSeal).clamp(0.0, dtSeconds);
-
-    // Energy that belongs to the OLD bucket.
-    final sealDeltaWh    = (watts * dtToSeal) / 3600.0;
-    _accumulatedWh      += sealDeltaWh;
-    _liveAccumulatedMwh += sealDeltaWh * 1000.0;
-
-    final sealedWh = _accumulatedWh.round();
+    // ── New slot: seal the previous bucket ────────────────────────────────────
+    final deltaMwh = cumulativeMwh - _bucketStartMwh!;
+    final sealedWh = (deltaMwh / 1000.0).round().clamp(0, deltaMwh ~/ 1000 + 1);
     _history.add(EnergyBucket(time: _openBucketStart!, wh: sealedWh));
     _prune();
     unawaited(_store.saveEnergyHistory(_deviceId, _history));
-    _onUpdated();
 
-    // Energy that belongs to the NEW bucket.
-    final newDeltaWh     = (watts * dtFromBoundary) / 3600.0;
-    _openBucketStart     = bucketStart;
-    _accumulatedWh       = newDeltaWh;
-    _liveAccumulatedMwh += newDeltaWh * 1000.0;
-    _lastSampleMs        = nowMs;
+    _openBucketStart = bucketStart;
+    _bucketStartMwh  = cumulativeMwh;
+    _onUpdated();
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

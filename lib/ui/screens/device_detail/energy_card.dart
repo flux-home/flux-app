@@ -20,18 +20,10 @@ part of '../device_detail_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EnergyCard extends StatelessWidget {
-  const EnergyCard({
-    required this.live,
-    required this.history,
-    required this.estimatedMwh,
-    super.key,
-  });
+  const EnergyCard({required this.live, required this.history, super.key});
 
   final DeviceLiveData     live;
   final List<EnergyBucket> history;
-  /// Live odometer estimate in mWh: device baseline + power integrated since.
-  /// Null until the device has sent at least one cumulative-energy report.
-  final int?               estimatedMwh;
 
   // ── Formatters ────────────────────────────────────────────────────────────
 
@@ -103,17 +95,17 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── Odometer (imported kWh) ───────────────────────────────────
-            if (estimatedMwh != null) ...[
+            if (live.cumulativeEnergyMwh != null) ...[
               const SizedBox(height: 18),
               Divider(height: 1, color: Colors.white.withAlpha(15)),
               const SizedBox(height: 14),
-              Center(child: _OdometerDisplay(mwh: estimatedMwh!, label: 'IMPORTED')),
+              Center(child: _OdometerDisplay(mwh: live.cumulativeEnergyMwh!, label: 'IMPORTED')),
             ],
 
             // ── Odometer (exported kWh) ─────────────────────────────────────────
             if (exportedMwh != null) ...[
               const SizedBox(height: 14),
-              if (estimatedMwh == null) ...[
+              if (live.cumulativeEnergyMwh == null) ...[
                 Divider(height: 1, color: Colors.white.withAlpha(15)),
                 const SizedBox(height: 14),
               ],

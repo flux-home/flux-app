@@ -367,6 +367,23 @@ class MatterChannel implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin}) =>
       _invoke('unlockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
 
+  @override
+  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
+    int nodeId, {
+    int endpoint = 1,
+  }) => _invoke(
+    'readCumulativeEnergy',
+    (importedMwh: null, exportedMwh: null),
+    args: {'nodeId': nodeId, 'endpoint': endpoint},
+    decode: (raw) {
+      final m = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
+      return (
+        importedMwh: (m['importedMwh'] as num?)?.toInt(),
+        exportedMwh: (m['exportedMwh'] as num?)?.toInt(),
+      );
+    },
+  );
+
   Future<DeviceStateResult> readDeviceState(int nodeId) => _invoke(
     'readDeviceState',
     const DeviceStateResult(isOnline: false),

@@ -195,3 +195,23 @@ internal fun jsonEscape(s: String): String = buildString(s.length + 8) {
         else     -> if (c.code < 0x20) append("\\u%04x".format(c.code)) else append(c)
     }
 }
+
+// ── Energy struct helper ──────────────────────────────────────────────────────
+
+/**
+ * Extracts the `energy` field (milliwatt-hours) from a nullable
+ * [EnergyMeasurementStruct] returned by [AttributeState.getValue].
+ *
+ * The real CHIP SDK returns a generated struct whose exact name differs
+ * between SDK versions.  Reflection keeps this decoupled from the generated
+ * type and lets the build stub remain stub-only.
+ */
+internal fun extractEnergyMwh(value: Any?): Long? {
+    if (value == null) return null
+    if (value is Number) return value.toLong()
+    return try {
+        val field = value.javaClass.getDeclaredField("energy")
+        field.isAccessible = true
+        (field.get(value) as? Number)?.toLong()
+    } catch (_: Exception) { null }
+}

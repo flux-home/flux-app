@@ -228,6 +228,12 @@ class MainActivity : FlutterActivity() {
                         bridge.unlockDoor(nodeId, pin, result)
                     }
 
+                    "readCumulativeEnergy" -> {
+                        val nodeId   = call.nodeIdArg() ?: 0L
+                        val endpoint = call.argument<Int>("endpoint") ?: 1
+                        bridge.readCumulativeEnergy(nodeId, endpoint, result)
+                    }
+
                     "readThreadNetworkDiagnostics" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readThreadNetworkDiagnostics(nodeId, result)
