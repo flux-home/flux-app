@@ -346,7 +346,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 if (view.deviceType.hasEnergyMeasurement ||
                     (view.live?.activePower != null)) {
                   const energyLabels = {
-                    'Active power', 'Voltage', 'Current',
+                    'Power', 'Voltage', 'Current',
                     'Energy imported', 'Energy exported',
                   };
                   r = r?.where((x) => !energyLabels.contains(x.label)).toList();
