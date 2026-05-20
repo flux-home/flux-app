@@ -120,11 +120,35 @@ class EnergyCard extends StatelessWidget {
             ],
 
             // ── History chart ───────────────────────────────────────────────
-            if (history.isNotEmpty) ...[
+            // Only render if the device reports cumulative energy at all.
+            // If cumulativeEnergyWh is null the device only reports power
+            // (no odometer), so the chart section is omitted entirely.
+            if (live.cumulativeEnergyWh != null) ...[
               const SizedBox(height: 18),
               Divider(height: 1, color: Colors.white.withAlpha(15)),
               const SizedBox(height: 14),
-              _EnergyHistoryChart(history: history),
+              if (history.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.hourglass_top_outlined,
+                          size: 13, color: Colors.white.withAlpha(60)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Collecting… first bar after 15 min',
+                        style: TextStyle(
+                          color:      Colors.white.withAlpha(60),
+                          fontSize:   11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                _EnergyHistoryChart(history: history),
             ],
           ],
         ),
