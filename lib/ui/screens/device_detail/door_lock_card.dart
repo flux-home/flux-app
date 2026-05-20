@@ -1,11 +1,4 @@
-import 'dart:async';
-import 'dart:math' as math;
-
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:matter_home/models/device_view.dart';
-import 'package:matter_home/providers/device_provider.dart';
-import 'package:provider/provider.dart';
+part of '../device_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Door Lock Card

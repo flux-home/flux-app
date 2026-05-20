@@ -360,6 +360,13 @@ class MatterChannel implements MatterPort {
       _invoke('identify', null, args: {'nodeId': nodeId, 'seconds': seconds});
 
   @override
+  Future<bool> lockDoor(int nodeId, {String? pin}) =>
+      _invoke('lockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
+
+  @override
+  Future<bool> unlockDoor(int nodeId, {String? pin}) =>
+      _invoke('unlockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
+
   Future<DeviceStateResult> readDeviceState(int nodeId) => _invoke(
     'readDeviceState',
     const DeviceStateResult(isOnline: false),

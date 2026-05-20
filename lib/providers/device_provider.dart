@@ -604,6 +604,20 @@ class DeviceProvider extends ChangeNotifier {
     await _channel.setColorTemperature(_devices[idx].nodeId, mireds);
   }
 
+  /// Sends LockDoor command. Returns true on success, false on failure.
+  Future<bool> lockDoor(String deviceId, {String? pin}) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return false;
+    return _channel.lockDoor(_devices[idx].nodeId, pin: pin);
+  }
+
+  /// Sends UnlockDoor command. Returns true on success, false on failure.
+  Future<bool> unlockDoor(String deviceId, {String? pin}) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return false;
+    return _channel.unlockDoor(_devices[idx].nodeId, pin: pin);
+  }
+
   // ── Refresh (on-demand one-shot read) ─────────────────────────────────────
 
   Future<void> refreshDevice(String deviceId) async {

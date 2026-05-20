@@ -156,6 +156,8 @@ class DeviceLiveData {
   int? get switchLastPosition     => attrs['switchLastPosition'] as int?;
   int? get switchLastEndpoint     => attrs['switchLastEndpoint'] as int?;
 
+  int? get lockState              => attrs['lockState']              as int?;
+
   // Electrical Power Measurement (0x0090) — all values are nullable int64
   // transmitted as Dart int (64-bit).  Units: mW, mV, mA.
   int? get activePower    => attrs['activePower']    as int?;  // milliwatts

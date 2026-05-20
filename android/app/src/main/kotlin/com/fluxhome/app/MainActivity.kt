@@ -216,6 +216,18 @@ class MainActivity : FlutterActivity() {
                         bridge.readBattery(nodeId, result)
                     }
 
+                    "lockDoor" -> {
+                        val nodeId = call.nodeIdArg() ?: 0L
+                        val pin    = call.argument<String>("pin")
+                        bridge.lockDoor(nodeId, pin, result)
+                    }
+
+                    "unlockDoor" -> {
+                        val nodeId = call.nodeIdArg() ?: 0L
+                        val pin    = call.argument<String>("pin")
+                        bridge.unlockDoor(nodeId, pin, result)
+                    }
+
                     "readThreadNetworkDiagnostics" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readThreadNetworkDiagnostics(nodeId, result)

@@ -83,6 +83,9 @@ abstract interface class MatterClusterPort {
   Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees);
   Future<bool> writeSystemMode(int nodeId, int mode);
   Future<void> identify(int nodeId, {int seconds = 15});
+
+  Future<bool> lockDoor(int nodeId, {String? pin});
+  Future<bool> unlockDoor(int nodeId, {String? pin});
 }
 
 /// Fabric-level operations: OTA, share/remove, diagnostics, fabric identity.

@@ -8,6 +8,7 @@ import chip.devicecontroller.ClusterIDMapping.BooleanState
 import chip.devicecontroller.ClusterIDMapping.CarbonDioxideConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.CarbonMonoxideConcentrationMeasurement
 import chip.devicecontroller.ClusterIDMapping.ColorControl
+import chip.devicecontroller.ClusterIDMapping.DoorLock
 import chip.devicecontroller.ClusterIDMapping.ElectricalEnergyMeasurement
 import chip.devicecontroller.ClusterIDMapping.ElectricalPowerMeasurement
 import chip.devicecontroller.ClusterIDMapping.FanControl
@@ -135,6 +136,7 @@ internal object SubscriptionManager {
             wep(SmokeCoAlarm.ID,    SmokeCoAlarm.Attribute.SmokeState.id),
             wep(SmokeCoAlarm.ID,    SmokeCoAlarm.Attribute.COState.id),
             wep(Switch.ID,          Switch.Attribute.CurrentPosition.id),
+            wep(DoorLock.ID,        DoorLock.Attribute.LockState.id),
             // Electrical Power Measurement (0x0090) — mW, mV, mA; all nullable int64s.
             // RMS variants cover AC loads; direct variants cover DC. Subscribe to both;
             // extractAttrs prefers RMS when both are present.
@@ -230,6 +232,7 @@ internal object SubscriptionManager {
             intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.SmokeState.id)               ?.let { r["smokeState"]        = it }
             intOf(SmokeCoAlarm.ID, SmokeCoAlarm.Attribute.COState.id)                  ?.let { r["coState"]           = it }
             intOf(Switch.ID,        Switch.Attribute.CurrentPosition.id)                ?.let { r["switchCurrentPosition"] = it }
+            intOf(DoorLock.ID,      DoorLock.Attribute.LockState.id)                    ?.let { r["lockState"]             = it }
 
             // ── ElectricalPowerMeasurement (0x0090): nullable int64s –––––––––––––
             fun longOf(clusterId: Long, attrId: Long): Long? =

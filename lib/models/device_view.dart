@@ -52,6 +52,7 @@ class DeviceView {
   // ── Live state (live cache wins; snapshot seed is the cold-start value) ────
 
   bool   get isOn       => _live?.isOn ?? false;
+  int?   get lockState  => _live?.lockState;
   double get brightness => _live?.levelRaw != null
       ? _live!.levelRaw! / 254.0
       : 1.0;

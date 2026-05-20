@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
@@ -27,6 +28,7 @@ part 'device_detail/smoke_alarm_card.dart';
 part 'device_detail/thermostat_card.dart';
 part 'device_detail/connecting_banner.dart';
 part 'device_detail/energy_card.dart';
+part 'device_detail/door_lock_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -318,6 +320,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             ],
             if (view.deviceType == DeviceType.smokeCOAlarm) ...[
               _SmokeAlarmCard(view: view),
+              const SizedBox(height: 12),
+            ],
+            if (view.deviceType == DeviceType.doorLock) ...[
+              DoorLockCard(view: view),
               const SizedBox(height: 12),
             ],
             if ((view.deviceType.hasEnergyMeasurement ||

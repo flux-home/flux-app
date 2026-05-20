@@ -33,6 +33,7 @@ class MatterBridge(context: Context) {
     private val color         = ColorBridge(core)
     private val thermostat    = ThermostatBridge(core)
     private val sensors       = SensorBridge(core)
+    private val doorLock      = DoorLockBridge(core)
 
     // ── Event sink wiring (called from MainActivity) ──────────────────────────
     fun setEventSink(sink: EventChannel.EventSink?)       { core.commissionEventSink = sink }
@@ -174,4 +175,13 @@ class MatterBridge(context: Context) {
 
     fun readBattery(nodeId: Long, result: MethodChannel.Result) =
         sensors.readBattery(nodeId, result)
+    // ── Door Lock ─────────────────────────────────────────────────────────────
+    fun lockDoor(nodeId: Long, pin: String?, result: MethodChannel.Result) =
+        doorLock.lockDoor(nodeId, pin, result)
+
+    fun unlockDoor(nodeId: Long, pin: String?, result: MethodChannel.Result) =
+        doorLock.unlockDoor(nodeId, pin, result)
+
+    fun readLockState(nodeId: Long, result: MethodChannel.Result) =
+        doorLock.readLockState(nodeId, result)
 }
