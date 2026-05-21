@@ -19,7 +19,7 @@ import 'package:matter_home/models/energy_bucket.dart';
 // X-axis: day names centred per day; hour ticks at 06 / 12 / 18
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _importColor = Color(0xFFE8A838);
+const _importColor = Color(0xFFE03030);
 const _exportColor = Color(0xFF3EC9A7);
 
 class EnergyHistoryChart extends StatefulWidget {
@@ -338,7 +338,7 @@ class _MirroredPainter extends CustomPainter {
     fontWeight: FontWeight.w400,
   );
   static const _totalImportStyle = TextStyle(
-    color:      Color(0xAAE8A838),
+    color:      Color(0xAAE03030),
     fontSize:   8,
     fontWeight: FontWeight.w600,
   );

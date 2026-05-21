@@ -365,7 +365,7 @@ class _OdometerDisplay extends StatelessWidget {
   const _OdometerDisplay({
     required this.mwh,
     required this.label,
-    this.color = Colors.amber,
+    this.color = const Color(0xFFE03030),
   });
 
   /// Raw milliwatt-hours from the device (or live estimate).
@@ -444,7 +444,7 @@ class _DigitDrum extends StatelessWidget {
   const _DigitDrum({
     required this.digit,
     required this.dim,
-    this.color = Colors.amber,
+    this.color = const Color(0xFFE03030),
   });
 
   final String digit;
