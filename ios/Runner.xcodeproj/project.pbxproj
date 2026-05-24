@@ -21,14 +21,15 @@
 		FA000002000000000000CAFE /* Matter.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA000001000000000000CAFE /* Matter.xcframework */; };
 		FA000003000000000000CAFE /* Matter.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = FA000001000000000000CAFE /* Matter.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		FA000005000000000000CAFE /* StubBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000004000000000000CAFE /* StubBridge.swift */; };
-		FA000040000000000000CAFE  /* MatterStorage.swift in Sources */   = {isa = PBXBuildFile; fileRef = FA000020000000000000CAFE;  };
-		FA000041000000000000CAFE  /* MatterKeypair.swift in Sources */   = {isa = PBXBuildFile; fileRef = FA000021000000000000CAFE;  };
-		FA000042000000000000CAFE  /* ChipClient.swift in Sources */      = {isa = PBXBuildFile; fileRef = FA000022000000000000CAFE;  };
-		FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000023000000000000CAFE; };
-		FA000050000000000000CAFE    /* BridgeCore.swift in Sources */      = {isa = PBXBuildFile; fileRef = FA000030000000000000CAFE;    };
-		FA000051000000000000CAFE  /* MatterBridge.swift in Sources */    = {isa = PBXBuildFile; fileRef = FA000031000000000000CAFE;  };
-		FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000032000000000000CAFE; };
-		FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000033000000000000CAFE; };
+		FA000040000000000000CAFE /* MatterStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000020000000000000CAFE /* MatterStorage.swift */; };
+		FA000041000000000000CAFE /* MatterKeypair.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000021000000000000CAFE /* MatterKeypair.swift */; };
+		FA000042000000000000CAFE /* ChipClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000022000000000000CAFE /* ChipClient.swift */; };
+		FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000023000000000000CAFE /* MatterCommissioner.swift */; };
+		FA000050000000000000CAFE /* BridgeCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000030000000000000CAFE /* BridgeCore.swift */; };
+		FA000051000000000000CAFE /* MatterBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000031000000000000CAFE /* MatterBridge.swift */; };
+		FA000052000000000000CAFE /* CommissioningBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000032000000000000CAFE /* CommissioningBridge.swift */; };
+		FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000033000000000000CAFE /* SubscriptionBridge.swift */; };
+		FA000061000000000000CAFE /* BluetoothPrewarm.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000060000000000000CAFE; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,6 +92,7 @@
 		FA000031000000000000CAFE /* MatterBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterBridge.swift; sourceTree = "<group>"; };
 		FA000032000000000000CAFE /* CommissioningBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommissioningBridge.swift; sourceTree = "<group>"; };
 		FA000033000000000000CAFE /* SubscriptionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionBridge.swift; sourceTree = "<group>"; };
+		FA000060000000000000CAFE /* BluetoothPrewarm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothPrewarm.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -133,7 +135,6 @@
 				2257C74DAB98F050C4007943 /* Pods-RunnerTests.release.xcconfig */,
 				821E46621A4EAD666C73A3EE /* Pods-RunnerTests.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -202,10 +203,11 @@
 		FA000010000000000000CAFE /* chip */ = {
 			isa = PBXGroup;
 			children = (
-				FA000020000000000000CAFE  /* MatterStorage.swift */,
-				FA000021000000000000CAFE  /* MatterKeypair.swift */,
-				FA000022000000000000CAFE  /* ChipClient.swift */,
+				FA000020000000000000CAFE /* MatterStorage.swift */,
+				FA000021000000000000CAFE /* MatterKeypair.swift */,
+				FA000022000000000000CAFE /* ChipClient.swift */,
 				FA000023000000000000CAFE /* MatterCommissioner.swift */,
+				FA000060000000000000CAFE /* BluetoothPrewarm.swift */,
 			);
 			path = chip;
 			sourceTree = "<group>";
@@ -213,9 +215,9 @@
 		FA000011000000000000CAFE /* bridge */ = {
 			isa = PBXGroup;
 			children = (
-				FA000030000000000000CAFE    /* BridgeCore.swift */,
-				FA000031000000000000CAFE  /* MatterBridge.swift */,
-				FA000032000000000000CAFE  /* CommissioningBridge.swift */,
+				FA000030000000000000CAFE /* BridgeCore.swift */,
+				FA000031000000000000CAFE /* MatterBridge.swift */,
+				FA000032000000000000CAFE /* CommissioningBridge.swift */,
 				FA000033000000000000CAFE /* SubscriptionBridge.swift */,
 			);
 			path = bridge;
@@ -441,14 +443,15 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				FA000005000000000000CAFE /* StubBridge.swift in Sources */,
-				FA000040000000000000CAFE  /* MatterStorage.swift in Sources */,
-				FA000041000000000000CAFE  /* MatterKeypair.swift in Sources */,
-				FA000042000000000000CAFE  /* ChipClient.swift in Sources */,
+				FA000040000000000000CAFE /* MatterStorage.swift in Sources */,
+				FA000041000000000000CAFE /* MatterKeypair.swift in Sources */,
+				FA000042000000000000CAFE /* ChipClient.swift in Sources */,
 				FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */,
-				FA000050000000000000CAFE    /* BridgeCore.swift in Sources */,
-				FA000051000000000000CAFE  /* MatterBridge.swift in Sources */,
-				FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */,
-					FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */,
+					FA000061000000000000CAFE /* BluetoothPrewarm.swift in Sources */,
+				FA000050000000000000CAFE /* BridgeCore.swift in Sources */,
+				FA000051000000000000CAFE /* MatterBridge.swift in Sources */,
+				FA000052000000000000CAFE /* CommissioningBridge.swift in Sources */,
+				FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);
@@ -544,6 +547,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = R3TZ79T7YL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -727,6 +731,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = R3TZ79T7YL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -750,6 +755,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = R3TZ79T7YL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

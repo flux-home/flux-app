@@ -8,7 +8,6 @@ import 'package:matter_home/ui/theme.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -23,11 +22,11 @@ class HomeScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final status = await Permission.camera.request();
-          if (!status.isGranted || !context.mounted) return;
-          final payload = await Navigator.of(
-            context,
-          ).push<String>(MaterialPageRoute(builder: (_) => const QrScannerScreen()));
+          if (!context.mounted) return;
+          // Let flutter_zxing trigger the native camera permission dialog
+          // on first use — no explicit pre-check needed on iOS.
+          final payload = await Navigator.of(context)
+              .push<String>(MaterialPageRoute(builder: (_) => const QrScannerScreen()));
           if (payload != null && context.mounted) {
             unawaited(context.push('/commission', extra: payload));
           }

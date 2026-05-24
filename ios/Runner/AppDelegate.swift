@@ -8,9 +8,11 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Start the Matter SDK early so it's ready before the first MethodChannel call.
+    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // Start after super so Flutter engine + Keychain are fully available.
+    BluetoothPrewarm.shared.start()   // triggers BT permission dialog on first launch
     ChipClient.shared.start()
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    return result
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: any FlutterImplicitEngineBridge) {

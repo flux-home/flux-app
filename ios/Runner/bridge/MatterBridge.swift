@@ -130,7 +130,12 @@ final class MatterBridge {
             result(nil)
 
         case "getFabricId":
-            result(ChipClient.shared.isAvailable ? "1" : nil)
+            if ChipClient.shared.isAvailable {
+                result("1")
+            } else {
+                let err = ChipClient.shared.startupError ?? "SDK not started"
+                result("ERROR: \(err)")
+            }
 
         case "getVendorId":
             result(ChipClient.shared.isAvailable ? Int(ChipClient.kVendorID) : nil)

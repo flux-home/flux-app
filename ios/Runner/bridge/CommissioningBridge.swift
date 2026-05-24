@@ -138,32 +138,49 @@ final class CommissioningBridge {
     // MARK: - Parse payload
 
     func parsePayload(_ payloadStr: String, result: @escaping FlutterResult) {
-        guard ChipClient.shared.isAvailable else {
-            result(FlutterError(code: "CHIP_SDK_UNAVAILABLE", message: "SDK not ready", details: nil))
-            return
-        }
+        Task {
+            // Wait up to 8 s in case the SDK is still starting.
+            if !ChipClient.shared.isAvailable {
+                _ = await Task.detached(priority: .userInitiated) {
+                    ChipClient.shared.waitUntilReady(timeout: 8.0)
+                }.value
+            }
+            guard ChipClient.shared.isAvailable else {
+                let reason = ChipClient.shared.startupError ?? "SDK startup timed out"
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "CHIP_SDK_UNAVAILABLE",
+                                        message: reason, details: nil))
+                }
+                return
+            }
 
-        let payload: MTRSetupPayload?
-        if #available(iOS 17.6, *) {
-            payload = try? MTRSetupPayload(payload: payloadStr)
-        } else {
-            payload = try? MTRSetupPayload(onboardingPayload:  payloadStr)
-        }
+            let payload: MTRSetupPayload?
+            if #available(iOS 17.6, *) {
+                payload = try? MTRSetupPayload(payload: payloadStr)
+            } else {
+                payload = try? MTRSetupPayload(onboardingPayload: payloadStr)
+            }
 
-        guard let p = payload else {
-            result(FlutterError(code: "PARSE_ERROR",
-                                message: "Invalid payload: \(payloadStr)", details: nil))
-            return
-        }
+            guard let p = payload else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "PARSE_ERROR",
+                                        message: "Invalid payload: \(payloadStr)",
+                                        details: nil))
+                }
+                return
+            }
 
-        result([
-            "vendorId":              p.vendorID.intValue,
-            "productId":             p.productID.intValue,
-            "discriminator":         p.discriminator.intValue,
-            "hasShortDiscriminator": p.hasShortDiscriminator,
-            "setupPinCode":          p.setUpPINCode.intValue,
-            "discoveryCapabilities": capStrings(p.discoveryCapabilities),
-        ] as [String: Any])
+            DispatchQueue.main.async {
+                result([
+                    "vendorId":              p.vendorID.intValue,
+                    "productId":             p.productID.intValue,
+                    "discriminator":         p.discriminator.intValue,
+                    "hasShortDiscriminator": p.hasShortDiscriminator,
+                    "setupPinCode":          p.setUpPINCode.intValue,
+                    "discoveryCapabilities": self.capStrings(p.discoveryCapabilities),
+                ] as [String: Any])
+            }
+        }
     }
 
     // MARK: - Remove / share (stubs — Task 7)

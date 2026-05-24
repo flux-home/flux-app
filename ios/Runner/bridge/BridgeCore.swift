@@ -52,14 +52,32 @@ final class BridgeCore {
     /// goes wrong.
     func requireChip(result: @escaping FlutterResult,
                      block: @escaping () async throws -> Void) {
-        guard ChipClient.shared.isAvailable else {
-            result(FlutterError(
-                code:    "CHIP_SDK_UNAVAILABLE",
-                message: "Matter SDK not ready — ChipClient.start() must succeed first.",
-                details: nil
-            ))
+        // If the SDK is still starting up, wait up to 8 s before giving up.
+        if !ChipClient.shared.isAvailable {
+            Task {
+                let ready = await Task.detached(priority: .userInitiated) {
+                    ChipClient.shared.waitUntilReady(timeout: 8.0)
+                }.value
+
+                if ready {
+                    do { try await block() } catch {
+                        DispatchQueue.main.async {
+                            result(FlutterError(code: "CHIP_ERROR",
+                                                message: error.localizedDescription,
+                                                details: nil))
+                        }
+                    }
+                } else {
+                    let reason = ChipClient.shared.startupError ?? "SDK startup timed out"
+                    DispatchQueue.main.async {
+                        result(FlutterError(code: "CHIP_SDK_UNAVAILABLE",
+                                            message: reason, details: nil))
+                    }
+                }
+            }
             return
         }
+
         Task {
             do {
                 try await block()
