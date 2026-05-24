@@ -15,7 +15,7 @@ import 'package:matter_home/models/wifi_network.dart';
 /// Subscription lifecycle and live-state event stream.
 /// Used by [DeviceProvider].
 abstract interface class MatterSubscriptionPort {
-  /// Typed events emitted by the Android CHIP SDK subscription layer.
+  /// Typed events emitted by the platform CHIP SDK subscription layer.
   /// Decoded from the raw platform-channel map by [MatterChannel].
   Stream<DeviceStateEvent> get deviceStateUpdates;
 
@@ -26,7 +26,7 @@ abstract interface class MatterSubscriptionPort {
 /// Commissioning a new device into the fabric.
 /// Used by [CommissioningController].
 abstract interface class MatterCommissionPort {
-  /// Emits plain-text progress lines from the Android commissioning flow.
+  /// Emits plain-text progress lines from the platform commissioning flow.
   Stream<String> get commissionEvents;
 
   Future<ParsedPayload?> parsePayload(String payload);
@@ -108,7 +108,7 @@ abstract interface class MatterFabricPort {
   Future<List<CommissionableDevice>> discoverCommissionableNodes();
 
   Future<List<ThreadBorderRouter>>  discoverThreadNetworks();
-  Future<String?>                   readAndroidThreadCredentials();
+  Future<String?>                   readSystemThreadCredentials();
   Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId);
   Future<NetworkDiagnosticsReport?> runNetworkDiagnostics();
 }

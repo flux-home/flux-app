@@ -14,7 +14,7 @@ import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/services/matter_port.dart';
 
-/// Flutter ↔ Android MethodChannel bridge.
+/// Flutter ↔ platform MethodChannel bridge.
 ///
 /// Every public method maps 1-to-1 to a handler in MainActivity / MatterBridge.
 /// All channel calls are funnelled through [_invoke] which handles the
@@ -44,7 +44,7 @@ class MatterChannel implements MatterPort {
 
   // ── Streams ────────────────────────────────────────────────────────────────
 
-  /// Emits plain-text progress lines from the Android commissioning flow.
+  /// Emits plain-text progress lines from the platform commissioning flow.
   @override
   Stream<String> get commissionEvents => _events.receiveBroadcastStream().map((e) => e as String);
 
@@ -325,7 +325,7 @@ class MatterChannel implements MatterPort {
   // ── Sensors / Battery / Humidity ───────────────────────────────────────────
 
   @override
-  Future<String?> readAndroidThreadCredentials() => _invoke<String?>('readAndroidThreadCredentials', null);
+  Future<String?> readSystemThreadCredentials() => _invoke<String?>('readSystemThreadCredentials', null);
 
   @override
   Future<List<ThreadBorderRouter>> discoverThreadNetworks() => _invoke<List<ThreadBorderRouter>>(

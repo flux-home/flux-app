@@ -155,11 +155,11 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
   }
 
 
-  // ── Android import ────────────────────────────────────────────────────────
+  // ── OS import ─────────────────────────────────────────────────────────────
 
-  Future<void> _importFromAndroid() async {
+  Future<void> _importFromOs() async {
     try {
-      final hex = await context.read<MatterFabricPort>().readAndroidThreadCredentials();
+      final hex = await context.read<MatterFabricPort>().readSystemThreadCredentials();
       if (!mounted || hex == null || hex.isEmpty) return;
       final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
       final ds   = ThreadDataset(label: name, hex: hex);
@@ -298,11 +298,11 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                 child: SectionLabel('Add Thread Credentials'),
               ),
               FilledButton.icon(
-                icon:  const Icon(Icons.android, size: 18),
-                label: const Text('Use Android default Thread Network'),
+                icon:  const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Import from OS Thread Network'),
                 onPressed: () {
                   Navigator.pop(context);
-                  _importFromAndroid();
+                  _importFromOs();
                 },
               ),
               const SizedBox(height: 8),

@@ -1460,7 +1460,7 @@ class _ThreadDatasetHeaderState extends State<_ThreadDatasetHeader> {
 
 /// Shown when the user tries to commission a Thread device but no dataset is
 /// configured.  Lists saved datasets, "Empty dataset", and an inline
-/// "Load from Android" row that calls the OS credential picker.
+/// "Import from OS" row that calls the OS credential picker.
 ///
 /// Dismissing without a selection (back / outside tap) returns null.
 class _ThreadDatasetPromptSheet extends StatefulWidget {
@@ -1472,30 +1472,30 @@ class _ThreadDatasetPromptSheet extends StatefulWidget {
 }
 
 class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
-  bool _loadingAndroid = false;
-  String? _androidError;
+  bool _loadingFromOs = false;
+  String? _osImportError;
 
-  Future<void> _loadFromAndroid() async {
+  Future<void> _importFromOs() async {
     setState(() {
-      _loadingAndroid = true;
-      _androidError = null;
+      _loadingFromOs = true;
+      _osImportError = null;
     });
     try {
-      final hex = await context.read<MatterFabricPort>().readAndroidThreadCredentials();
+      final hex = await context.read<MatterFabricPort>().readSystemThreadCredentials();
 
       if (!mounted) return;
 
       if (hex == null) {
         setState(() {
-          _loadingAndroid = false;
-          _androidError = 'Could not contact credential store';
+          _loadingFromOs = false;
+          _osImportError = 'Could not contact credential store';
         });
         return;
       }
       if (hex.isEmpty) {
         // User cancelled the OS picker — stay on sheet.
         setState(() {
-          _loadingAndroid = false;
+          _loadingFromOs = false;
         });
         return;
       }
@@ -1505,8 +1505,8 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
     } on Exception catch (e) {
       if (mounted) {
         setState(() {
-          _loadingAndroid = false;
-          _androidError = e.toString();
+          _loadingFromOs = false;
+          _osImportError = e.toString();
         });
       }
     }
@@ -1563,19 +1563,19 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
 
             const Divider(height: 1),
 
-            // ── Load from Android ──────────────────────────────────────
+            // ── Import from OS ─────────────────────────────────────────
             ListTile(
-              leading: _loadingAndroid
+              leading: _loadingFromOs
                   ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(Icons.android, color: cs.primary),
-              title: const Text('Load from Android'),
-              subtitle: _androidError != null
-                  ? Text(_androidError!, style: TextStyle(color: cs.error, fontSize: 11))
+                  : Icon(Icons.download_rounded, color: cs.primary),
+              title: const Text('Import from OS'),
+              subtitle: _osImportError != null
+                  ? Text(_osImportError!, style: TextStyle(color: cs.error, fontSize: 11))
                   : Text(
                       'Use a credential stored by another app',
                       style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
                     ),
-              onTap: _loadingAndroid ? null : _loadFromAndroid,
+              onTap: _loadingFromOs ? null : _importFromOs,
             ),
           ],
         ),

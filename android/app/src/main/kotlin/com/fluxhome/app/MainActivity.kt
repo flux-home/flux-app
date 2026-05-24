@@ -287,7 +287,7 @@ class MainActivity : FlutterActivity() {
                     "scanWifiNetworks" ->
                         bridge.scanWifiNetworks(result)
 
-                    "readAndroidThreadCredentials" ->
+                    "readSystemThreadCredentials" ->
                         AndroidThreadCredentialReader.requestPreferredCredentials(this, result)
 
                     "discoverThreadNetworks" -> bridge.discoverThreadNetworks(result)
