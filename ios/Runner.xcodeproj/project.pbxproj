@@ -30,6 +30,8 @@
 		FA000052000000000000CAFE /* CommissioningBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000032000000000000CAFE /* CommissioningBridge.swift */; };
 		FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000033000000000000CAFE /* SubscriptionBridge.swift */; };
 		FA000061000000000000CAFE /* BluetoothPrewarm.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000060000000000000CAFE; };
+		FA000071000000000000CAFE /* FluxCertIssuer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000070000000000000CAFE; };
+		FA000073000000000000CAFE /* ControllerStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000072000000000000CAFE; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +95,8 @@
 		FA000032000000000000CAFE /* CommissioningBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommissioningBridge.swift; sourceTree = "<group>"; };
 		FA000033000000000000CAFE /* SubscriptionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionBridge.swift; sourceTree = "<group>"; };
 		FA000060000000000000CAFE /* BluetoothPrewarm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothPrewarm.swift; sourceTree = "<group>"; };
+		FA000070000000000000CAFE /* FluxCertIssuer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxCertIssuer.swift; sourceTree = "<group>"; };
+		FA000072000000000000CAFE /* ControllerStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -208,6 +212,8 @@
 				FA000022000000000000CAFE /* ChipClient.swift */,
 				FA000023000000000000CAFE /* MatterCommissioner.swift */,
 				FA000060000000000000CAFE /* BluetoothPrewarm.swift */,
+				FA000072000000000000CAFE /* ControllerStorage.swift */,
+				FA000070000000000000CAFE /* FluxCertIssuer.swift */,
 			);
 			path = chip;
 			sourceTree = "<group>";
@@ -448,6 +454,8 @@
 				FA000042000000000000CAFE /* ChipClient.swift in Sources */,
 				FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */,
 					FA000061000000000000CAFE /* BluetoothPrewarm.swift in Sources */,
+					FA000073000000000000CAFE /* ControllerStorage.swift in Sources */,
+					FA000071000000000000CAFE /* FluxCertIssuer.swift in Sources */,
 				FA000050000000000000CAFE /* BridgeCore.swift in Sources */,
 				FA000051000000000000CAFE /* MatterBridge.swift in Sources */,
 				FA000052000000000000CAFE /* CommissioningBridge.swift in Sources */,

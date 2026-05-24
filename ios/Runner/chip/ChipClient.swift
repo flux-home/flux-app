@@ -7,27 +7,26 @@ import Security
 //
 // Singleton entry point for the Matter iOS SDK.
 //
-// Lifecycle:
-//   Call ChipClient.shared.start() once from AppDelegate before any bridge
-//   calls.  Subsequent calls are no-ops.  isAvailable is false when the SDK
-//   is not yet initialised or failed to start.  startupError holds the
-//   reason for inspection by the Matter settings screen.
+// Two initialization paths:
+//   Modern (iOS 17.6+): MTRDeviceController(parameters:) with manually
+//     generated root cert + NOC.  Bypasses MTRDeviceControllerFactory entirely.
+//     Required on iOS 26+ where createControllerOnNewFabric: is broken.
+//
+//   Legacy (iOS 16.4 – 17.5): MTRDeviceControllerFactory +
+//     createControllerOnNewFabric: — kept as fallback.
 // ─────────────────────────────────────────────────────────────────────────────
 
 final class ChipClient {
 
     static let shared = ChipClient()
 
-    /// CSA development VID (0xFFF1).  Change to your production VID before App Store.
-    static let kVendorID: UInt32 = 0xFFF1
-    /// Our single fabric.  All commissioned devices belong to fabric 1.
+    static let kVendorID: UInt32 = 0xFFF1   // CSA dev VID — change for production
     static let kFabricID: UInt64 = 1
 
     private let lock = NSLock()
     private var _controller: MTRDeviceController?
 
-    private(set) var isAvailable = false
-    /// Human-readable reason for the last startup failure, or nil on success.
+    private(set) var isAvailable  = false
     private(set) var startupError: String?
 
     private init() {}
@@ -35,13 +34,10 @@ final class ChipClient {
     // MARK: - Startup
 
     func start() {
-        // Run on a background queue — factory init does network/BLE setup
-        // that must not block the main thread.
         DispatchQueue.global(qos: .userInitiated).async { self._start() }
     }
 
-    /// Waits up to `timeout` seconds for the SDK to become available.
-    /// Returns true if available, false if timed out or failed.
+    /// Spin-wait up to `timeout` seconds for the SDK to become ready.
     func waitUntilReady(timeout: TimeInterval = 8.0) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !isAvailable && startupError == nil && Date() < deadline {
@@ -49,6 +45,8 @@ final class ChipClient {
         }
         return isAvailable
     }
+
+    // MARK: - Private startup
 
     private func _start() {
         lock.lock()
@@ -58,55 +56,127 @@ final class ChipClient {
         func fail(_ reason: String, _ error: Error? = nil) {
             let msg = error.map { "\(reason): \($0.localizedDescription)" } ?? reason
             startupError = msg
-            NSLog("[ChipClient] ❌ \(msg)")
+            NSLog("[ChipClient] ❌ %@", msg)
             isAvailable = false
         }
 
         NSLog("[ChipClient] Starting Matter SDK…")
 
-        // ── 1. IPK ──────────────────────────────────────────────────────────
         let ipk = loadOrCreateIPK()
-        NSLog("[ChipClient]  ✓ IPK ready (\(ipk.count) bytes)")
+        NSLog("[ChipClient]  ✓ IPK ready")
 
-        // ── 2. Keypair ───────────────────────────────────────────────────────
         let keypair: MatterKeypair
         do {
             keypair = try MatterKeypair.loadOrCreate()
             NSLog("[ChipClient]  ✓ Keypair ready")
         } catch {
-            fail("Keypair init failed", error); return
+            fail("Keypair failed", error); return
         }
 
-        // ── 3. Storage ───────────────────────────────────────────────────────
-        let storage = MatterStorage()
-        NSLog("[ChipClient]  ✓ Storage ready")
+        do {
+            let ctrl: MTRDeviceController
+            if #available(iOS 17.6, *) {
+                ctrl = try _startModern(ipk: ipk, keypair: keypair)
+            } else {
+                ctrl = try _startLegacy(ipk: ipk, keypair: keypair)
+            }
+            _controller = ctrl
+            isAvailable  = true
+            startupError = nil
+            NSLog("[ChipClient] ✅ Matter SDK ready — controllerNodeID=%@",
+                  ctrl.controllerNodeID?.description ?? "?")
+        } catch {
+            fail("Controller init failed", error)
+        }
+    }
 
-        // ── 4. Factory ───────────────────────────────────────────────────────
+    // MARK: - Modern path (iOS 17.6+)
+
+    @available(iOS 17.6, *)
+    private func _startModern(ipk: Data, keypair: MatterKeypair) throws -> MTRDeviceController {
+        NSLog("[ChipClient]  Using modern initWithParameters: path")
+
+        // 1. Root certificate
+        let rootCert: Data
+        do {
+            rootCert = try MTRCertificates.createRootCertificate(
+                keypair, issuerID: nil, fabricID: nil
+            )
+        } catch {
+            throw NSError(domain: "ChipClient", code: -10,
+                userInfo: [NSLocalizedDescriptionKey: "Root cert generation failed: \(error)"])
+        }
+        NSLog("[ChipClient]   ✓ Root cert generated (%d bytes)", rootCert.count)
+
+        // 2. Controller operational certificate (controller acts as node 1 on fabric)
+        let controllerNoc: Data
+        do {
+            controllerNoc = try MTRCertificates.createOperationalCertificate(
+                keypair,
+                signingCertificate:    rootCert,
+                operationalPublicKey:  keypair.copyPublicKey(),
+                fabricID:              NSNumber(value: Self.kFabricID),
+                nodeID:                NSNumber(value: UInt64(1)),
+                caseAuthenticatedTags: nil
+            )
+        } catch {
+            throw NSError(domain: "ChipClient", code: -11,
+                userInfo: [NSLocalizedDescriptionKey: "Controller NOC generation failed: \(error)"])
+        }
+        NSLog("[ChipClient]   ✓ Controller NOC generated (%d bytes)", controllerNoc.count)
+
+        // 3. Cert issuer + per-controller storage
+        let certIssuer   = FluxCertIssuer(keypair: keypair, rootCert: rootCert,
+                                           fabricID: Self.kFabricID)
+        let storage      = ControllerStorage()
+        let storageQueue = DispatchQueue(label: "com.fluxhome.app.matter.ctrl-storage", qos: .utility)
+        let issuerQueue  = DispatchQueue(label: "com.fluxhome.app.matter.cert-issuer", qos: .userInitiated)
+
+        // 4. Persistent controller UUID (stable across launches)
+        let uid = loadOrCreateControllerID()
+        NSLog("[ChipClient]   controllerUID=%@", uid.uuidString)
+
+        // 5. Parameters
+        let params = MTRDeviceControllerExternalCertificateParameters(
+            storageDelegate:         storage,
+            storageDelegateQueue:    storageQueue,
+            uniqueIdentifier:        uid,
+            ipk:                     ipk,
+            vendorID:                NSNumber(value: Self.kVendorID),
+            operationalKeypair:      keypair,
+            operationalCertificate:  controllerNoc,
+            intermediateCertificate: nil,
+            rootCertificate:         rootCert
+        )
+        params.setOperationalCertificateIssuer(certIssuer, queue: issuerQueue)
+
+        // 6. Initialise — auto-starts factory in per-controller mode
+        let ctrl = try MTRDeviceController(parameters: params)
+        NSLog("[ChipClient]   ✓ MTRDeviceController initialised")
+        return ctrl
+    }
+
+    // MARK: - Legacy path (iOS 16.4 – 17.5)
+
+    private func _startLegacy(ipk: Data, keypair: MatterKeypair) throws -> MTRDeviceController {
+        NSLog("[ChipClient]  Using legacy factory path")
+
+        let storage = MatterStorage()
         let factory = MTRDeviceControllerFactory.sharedInstance()
+
         if !factory.isRunning {
             let fp = MTRDeviceControllerFactoryParams(storage: storage)
-            // shouldStartServer enables the device to accept CASE connections
-            // (useful for subscriptions / being a border router).
-            // Try without it first — safer on restrictive OS environments.
             fp.shouldStartServer = false
             do {
                 try factory.start(fp)
-                NSLog("[ChipClient]  ✓ Factory started (shouldStartServer=false)")
+                NSLog("[ChipClient]   ✓ Factory started (shouldStartServer=false)")
             } catch {
-                // Retry with server enabled — some SDK versions require it.
                 fp.shouldStartServer = true
-                do {
-                    try factory.start(fp)
-                    NSLog("[ChipClient]  ✓ Factory started (shouldStartServer=true)")
-                } catch {
-                    fail("Factory start failed", error); return
-                }
+                try factory.start(fp)
+                NSLog("[ChipClient]   ✓ Factory started (shouldStartServer=true)")
             }
-        } else {
-            NSLog("[ChipClient]  ✓ Factory already running")
         }
 
-        // ── 5. Controller ────────────────────────────────────────────────────
         let params = MTRDeviceControllerStartupParams(
             ipk:       ipk,
             fabricID:  NSNumber(value: Self.kFabricID),
@@ -114,37 +184,18 @@ final class ChipClient {
         )
         params.vendorID = NSNumber(value: Self.kVendorID)
 
-        var ctrl: MTRDeviceController?
-
         let knownFabrics = factory.knownFabrics ?? []
-        NSLog("[ChipClient]  knownFabrics count: \(knownFabrics.count)")
+        NSLog("[ChipClient]   knownFabrics: %d", knownFabrics.count)
 
-        if !knownFabrics.isEmpty {
-            ctrl = try? factory.createController(onExistingFabric: params)
-            if ctrl != nil {
-                NSLog("[ChipClient]  ✓ Loaded existing fabric")
-            } else {
-                NSLog("[ChipClient]  ℹ Existing fabric load failed — creating new")
-            }
+        if !knownFabrics.isEmpty,
+           let ctrl = try? factory.createController(onExistingFabric: params) {
+            NSLog("[ChipClient]   ✓ Loaded existing fabric")
+            return ctrl
         }
 
-        if ctrl == nil {
-            do {
-                ctrl = try factory.createController(onNewFabric: params)
-                NSLog("[ChipClient]  ✓ Created new fabric")
-            } catch {
-                fail("createController(onNewFabric:) failed", error); return
-            }
-        }
-
-        guard let c = ctrl else {
-            fail("Controller is nil after create"); return
-        }
-
-        _controller = c
-        isAvailable = true
-        startupError = nil
-        NSLog("[ChipClient] ✅ Matter SDK ready — controllerNodeID=\(c.controllerNodeID?.description ?? "?")")
+        let ctrl = try factory.createController(onNewFabric: params)
+        NSLog("[ChipClient]   ✓ Created new fabric")
+        return ctrl
     }
 
     // MARK: - Accessors
@@ -159,7 +210,7 @@ final class ChipClient {
         return MTRDevice(nodeID: NSNumber(value: nodeID), controller: c)
     }
 
-    // MARK: - IPK persistence
+    // MARK: - Persistence helpers
 
     private func loadOrCreateIPK() -> Data {
         let key = "com.fluxhome.app.matter.ipk"
@@ -167,11 +218,20 @@ final class ChipClient {
             return stored
         }
         var ipk = Data(count: 16)
-        ipk.withUnsafeMutableBytes {
-            _ = SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
-        }
+        ipk.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
         UserDefaults.standard.set(ipk, forKey: key)
         NSLog("[ChipClient] Generated new IPK")
         return ipk
+    }
+
+    private func loadOrCreateControllerID() -> UUID {
+        let key = "com.fluxhome.app.matter.controllerUUID"
+        if let s = UserDefaults.standard.string(forKey: key), let u = UUID(uuidString: s) {
+            return u
+        }
+        let u = UUID()
+        UserDefaults.standard.set(u.uuidString, forKey: key)
+        NSLog("[ChipClient] Generated new controller UUID")
+        return u
     }
 }
