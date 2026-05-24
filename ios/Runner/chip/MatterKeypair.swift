@@ -66,6 +66,7 @@ final class MatterKeypair: NSObject, MTRKeypair {
             kSecClass:              kSecClassKey,
             kSecAttrApplicationTag: appTag,
             kSecAttrKeyType:        kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass:       kSecAttrKeyClassPrivate,   // must load private key, not public
             kSecReturnRef:          true,
         ]
         var ref: CFTypeRef?
