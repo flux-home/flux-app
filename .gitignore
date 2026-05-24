@@ -51,6 +51,9 @@ android/key.properties
 # Real CHIP SDK AAR — not tracked, obtain via android/get_chip_sdk.sh
 android/app/libs/CHIPController.aar
 
+# Real CHIP SDK xcframework — not tracked, obtain via ios/get_chip_sdk_ios.sh
+ios/Frameworks/Matter.xcframework
+
 # Signing keystore — never commit
 android/app/keystore.jks
 android/key.properties
