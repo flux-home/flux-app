@@ -14,6 +14,7 @@ import 'package:matter_home/ui/screens/qr_payload_detail_screen.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -239,14 +240,47 @@ class _CommissionScreenState extends State<CommissionScreen> {
   // ── BLE permission ────────────────────────────────────────────────────────
 
   Future<bool> _requestBlePermissions() async {
-    final results = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
+    // iOS 13+ has a unified Bluetooth permission via NSBluetoothAlwaysUsageDescription.
+    // Location is NOT required for BLE on iOS — only Android needs it.
+    final permissions = defaultTargetPlatform == TargetPlatform.iOS
+        ? [Permission.bluetoothScan, Permission.bluetoothConnect]
+        : [
+            Permission.bluetoothScan,
+            Permission.bluetoothConnect,
+            Permission.locationWhenInUse,
+          ];
+
+    final results = await permissions.request();
 
     final denied = results.values.any((s) => s.isDenied || s.isPermanentlyDenied);
     final permanent = results.values.any((s) => s.isPermanentlyDenied);
+
+    // On iOS, permission_handler can mis-report BT status on newer OS versions.
+    // If the system BT is actually authorised (BluetoothPrewarm confirmed it at
+    // launch), let the commissioning proceed regardless of what permission_handler
+    // reports for the scan/connect permissions.
+    if (denied && defaultTargetPlatform == TargetPlatform.iOS) {
+      // Check if at least one BT permission is granted or limited — if so, proceed.
+      final anyGranted = results.values.any((s) => s.isGranted || s.isLimited);
+      if (!anyGranted) {
+        // Truly denied — show the message.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                permanent
+                    ? 'Bluetooth permanently denied — enable in Settings → Flux.'
+                    : 'Bluetooth access is required for BLE commissioning.',
+              ),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+            ),
+          );
+        }
+        return false;
+      }
+      // permission_handler returned denied but system may still work — proceed.
+      return true;
+    }
 
     if (denied && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

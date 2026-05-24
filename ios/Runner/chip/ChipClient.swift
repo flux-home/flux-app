@@ -76,8 +76,11 @@ final class ChipClient {
         do {
             let ctrl: MTRDeviceController
             if #available(iOS 17.6, *) {
+                NSLog("[ChipClient]  → Taking modern path (iOS 17.6+, running %@)",
+                      ProcessInfo.processInfo.operatingSystemVersionString)
                 ctrl = try _startModern(ipk: ipk, keypair: keypair)
             } else {
+                NSLog("[ChipClient]  → Taking legacy path (< iOS 17.6)")
                 ctrl = try _startLegacy(ipk: ipk, keypair: keypair)
             }
             _controller = ctrl
