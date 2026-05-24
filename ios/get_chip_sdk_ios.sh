@@ -59,15 +59,17 @@ if [[ "$MODE" == "--ci" ]]; then
     TMPDIR_CI=$(mktemp -d)
     gh release download "$RELEASE_TAG" \
         --repo locomuco/fluxhome \
-        --pattern "Matter.xcframework.zip" \
+        --pattern "Matter-iphoneos.xcframework.zip" \
         --dir "$TMPDIR_CI"
     echo "Unzipping..."
-    unzip -q "$TMPDIR_CI/Matter.xcframework.zip" -d "$TMPDIR_CI"
-    if [[ -d "$TMPDIR_CI/Matter.xcframework" ]]; then
+    unzip -q "$TMPDIR_CI/Matter-iphoneos.xcframework.zip" -d "$TMPDIR_CI"
+    if [[ -d "$TMPDIR_CI/ios-arm64" ]]; then
         rm -rf "$FRAMEWORKS_DIR/Matter.xcframework"
-        cp -R "$TMPDIR_CI/Matter.xcframework" "$FRAMEWORKS_DIR/"
+        mkdir -p "$FRAMEWORKS_DIR/Matter.xcframework"
+        cp -R "$TMPDIR_CI/ios-arm64" "$FRAMEWORKS_DIR/Matter.xcframework/"
+        cp "$TMPDIR_CI/Info.plist"   "$FRAMEWORKS_DIR/Matter.xcframework/"
     else
-        echo "Error: Matter.xcframework not found in downloaded zip."
+        echo "Error: ios-arm64 slice not found in downloaded zip."
         ls "$TMPDIR_CI"
         exit 1
     fi
