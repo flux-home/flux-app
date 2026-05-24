@@ -21,9 +21,11 @@ final class MatterBridge {
 
     private let core          = BridgeCore()
     private let commissioning: CommissioningBridge
+    private let subscriptions: SubscriptionBridge
 
     init() {
         commissioning = CommissioningBridge(core: core)
+        subscriptions = SubscriptionBridge(core: core)
     }
 
     // ── Channel registration ──────────────────────────────────────────────────
@@ -101,15 +103,12 @@ final class MatterBridge {
                 result:    result
             )
 
-        // ── Subscriptions (stub — Task 5) ──────────────────────────────────
+        // ── Subscriptions ──────────────────────────────────────────────────
         case "startSubscription":
-            result(true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.core.emitDeviceState(["nodeId": nodeId, "type": "established"])
-            }
+            subscriptions.startSubscription(nodeId: UInt64(bitPattern: Int64(nodeId)), result: result)
 
         case "stopSubscription":
-            result(nil)
+            subscriptions.stopSubscription(nodeId: UInt64(bitPattern: Int64(nodeId)), result: result)
 
         // ── Device info (stub — Task 7) ────────────────────────────────────
         case "readDeviceState":

@@ -28,6 +28,7 @@
 		FA000050000000000000CAFE    /* BridgeCore.swift in Sources */      = {isa = PBXBuildFile; fileRef = FA000030000000000000CAFE;    };
 		FA000051000000000000CAFE  /* MatterBridge.swift in Sources */    = {isa = PBXBuildFile; fileRef = FA000031000000000000CAFE;  };
 		FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000032000000000000CAFE; };
+		FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000033000000000000CAFE; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +90,7 @@
 		FA000030000000000000CAFE /* BridgeCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeCore.swift; sourceTree = "<group>"; };
 		FA000031000000000000CAFE /* MatterBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterBridge.swift; sourceTree = "<group>"; };
 		FA000032000000000000CAFE /* CommissioningBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommissioningBridge.swift; sourceTree = "<group>"; };
+		FA000033000000000000CAFE /* SubscriptionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -214,6 +216,7 @@
 				FA000030000000000000CAFE    /* BridgeCore.swift */,
 				FA000031000000000000CAFE  /* MatterBridge.swift */,
 				FA000032000000000000CAFE  /* CommissioningBridge.swift */,
+				FA000033000000000000CAFE /* SubscriptionBridge.swift */,
 			);
 			path = bridge;
 			sourceTree = "<group>";
@@ -445,6 +448,7 @@
 				FA000050000000000000CAFE    /* BridgeCore.swift in Sources */,
 				FA000051000000000000CAFE  /* MatterBridge.swift in Sources */,
 				FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */,
+					FA000053000000000000CAFE /* SubscriptionBridge.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);
