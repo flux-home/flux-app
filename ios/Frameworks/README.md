@@ -25,6 +25,14 @@ Pre-built Matter SDK framework for the Flux iOS app.
 bash ios/get_chip_sdk_ios.sh --build
 ```
 
+Or download the pre-built asset from the release (fast, no Xcode compile needed):
+
+```bash
+bash ios/get_chip_sdk_ios.sh --ci   # requires: gh auth login
+```
+
+Release: https://github.com/locomuco/fluxhome/releases/tag/chip-sdk-v1.5.0.0
+
 This script:
 1. Clones `connectedhomeip` at the pinned tag into `/tmp/connectedhomeip`
 2. Syncs the Darwin submodules (shallow)

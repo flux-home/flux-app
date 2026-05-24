@@ -48,31 +48,26 @@ find_python() {
     echo ""
 }
 
-# ── CI download via GitHub CLI ─────────────────────────────────────────────
+# ── CI download from fluxhome release asset ───────────────────────────────
 if [[ "$MODE" == "--ci" ]]; then
     if ! command -v gh &>/dev/null; then
         echo "Error: GitHub CLI (gh) not found. Install from https://cli.github.com/"
         exit 1
     fi
-    echo "Searching for latest successful Darwin framework build..."
-    RUN_ID=$(gh run list \
-        --repo project-chip/connectedhomeip \
-        --workflow "Build Darwin frameworks" \
-        --status success \
-        --limit 1 \
-        --json databaseId \
-        --jq '.[0].databaseId')
-    echo "Downloading artifact from run $RUN_ID..."
+    RELEASE_TAG="chip-sdk-${CHIP_TAG}"
+    echo "Downloading Matter.xcframework.zip from $RELEASE_TAG ..."
     TMPDIR_CI=$(mktemp -d)
-    gh run download "$RUN_ID" \
-        --repo project-chip/connectedhomeip \
-        --name "matter-framework-ios" \
+    gh release download "$RELEASE_TAG" \
+        --repo locomuco/fluxhome \
+        --pattern "Matter.xcframework.zip" \
         --dir "$TMPDIR_CI"
+    echo "Unzipping..."
+    unzip -q "$TMPDIR_CI/Matter.xcframework.zip" -d "$TMPDIR_CI"
     if [[ -d "$TMPDIR_CI/Matter.xcframework" ]]; then
         rm -rf "$FRAMEWORKS_DIR/Matter.xcframework"
         cp -R "$TMPDIR_CI/Matter.xcframework" "$FRAMEWORKS_DIR/"
     else
-        echo "Error: Matter.xcframework not found in downloaded artifact."
+        echo "Error: Matter.xcframework not found in downloaded zip."
         ls "$TMPDIR_CI"
         exit 1
     fi
