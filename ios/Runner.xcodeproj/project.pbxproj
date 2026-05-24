@@ -21,6 +21,13 @@
 		FA000002000000000000CAFE /* Matter.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA000001000000000000CAFE /* Matter.xcframework */; };
 		FA000003000000000000CAFE /* Matter.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = FA000001000000000000CAFE /* Matter.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		FA000005000000000000CAFE /* StubBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000004000000000000CAFE /* StubBridge.swift */; };
+		FA000040000000000000CAFE  /* MatterStorage.swift in Sources */   = {isa = PBXBuildFile; fileRef = FA000020000000000000CAFE;  };
+		FA000041000000000000CAFE  /* MatterKeypair.swift in Sources */   = {isa = PBXBuildFile; fileRef = FA000021000000000000CAFE;  };
+		FA000042000000000000CAFE  /* ChipClient.swift in Sources */      = {isa = PBXBuildFile; fileRef = FA000022000000000000CAFE;  };
+		FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000023000000000000CAFE; };
+		FA000050000000000000CAFE    /* BridgeCore.swift in Sources */      = {isa = PBXBuildFile; fileRef = FA000030000000000000CAFE;    };
+		FA000051000000000000CAFE  /* MatterBridge.swift in Sources */    = {isa = PBXBuildFile; fileRef = FA000031000000000000CAFE;  };
+		FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000032000000000000CAFE; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +82,13 @@
 		E92B1600FD3933492DD9C4AA /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		FA000001000000000000CAFE /* Matter.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = Matter.xcframework; path = Frameworks/Matter.xcframework; sourceTree = SOURCE_ROOT; };
 		FA000004000000000000CAFE /* StubBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubBridge.swift; sourceTree = "<group>"; };
+		FA000020000000000000CAFE /* MatterStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterStorage.swift; sourceTree = "<group>"; };
+		FA000021000000000000CAFE /* MatterKeypair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterKeypair.swift; sourceTree = "<group>"; };
+		FA000022000000000000CAFE /* ChipClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipClient.swift; sourceTree = "<group>"; };
+		FA000023000000000000CAFE /* MatterCommissioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterCommissioner.swift; sourceTree = "<group>"; };
+		FA000030000000000000CAFE /* BridgeCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeCore.swift; sourceTree = "<group>"; };
+		FA000031000000000000CAFE /* MatterBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatterBridge.swift; sourceTree = "<group>"; };
+		FA000032000000000000CAFE /* CommissioningBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommissioningBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,10 +189,33 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				FA000004000000000000CAFE /* StubBridge.swift */,
+				FA000010000000000000CAFE /* chip */,
+				FA000011000000000000CAFE /* bridge */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		FA000010000000000000CAFE /* chip */ = {
+			isa = PBXGroup;
+			children = (
+				FA000020000000000000CAFE  /* MatterStorage.swift */,
+				FA000021000000000000CAFE  /* MatterKeypair.swift */,
+				FA000022000000000000CAFE  /* ChipClient.swift */,
+				FA000023000000000000CAFE /* MatterCommissioner.swift */,
+			);
+			path = chip;
+			sourceTree = "<group>";
+		};
+		FA000011000000000000CAFE /* bridge */ = {
+			isa = PBXGroup;
+			children = (
+				FA000030000000000000CAFE    /* BridgeCore.swift */,
+				FA000031000000000000CAFE  /* MatterBridge.swift */,
+				FA000032000000000000CAFE  /* CommissioningBridge.swift */,
+			);
+			path = bridge;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -401,6 +438,13 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				FA000005000000000000CAFE /* StubBridge.swift in Sources */,
+				FA000040000000000000CAFE  /* MatterStorage.swift in Sources */,
+				FA000041000000000000CAFE  /* MatterKeypair.swift in Sources */,
+				FA000042000000000000CAFE  /* ChipClient.swift in Sources */,
+				FA000043000000000000CAFE /* MatterCommissioner.swift in Sources */,
+				FA000050000000000000CAFE    /* BridgeCore.swift in Sources */,
+				FA000051000000000000CAFE  /* MatterBridge.swift in Sources */,
+				FA000052000000000000CAFE  /* CommissioningBridge.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);
@@ -479,7 +523,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = iphoneos;
@@ -609,7 +653,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -660,7 +704,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = iphoneos;

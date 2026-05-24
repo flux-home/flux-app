@@ -3,9 +3,12 @@ import Flutter
 // ─────────────────────────────────────────────────────────────────────────────
 // StubBridge.swift
 //
-// iOS stub bridge — returns safe empty/hardcoded responses for every
-// MethodChannel call so the full Dart UI can run in the iOS Simulator without
-// Matter.xcframework wired up.
+// ⚠️  NO LONGER REGISTERED — superseded by MatterBridge (Task 3).
+//
+// Kept as a reference / fallback.  If you need to run without Matter.xcframework,
+// swap AppDelegate back to StubBridge.register(messenger:) and comment out
+// MatterBridge.register(messenger:).
+// ─────────────────────────────────────────────────────────────────────────────
 //
 // Replace individual cases with real bridge calls task by task:
 //   Task 3: ChipClient + BridgeCore + channel infrastructure
@@ -205,28 +208,5 @@ final class StubBridge: NSObject {
         case let v as Int32: return Int(v)
         default:             return 0
         }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SinkHolder — minimal FlutterStreamHandler that forwards the event sink.
-// ─────────────────────────────────────────────────────────────────────────────
-
-private final class SinkHolder: NSObject, FlutterStreamHandler {
-    private let onSink: (FlutterEventSink?) -> Void
-
-    init(_ onSink: @escaping (FlutterEventSink?) -> Void) {
-        self.onSink = onSink
-    }
-
-    func onListen(withArguments arguments: Any?,
-                  eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-        onSink(events)
-        return nil
-    }
-
-    func onCancel(withArguments arguments: Any?) -> FlutterError? {
-        onSink(nil)
-        return nil
     }
 }
