@@ -7,9 +7,7 @@ Pre-built Matter SDK framework for the Flux iOS app.
 | Slice | Architectures | Use |
 |---|---|---|
 | `ios-arm64` | arm64 | Physical iPhone/iPad |
-
-> The simulator slice (`ios-arm64_x86_64-simulator`) is not distributed —
-> build from source with `--build` if you need it.
+| `ios-arm64_x86_64-simulator` | arm64 + x86_64 | iOS Simulator (Apple Silicon + Intel Macs) |
 
 ## Source
 
