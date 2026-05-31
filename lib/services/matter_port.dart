@@ -44,7 +44,7 @@ abstract interface class MatterCommissionPort {
   });
 
   /// Commissions a device already on the network using DNS-SD discovery.
-  /// [setupCode] is the raw QR payload ("MT:…") or 11-digit manual pairing code.
+  /// [setupCode] is the raw QR payload ("MT:…") or manual pairing code (11 or 21 digits).
   /// No IP address required — the SDK discovers the device via [_matterc._udp].
   Future<CommissionResult> commissionViaCode({required String setupCode});
 

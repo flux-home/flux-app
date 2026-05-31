@@ -13,7 +13,7 @@ class ShareDeviceResult {
   /// Pass directly to `QrImageView` from `qr_flutter`.
   final String qrCodePayload;
 
-  /// The 11-digit manual pairing code returned by the CHIP SDK
+  /// The manual pairing code (11 or 21 digits) returned by the CHIP SDK
   /// (e.g. "36177801605").  Display this to users who cannot scan the QR code.
   final String manualPairingCode;
 
