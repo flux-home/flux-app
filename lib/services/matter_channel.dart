@@ -97,7 +97,7 @@ class MatterChannel implements MatterPort {
 
   // ── Parse setup payload ────────────────────────────────────────────────────
 
-  /// Parses a QR code or 11-digit manual pairing code.
+  /// Parses a QR code or manual pairing code (11 or 21 digits).
   /// Returns null if the payload is invalid or the SDK is unavailable.
   @override
   Future<ParsedPayload?> parsePayload(String payload) => _invoke<ParsedPayload?>(

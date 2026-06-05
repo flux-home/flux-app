@@ -30,8 +30,8 @@ class ParsedPayload {
   bool get prefersBle   => hasBle;
 
   /// True when the payload did not encode any discovery capabilities
-  /// (e.g. 11-digit manual pairing codes).  In that case both BLE and IP
-  /// commissioning are potentially available and the user should choose.
+  /// (e.g. 11-digit or 21-digit manual pairing codes).  In that case both BLE
+  /// and IP commissioning are potentially available and the user should choose.
   bool get capabilitiesUnknown => discoveryCapabilities.isEmpty;
 
   bool get canUseBle => hasBle || capabilitiesUnknown;

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/thread_models.dart';
@@ -13,6 +12,7 @@ import 'package:matter_home/services/wifi_scan_service.dart';
 import 'package:matter_home/ui/screens/qr_payload_detail_screen.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
+import 'package:matter_home/ui/widgets/manual_code_formatter.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:permission_handler/permission_handler.dart';
@@ -950,7 +950,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
 
   void _submitManual() {
     final d = _digits(_manualCtrl.text);
-    if (d.length == 11) widget.onCodeEntered(d);
+    if (d.length == 11 || d.length == 21) widget.onCodeEntered(d);
   }
 
   @override
@@ -1073,14 +1073,14 @@ class _PayloadEntryState extends State<_PayloadEntry> {
 
   Widget _buildManualTab(BuildContext context, ColorScheme cs) {
     final digits = _digits(_manualCtrl.text);
-    final ready = digits.length == 11;
+    final ready = digits.length == 11 || digits.length == 21;
     final hasError = widget.parseError != null && !widget.parsing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Enter the 11-digit code printed on the device or its packaging.',
+          'Enter the pairing code printed on the device or its packaging (11 or 21 digits).',
           style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
@@ -1092,7 +1092,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
             prefixIcon: const Icon(Icons.dialpad_outlined),
             border: const OutlineInputBorder(),
             errorText: hasError ? widget.parseError : null,
-            counterText: '${digits.length}/11',
+            // No counter — both 11 and 21 digits are valid, a single target would be misleading.
             suffixIcon: _manualCtrl.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
@@ -1104,12 +1104,13 @@ class _PayloadEntryState extends State<_PayloadEntry> {
                 : null,
           ),
           keyboardType: TextInputType.number,
-          inputFormatters: [_ManualCodeFormatter()],
+          inputFormatters: [ManualCodeFormatter()],
           style: const TextStyle(fontFamily: 'monospace', fontSize: 22, fontWeight: FontWeight.w600, letterSpacing: 4),
           textAlign: TextAlign.center,
           onChanged: (v) {
             setState(() {});
-            if (_digits(v).length == 11) _submitManual();
+            final len = _digits(v).length;
+            if (len == 21) _submitManual();
           },
           onSubmitted: (_) => _submitManual(),
         ),
@@ -1138,31 +1139,6 @@ class _PayloadEntryState extends State<_PayloadEntry> {
           FilledButton.tonal(onPressed: _submitManual, child: const Text('Verify code')),
         ],
       ],
-    );
-  }
-}
-
-// ── TextInputFormatter for XXXXX-XXXXXX manual codes ─────────────────────────
-
-class _ManualCodeFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text
-        .replaceAll(RegExp('[^0-9]'), '')
-        .substring(0, newValue.text.replaceAll(RegExp('[^0-9]'), '').length.clamp(0, 11));
-    if (digits.isEmpty) return TextEditingValue.empty;
-    // Matter manual pairing code display format: XXXX-XXX-XXXX  (4-3-4, 11 digits)
-    final String formatted;
-    if (digits.length <= 4) {
-      formatted = digits;
-    } else if (digits.length <= 7) {
-      formatted = '${digits.substring(0, 4)}-${digits.substring(4)}';
-    } else {
-      formatted = '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
-    }
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

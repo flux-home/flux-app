@@ -1,7 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
+import 'package:matter_home/ui/widgets/manual_code_formatter.dart';
 
 /// Full-screen QR scanner that also accepts a manually typed code.
 ///
@@ -236,7 +236,7 @@ class _ManualEntryPanel extends StatelessWidget {
             autofocus: true,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
-            inputFormatters: [_ManualCodeFormatter()],
+            inputFormatters: [ManualCodeFormatter()],
             style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 15),
             decoration: InputDecoration(
               hintText: '1234-567-8910',
@@ -351,31 +351,4 @@ class _OverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter _) => false;
-}
-
-// ── Manual pairing code formatter ─────────────────────────────────────────────
-
-class _ManualCodeFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text
-        .replaceAll(RegExp('[^0-9]'), '')
-        .substring(0, newValue.text.replaceAll(RegExp('[^0-9]'), '').length.clamp(0, 11));
-
-    if (digits.isEmpty) return TextEditingValue.empty;
-
-    final String formatted;
-    if (digits.length <= 4) {
-      formatted = digits;
-    } else if (digits.length <= 7) {
-      formatted = '${digits.substring(0, 4)}-${digits.substring(4)}';
-    } else {
-      formatted = '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
-    }
-
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
 }
