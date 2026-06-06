@@ -4,6 +4,7 @@ import android.util.Log
 import com.fluxhome.app.chip.ChipClient
 import com.fluxhome.app.chip.CommissioningException
 import com.fluxhome.app.chip.MatterCommissioner
+import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.SetupPayloadHelper
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import io.flutter.plugin.common.MethodChannel
@@ -154,15 +155,46 @@ class CommissioningBridge(private val core: BridgeCore) {
             /* setupPinCode          */ pin,
         )
         val manualCode = ManualOnboardingPayloadGenerator(payload).payloadDecimalStringRepresentation()
-        val qrCode     = "MT:" + QRCodeOnboardingPayloadGenerator(payload).payloadBase38Representation()
+        var qrCode = QRCodeOnboardingPayloadGenerator(payload).payloadBase38Representation()
+        // payloadBase38Representation() already includes the "MT:" prefix in current
+        // CHIP SDK versions.  Guard against older SDKs that may omit it.
+        if (!qrCode.startsWith("MT:")) qrCode = "MT:$qrCode"
 
         Log.i(TAG, "ECM window open: nodeId=$nodeId disc=$discriminator " +
                    "VID=0x%04X PID=0x%04X manual=$manualCode qr=$qrCode".format(finalVendorId, finalProductId))
+
+        // Scan for the device's CM=2 mDNS advertisement to get its Thread IPv6 address.
+        // OTBR proxies the _matterc._udp PTR to Ethernet but does NOT proxy the
+        // discriminator subtype PTR (L{disc}._sub._matterc._udp).  This means CHIP's
+        // built-in discriminator-based discovery (pairing_code) never finds the device.
+        // The phone can find it via top-level _matterc._udp browse.  We return the IPv6
+        // so the firmware can use PairDevice(IP) and skip CHIP DNS-SD discovery entirely.
+        var ipv6Address = ""
+        val scanStart   = System.currentTimeMillis()
+        val scanTimeout = 90_000L
+        Log.i(TAG, "Scanning for CM=2 device disc=$discriminator (up to ${scanTimeout/1000}s)...")
+        while (ipv6Address.isEmpty() && System.currentTimeMillis() - scanStart < scanTimeout) {
+            val devices = MatterCommissionableScanner.scan(core.context)
+            val match   = devices.find {
+                it.discriminator.toInt() == discriminator &&
+                it.commissioningMode == "EnhancedWindowOpen"
+            }
+            if (match != null) {
+                ipv6Address = match.ipAddress
+                Log.i(TAG, "CM=2 found at $ipv6Address after ${System.currentTimeMillis()-scanStart}ms")
+            } else {
+                Log.d(TAG, "CM=2 not found yet, ${scanTimeout-(System.currentTimeMillis()-scanStart)}ms remaining")
+            }
+        }
+        if (ipv6Address.isEmpty()) {
+            Log.w(TAG, "CM=2 device not found within ${scanTimeout/1000}s — will fallback to mDNS on controller")
+        }
 
         core.main.post {
             result.success(mapOf(
                 "manualPairingCode" to manualCode,
                 "qrCodePayload"     to qrCode,
+                "ipv6Address"       to ipv6Address,
             ))
         }
     }

@@ -7,6 +7,7 @@ import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
+import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -259,6 +260,20 @@ class MatterChannel implements MatterPort {
     },
   );
 
+  @override
+  Future<List<FabricDescriptor>> readFabrics(int nodeId) =>
+    _invoke<List<FabricDescriptor>>(
+      'readFabrics',
+      const [],
+      args: {'nodeId': nodeId},
+      decode: (raw) {
+        if (raw == null) return const [];
+        return (raw as List<dynamic>)
+            .map((e) => FabricDescriptor.fromMap(e as Map<dynamic, dynamic>))
+            .toList();
+      },
+    );
+
   /// Reads the ServerList attribute from the Descriptor cluster on [endpoint].
   @override
   Future<List<int>> readServerClusterList(int nodeId, {int endpoint = 0}) => _invoke<List<int>>(
@@ -461,6 +476,7 @@ class MatterChannel implements MatterPort {
           return ShareDeviceResult(
             qrCodePayload:     map['qrCodePayload']     as String,
             manualPairingCode: map['manualPairingCode'] as String,
+            ipv6Address:       (map['ipv6Address'] as String?) ?? '',
           );
         },
       );
