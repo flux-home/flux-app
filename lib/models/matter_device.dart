@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/material.dart' show IconData, Icons;
 import 'package:matter_home/models/device_live_data.dart' show DeviceLiveData;
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart' show DeviceView;
@@ -28,6 +29,27 @@ enum NetworkType {
   };
 }
 
+// ── Who manages the device ──────────────────────────────────────────────────────
+
+/// Indicates which port is responsible for sending commands to this device
+/// and receiving its subscription events.
+enum ManagedBy {
+  /// Commands go through the local phone SDK ([MatterChannel]).
+  phone,
+  /// Commands go through the Flux Controller ([FluxCoapService]).
+  controller;
+
+  String get label => switch (this) {
+    ManagedBy.phone      => 'Phone',
+    ManagedBy.controller => 'Hub',
+  };
+
+  IconData get icon => switch (this) {
+    ManagedBy.phone      => Icons.smartphone_outlined,
+    ManagedBy.controller => Icons.hub_outlined,
+  };
+}
+
 /// Stable commissioning record for a Matter device in our local fabric.
 ///
 /// Contains only identity and topology facts that never change without an
@@ -47,6 +69,7 @@ class MatterDevice {
     this.isOnline = true,
     this.sharedWithGoogleHome = false,
     this.networkType = NetworkType.unknown,
+    this.managedBy = ManagedBy.phone,
     this.roomId = Room.noRoomId,
   });
 
@@ -68,6 +91,10 @@ class MatterDevice {
         (e) => e.name == (json['networkType'] as String?),
         orElse: () => NetworkType.unknown,
       ),
+      managedBy: ManagedBy.values.firstWhere(
+        (e) => e.name == (json['managedBy'] as String?),
+        orElse: () => ManagedBy.phone,
+      ),
       roomId: json['roomId'] as String? ?? Room.noRoomId,
     );
   }
@@ -81,6 +108,7 @@ class MatterDevice {
   /// Updated on every user edit (rename etc.). Used for last-write-wins sync.
   final DateTime lastModified;
   final NetworkType networkType;
+  final ManagedBy   managedBy;
   final String roomId;
 
   MatterDevice copyWith({
@@ -93,6 +121,7 @@ class MatterDevice {
     DateTime? commissionedAt,
     DateTime? lastModified,
     NetworkType? networkType,
+    ManagedBy?   managedBy,
     String? roomId,
   }) => MatterDevice(
     id: id ?? this.id,
@@ -104,6 +133,7 @@ class MatterDevice {
     commissionedAt: commissionedAt ?? this.commissionedAt,
     lastModified: lastModified ?? this.lastModified,
     networkType: networkType ?? this.networkType,
+    managedBy: managedBy ?? this.managedBy,
     roomId: roomId ?? this.roomId,
   );
 
@@ -117,6 +147,7 @@ class MatterDevice {
     'commissionedAt': commissionedAt.toIso8601String(),
     'lastModified': lastModified.toIso8601String(),
     'networkType': networkType.name,
+    'managedBy':   managedBy.name,
     'roomId': roomId,
   };
 

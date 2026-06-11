@@ -1,6 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:matter_home/models/thread_models.dart';
+import 'package:matter_home/services/flux_coap_service.dart';
+import 'package:matter_home/services/hub_connection.dart';
+import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
 import 'package:matter_home/ui/widgets/info_row.dart';
@@ -78,7 +83,9 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
     try {
       final results = await Future.wait([
         ThreadSettingsService.load(),
-        context.read<MatterFabricPort>().discoverThreadNetworks(),
+        // Thread border router discovery is local phone mDNS (_meshcop._udp)
+        // — always use MatterChannel regardless of controller mode.
+        context.read<MatterChannel>().discoverThreadNetworks(),
       ]);
       final savedHex = results[0] as String;
       final routers  = results[1] as List<ThreadBorderRouter>;
@@ -159,7 +166,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
   Future<void> _importFromOs() async {
     try {
-      final hex = await context.read<MatterFabricPort>().readSystemThreadCredentials();
+      final hex = await context.read<MatterChannel>().readSystemThreadCredentials();
       if (!mounted || hex == null || hex.isEmpty) return;
       final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
       final ds   = ThreadDataset(label: name, hex: hex);
@@ -404,7 +411,7 @@ class _NoCredentialsHint extends StatelessWidget {
 // ── Active network detail ────────────────────────────────────────────────────
 
 /// Detail screen for the active Thread network — shows Dataset and Border Routers.
-class _ActiveNetworkDetailScreen extends StatelessWidget {
+class _ActiveNetworkDetailScreen extends StatefulWidget {
   const _ActiveNetworkDetailScreen({
     required this.active,
     required this.scanning,
@@ -415,8 +422,57 @@ class _ActiveNetworkDetailScreen extends StatelessWidget {
   final bool             scanning;
 
   @override
+  State<_ActiveNetworkDetailScreen> createState() =>
+      _ActiveNetworkDetailScreenState();
+}
+
+class _ActiveNetworkDetailScreenState
+    extends State<_ActiveNetworkDetailScreen> {
+  bool _pushing = false;
+
+  Future<void> _pushToController() async {
+    final svc = context.read<HubConnection>().service;
+    if (svc == null) return;
+
+    final hex = widget.active.hex.replaceAll(RegExp(r'\s'), '');
+    if (hex.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No dataset to push (empty dataset)')),
+      );
+      return;
+    }
+
+    setState(() => _pushing = true);
+    try {
+      final bytes = List.generate(
+        hex.length ~/ 2,
+        (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16),
+      );
+      final ok = await svc.postThreadDataset(
+        Uint8List.fromList(bytes),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Thread dataset pushed to controller ✓'
+            : 'Push failed — check controller logs'),
+      ));
+    } on Exception catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _pushing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final cs  = Theme.of(context).colorScheme;
+    final svc = context.watch<HubConnection>().service;
+    final active  = widget.active;
+    final network  = widget.network;
+    final scanning  = widget.scanning;
 
     return Scaffold(
       appBar: AppBar(
@@ -448,6 +504,24 @@ class _ActiveNetworkDetailScreen extends StatelessWidget {
               ),
             ),
           ),
+
+          // ── Push to Controller ──────────────────────────────────────────
+          if (svc != null && !active.isEmpty) ...[  // only in controller mode
+            const SizedBox(height: 4),
+            Card(
+              child: ListTile(
+                leading: _pushing
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(Icons.upload_outlined, color: cs.primary),
+                title: const Text('Push to Controller'),
+                subtitle: const Text(
+                    'Store this dataset on the Flux Controller'),
+                onTap: _pushing ? null : _pushToController,
+              ),
+            ),
+          ],
 
           const SizedBox(height: 4),
 

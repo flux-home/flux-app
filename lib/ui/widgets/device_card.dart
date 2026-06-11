@@ -62,7 +62,7 @@ class _BaseTile extends StatelessWidget {
             children: [
               const Spacer(),
 
-              // ── Footer: device name + optional sub-label ───────────────
+              // ── Footer: device name + optional sub-label ─────────────────
               Text(
                 view.name,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -92,3 +92,4 @@ class _BaseTile extends StatelessWidget {
     );
   }
 }
+

@@ -30,6 +30,7 @@ class DeviceView {
   String      get name                 => _device.name;
   DeviceType  get deviceType           => _device.deviceType;
   int         get nodeId               => _device.nodeId;
+  ManagedBy   get managedBy            => _device.managedBy;
   DateTime    get commissionedAt       => _device.commissionedAt;
   NetworkType get networkType          => _device.networkType;
   bool        get sharedWithGoogleHome => _device.sharedWithGoogleHome;

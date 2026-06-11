@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:matter_home/ui/screens/settings/app_info_screen.dart';
+import 'package:matter_home/ui/screens/settings/controller_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/thread_settings_screen.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
@@ -21,12 +22,21 @@ class SettingsScreen extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
-                  title: const Text('Matter'),
-                  subtitle: const Text('Fabric & device management'),
+                  title: const Text('Flux Hub'),
+                  subtitle: const Text('Local Matter hub'),
                   trailing: const Icon(Icons.chevron_right),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                   ),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute<void>(
+                          builder: (_) => const ControllerSettingsScreen())),
+                ),
+                Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).colorScheme.outlineVariant),
+                ListTile(
+                  title: const Text('Matter'),
+                  subtitle: const Text('Fabric & device management'),
+                  trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute<void>(builder: (_) => const MatterSettingsScreen())),
                 ),
