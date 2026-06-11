@@ -11,7 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_zxing: ^2.2.1
-  go_router: ^14.6.2
+  go_router: ^17.3.0
   coap: ^9.2.1
   dtls2: ^0.18.1
   http: ^1.2.2
