@@ -229,16 +229,6 @@ class MainActivity : FlutterActivity() {
                         bridge.writeSystemMode(nodeId, mode, result)
                     }
 
-                    "readHumidity" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readHumidity(nodeId, result)
-                    }
-
-                    "readBattery" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readBattery(nodeId, result)
-                    }
-
                     "lockDoor" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         val pin    = call.argument<String>("pin")

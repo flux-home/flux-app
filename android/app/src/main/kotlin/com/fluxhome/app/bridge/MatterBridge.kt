@@ -33,7 +33,6 @@ class MatterBridge(context: Context) {
     private val fan           = FanBridge(core)
     private val color         = ColorBridge(core)
     private val thermostat    = ThermostatBridge(core)
-    private val sensors       = SensorBridge(core)
     private val doorLock      = DoorLockBridge(core)
 
     // ── Event sink wiring (called from MainActivity) ──────────────────────────
@@ -182,12 +181,6 @@ class MatterBridge(context: Context) {
     fun writeSystemMode(nodeId: Long, mode: Int, result: MethodChannel.Result) =
         thermostat.writeSystemMode(nodeId, mode, result)
 
-    // ── Sensors ───────────────────────────────────────────────────────────────
-    fun readHumidity(nodeId: Long, result: MethodChannel.Result) =
-        sensors.readHumidity(nodeId, result)
-
-    fun readBattery(nodeId: Long, result: MethodChannel.Result) =
-        sensors.readBattery(nodeId, result)
     // ── Door Lock ─────────────────────────────────────────────────────────────
     fun lockDoor(nodeId: Long, pin: String?, result: MethodChannel.Result) =
         doorLock.lockDoor(nodeId, pin, result)
