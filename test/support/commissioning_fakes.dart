@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:matter_home/models/commission_models.dart';
-import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/wifi_network.dart';
@@ -9,6 +8,7 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'matter_fakes.dart' show FakeMatterPort;
 
 /// ── FakeMatterCommissionPort ────────────────────────────────────────────────
 ///
@@ -134,7 +134,7 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
 /// the four members the controller actually touches are overridden so no real
 /// persistence or subscription work happens.
 class FakeDeviceProvider extends DeviceProvider {
-  FakeDeviceProvider(DeviceStore store) : super(store, _StubChannel());
+  FakeDeviceProvider(DeviceStore store) : super(store, FakeMatterPort());
 
   /// Seedable device list returned to the controller for name generation.
   List<MatterDevice> seededDevices = [];
@@ -185,19 +185,6 @@ class FakeDeviceProvider extends DeviceProvider {
       managedBy: managedBy,
     );
   }
-}
-
-/// Minimal [MatterPort] for the [DeviceProvider] base constructor: only
-/// [deviceStateUpdates] is read during construction; every other member is
-/// unused and routed through [noSuchMethod].
-class _StubChannel implements MatterPort {
-  final _ctrl = StreamController<DeviceStateEvent>.broadcast();
-
-  @override
-  Stream<DeviceStateEvent> get deviceStateUpdates => _ctrl.stream;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// ── FakeFluxCoapService ──────────────────────────────────────────────────────
