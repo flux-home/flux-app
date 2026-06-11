@@ -15,6 +15,7 @@ import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/energy_history_recorder.dart';
+import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -23,13 +24,19 @@ enum DeviceProviderState { idle, loading, error }
 class DeviceProvider extends ChangeNotifier {
   // ── Constructor ───────────────────────────────────────────────────────────
 
-  DeviceProvider(this._store, this._channel) {
+  DeviceProvider(this._store, MatterPort channel, {FluxCoapService? controllerService})
+      : _channel = channel,
+        _ctrlService = controllerService {
     _load();
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
     Future.microtask(_startAllSubscriptions);
+    if (_ctrlService != null) Future.microtask(_reconcileWithController);
   }
   final DeviceStore _store;
-  final MatterPort _channel;
+  MatterPort _channel;
+  /// Non-null in hub mode — used to reconcile the device list with the
+  /// controller's NVS on startup and to seed [isOnline] from [Device.reachable].
+  FluxCoapService? _ctrlService;
   final _uuid = const Uuid();
 
   DeviceProviderState state = DeviceProviderState.idle;
@@ -147,6 +154,97 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  // ── Controller reconciliation ─────────────────────────────────────────────────
+
+  /// Reconciles the local device list with the controller’s NVS list.
+  ///
+  /// Called at startup in hub mode.  Two things happen:
+  ///  1. Controller devices not in the local store are added automatically
+  ///     (e.g. commissioned on a previous session or from another phone).
+  ///  2. [isOnline] is seeded from [Device.reachable] so the home screen shows
+  ///     correct reachability before any WS subscription arrives.
+  Future<void> _reconcileWithController() async {
+    final svc = _ctrlService;
+    if (svc == null) return;
+
+    final raw = await svc.getDeviceList();
+    if (raw == null || raw.isEmpty) return;
+
+    var changed = false;
+    final now   = DateTime.now();
+
+    for (final cd in raw) {
+      final nodeId = cd.nodeId.toInt();
+      final idx    = _devices.indexWhere((d) => d.nodeId == nodeId);
+
+      if (idx == -1) {
+        // Device on controller but not locally — add it.
+        final dt = cd.deviceType > 0
+            ? DeviceType.fromMatterDeviceTypeId(cd.deviceType)
+            : DeviceType.unknown;
+        final device = MatterDevice(
+          id:             _uuid.v4(),
+          name:           cd.name.isNotEmpty ? cd.name : 'Device $nodeId',
+          deviceType:     dt,
+          nodeId:         nodeId,
+          commissionedAt: now,
+          lastModified:   now,
+          networkType:    NetworkType.thread,
+          managedBy:      ManagedBy.controller,
+          isOnline:       cd.reachable,
+        );
+        _devices.add(device);
+        changed = true;
+        debugPrint('DeviceProvider: added controller device '
+            '$nodeId (${device.name})');
+      } else {
+        // Already known — seed online state from controller’s reachable flag.
+        if (_devices[idx].isOnline != cd.reachable) {
+          _devices[idx] = _devices[idx].copyWith(isOnline: cd.reachable);
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      await _persist();
+      notifyListeners();
+    }
+  }
+
+  // ── Late hub-mode adoption ───────────────────────────────────────────────
+
+  /// Switches a provider that started in standalone mode over to hub mode
+  /// once the Flux Controller is discovered after boot.
+  ///
+  /// Stops all subscriptions on the old channel, rewires the event listener
+  /// to the CoAP service, restarts subscriptions, and runs reconciliation.
+  Future<void> adoptHubMode(FluxCoapService svc) async {
+    if (_disposed) return;
+
+    // Tear down existing subscriptions and listener.
+    await _deviceStateSub?.cancel();
+    _deviceStateSub = null;
+    for (final nodeId in List<int>.of(_subscribedNodeIds)) {
+      try { await _channel.stopSubscription(nodeId); } on Exception catch (_) {}
+    }
+    _subscribedNodeIds.clear();
+
+    // Cancel any pending establish-fallback timers.
+    for (final t in _establishTimeouts.values) t?.cancel();
+    _establishTimeouts.clear();
+    _establishedThisSession.clear();
+
+    // Swap to the hub channel.
+    _channel    = svc;
+    _ctrlService = svc;
+
+    // Rewire event listener and restart subscriptions.
+    _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
+    await _startAllSubscriptions();
+    await _reconcileWithController();
   }
 
   /// Persists both the commissioning records and the live-state snapshots.
@@ -494,6 +592,16 @@ class DeviceProvider extends ChangeNotifier {
       _subscribedNodeIds.remove(device.nodeId);
       return;
     }
+    // Controller-managed devices deliver state exclusively via CoAP Observe.
+    // The fallback read goes through FluxCoapService._readAttrs which POSTs
+    // /read and waits for a SubscriptionUpdateEvent.  If the Observe isn't
+    // fully established yet the response can never arrive, _readAttrs times
+    // out, readDeviceState returns isOnline:false, and refreshDevice marks
+    // the device offline — hiding every control in the detail screen.
+    // Skip the timer for controller devices; the subscription delivers state
+    // data when the controller sends it.
+    if (device.managedBy == ManagedBy.controller) return;
+
     // Arm a fallback: if the SDK doesn't deliver an `established` event within
     // the timeout, do a one-shot read to unblock the stale UI.
     _establishTimeouts[device.id]?.cancel();
@@ -523,8 +631,9 @@ class DeviceProvider extends ChangeNotifier {
   Future<MatterDevice> registerCommissionedDevice(
     CommissionResult result,
     String name,
-    NetworkType networkType,
-  ) async {
+    NetworkType networkType, {
+    ManagedBy managedBy = ManagedBy.phone,
+  }) async {
     final deviceType = result.deviceTypeId != null
         ? DeviceType.fromMatterDeviceTypeId(result.deviceTypeId!)
         : DeviceType.onOffLight;
@@ -538,6 +647,7 @@ class DeviceProvider extends ChangeNotifier {
       commissionedAt: now,
       lastModified: now,
       networkType: networkType,
+      managedBy: managedBy,
     );
 
     _devices.add(device);
@@ -545,7 +655,15 @@ class DeviceProvider extends ChangeNotifier {
     state = DeviceProviderState.idle;
     notifyListeners();
 
-    unawaited(refreshDevice(device.id));
+    // For controller-managed devices, readDeviceState goes through
+    // FluxCoapService._readAttrs which requires the CoAP Observe to be
+    // established first. Calling refreshDevice before startSubscription
+    // completes causes _readAttrs to time out and marks the device offline.
+    // Skip the immediate refresh; the subscription delivers the initial data,
+    // and the 15-second establish-fallback timer fires a refresh if needed.
+    if (managedBy != ManagedBy.controller) {
+      unawaited(refreshDevice(device.id));
+    }
     unawaited(_startSubscription(device));
 
     return device;
@@ -683,6 +801,12 @@ class DeviceProvider extends ChangeNotifier {
     final deviceState = await _channel.readDeviceState(device.nodeId);
 
     if (!deviceState.isOnline) {
+      // For controller-managed devices, readDeviceState uses
+      // FluxCoapService._readAttrs which can time out if the CoAP Observe
+      // isn't established yet.  Don't mark offline from a timed-out read —
+      // the subscription is the authoritative source and will deliver state
+      // when the Observe is ready.
+      if (device.managedBy == ManagedBy.controller) return;
       _devices[idx] = device.copyWith(isOnline: false);
       await _persist();
       notifyListeners();
@@ -817,8 +941,17 @@ class DeviceProvider extends ChangeNotifier {
     if (idx == -1) return false;
     final device = _devices[idx];
     await _stopSubscription(device);
-    await _channel.removeDevice(device.nodeId);
-    _devices.removeAt(idx);
+    // Always notify the controller — it tracks all registered nodes regardless
+    // of who commissioned them.
+    await _ctrlService?.removeDevice(device.nodeId);
+    // Unpair from the local CHIP fabric for app-commissioned devices.
+    // Controller-managed devices live only in the controller's fabric.
+    if (device.managedBy != ManagedBy.controller) {
+      await _channel.removeDevice(device.nodeId);
+    }
+    // Re-look up after awaits — list may have changed during the async gap.
+    final idx2 = _indexById(deviceId);
+    if (idx2 != -1) _devices.removeAt(idx2);
     _liveCache.remove(deviceId);
     _clusterCache.remove(deviceId);
     _snapshots.remove(deviceId);

@@ -1,6 +1,7 @@
 package com.fluxhome.app
 
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.util.Log
 import com.fluxhome.app.bridge.MatterBridge
 import com.fluxhome.app.chip.AndroidThreadCredentialReader
@@ -41,11 +42,33 @@ class MainActivity : FlutterActivity() {
 
     private val bridge by lazy { MatterBridge(applicationContext) }
 
+    // Hold a WiFi multicast lock for the lifetime of the app.
+    // Without this, Android's WiFi driver silently drops incoming multicast
+    // packets, which breaks mDNS discovery of the Flux Controller.
+    private var multicastLock: WifiManager.MulticastLock? = null
+
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val wifiManager = applicationContext
+            .getSystemService(WIFI_SERVICE) as WifiManager
+        multicastLock = wifiManager
+            .createMulticastLock("flux_mdns")
+            .also {
+                it.setReferenceCounted(false)
+                it.acquire()
+                Log.i(TAG, "WiFi multicast lock acquired")
+            }
+
         // Start the foreground service so automations keep running
         // even when the user navigates away from the app.
         startForegroundService(Intent(this, MatterForegroundService::class.java))
+    }
+
+    override fun onDestroy() {
+        multicastLock?.release()
+        multicastLock = null
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -249,6 +272,11 @@ class MainActivity : FlutterActivity() {
                         bridge.readDeviceType(nodeId, result)
                     }
 
+                    "readFabrics" -> {
+                        val nodeId = call.nodeIdArg() ?: 0L
+                        bridge.readFabrics(nodeId, result)
+                    }
+
                     "downloadAndFlash" -> {
                         val nodeId              = call.nodeIdArg() ?: 0L
                         val otaUrl              = call.argument<String>("otaUrl") ?: ""
@@ -304,6 +332,18 @@ class MainActivity : FlutterActivity() {
                         val payload = call.argument<String>("payload") ?: ""
                         bridge.parsePayload(payload, result)
                     }
+
+                    "grantControllerAccess" -> {
+                        val nodeId = call.nodeIdArg() ?: 0L
+                        bridge.grantControllerAccess(nodeId, result)
+                    }
+
+                    "readAcl" -> {
+                        val nodeId = call.nodeIdArg() ?: 0L
+                        bridge.readAcl(nodeId, result)
+                    }
+
+                    "exportFabricForController" -> bridge.exportFabricForController(result)
 
                     "provideCredentials" -> {
                         val ssid     = call.argument<String?>("ssid")

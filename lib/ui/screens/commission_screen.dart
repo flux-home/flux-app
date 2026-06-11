@@ -5,7 +5,8 @@ import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/providers/device_provider.dart';
-import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/hub_connection.dart';
+import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/qr_payload_service.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
 import 'package:matter_home/services/wifi_scan_service.dart';
@@ -33,7 +34,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
   // ── UI-only state ─────────────────────────────────────────────────────────
   bool _expertMode = false;
 
-  // Form state — method / network type are initialised from the parsed payload
+  // Form state - method / network type are initialised from the parsed payload
   // but can be overridden by the user in expert mode.
   CommissionMethod _method = CommissionMethod.ble;
   int _netType = 0; // 0 = Thread, 1 = Wi-Fi, 2 = None
@@ -66,14 +67,20 @@ class _CommissionScreenState extends State<CommissionScreen> {
   void initState() {
     super.initState();
 
+    final hubService = context.read<HubConnection>().service;
     _ctrl = CommissioningController(
-      port: context.read<MatterCommissionPort>(),
+      port: context.read<MatterChannel>(),
       provider: context.read<DeviceProvider>(),
       requestBlePermissions: _requestBlePermissions,
       onNeedsCredentials: _credentialCallback,
       threadDataset: () => _threadCtrl.text,
+      controllerService: hubService,
     );
     _ctrl.addListener(_onControllerChanged);
+
+    // If hub discovery completes after the screen opens (race on first launch),
+    // rebuild the controller so it uses the hub service for BLE handoff.
+    context.read<HubConnection>().addListener(_onHubConnectionChanged);
 
     // Pre-fill Thread dataset from stored settings, then handle any initial
     // payload.  Both run after the async load so that _threadExplicitlySelected
@@ -89,7 +96,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
       });
 
       if (widget.initialPayload != null) {
-        // Opened from the home-screen camera — start immediately once we know
+        // Opened from the home-screen camera - start immediately once we know
         // whether a Thread dataset is configured.
         _setPayload(widget.initialPayload!, autoStart: true);
       } else {
@@ -101,8 +108,32 @@ class _CommissionScreenState extends State<CommissionScreen> {
     });
   }
 
+  void _onHubConnectionChanged() {
+    // Only upgrade to hub mode if commissioning hasn't started yet.
+    if (_ctrl.phase != CommissionPhase.idle && _ctrl.phase != CommissionPhase.parsed) return;
+    final hubService = context.read<HubConnection>().service;
+    if (hubService == null || _ctrl.controllerService != null) return;
+
+    final oldPayload = _ctrl.rawPayload;
+    _ctrl
+      ..removeListener(_onControllerChanged)
+      ..dispose();
+
+    _ctrl = CommissioningController(
+      port: context.read<MatterChannel>(),
+      provider: context.read<DeviceProvider>(),
+      requestBlePermissions: _requestBlePermissions,
+      onNeedsCredentials: _credentialCallback,
+      threadDataset: () => _threadCtrl.text,
+      controllerService: hubService,
+    );
+    _ctrl.addListener(_onControllerChanged);
+    if (oldPayload != null) _ctrl.setPayload(oldPayload);
+  }
+
   @override
   void dispose() {
+    context.read<HubConnection>().removeListener(_onHubConnectionChanged);
     _ctrl
       ..removeListener(_onControllerChanged)
       ..dispose();
@@ -138,7 +169,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   Future<CommissionCredentials?> _credentialCallback(bool isThread) async {
     if (isThread) {
-      // Show the Thread dataset picker — same sheet as _ensureThreadDataset.
+      // Show the Thread dataset picker - same sheet as _ensureThreadDataset.
       final datasets = await ThreadSettingsService.loadDatasets();
       if (!mounted) return null;
       final picked = await showModalBottomSheet<ThreadDataset>(
@@ -201,7 +232,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
           if (!mounted || method == null) return;
           setState(() {
             _method = method;
-            // Multi-admin devices already have network credentials — no
+            // Multi-admin devices already have network credentials - no
             // provisioning step needed.
             if (method == CommissionMethod.ip) _netType = 2;
           });
@@ -241,7 +272,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   Future<bool> _requestBlePermissions() async {
     // iOS 13+ has a unified Bluetooth permission via NSBluetoothAlwaysUsageDescription.
-    // Location is NOT required for BLE on iOS — only Android needs it.
+    // Location is NOT required for BLE on iOS - only Android needs it.
     final permissions = defaultTargetPlatform == TargetPlatform.iOS
         ? [Permission.bluetoothScan, Permission.bluetoothConnect]
         : [
@@ -260,16 +291,16 @@ class _CommissionScreenState extends State<CommissionScreen> {
     // launch), let the commissioning proceed regardless of what permission_handler
     // reports for the scan/connect permissions.
     if (denied && defaultTargetPlatform == TargetPlatform.iOS) {
-      // Check if at least one BT permission is granted or limited — if so, proceed.
+      // Check if at least one BT permission is granted or limited - if so, proceed.
       final anyGranted = results.values.any((s) => s.isGranted || s.isLimited);
       if (!anyGranted) {
-        // Truly denied — show the message.
+        // Truly denied - show the message.
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 permanent
-                    ? 'Bluetooth permanently denied — enable in Settings → Flux.'
+                    ? 'Bluetooth permanently denied - enable in Settings → Flux.'
                     : 'Bluetooth access is required for BLE commissioning.',
               ),
               action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
@@ -278,7 +309,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
         }
         return false;
       }
-      // permission_handler returned denied but system may still work — proceed.
+      // permission_handler returned denied but system may still work - proceed.
       return true;
     }
 
@@ -287,7 +318,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
         SnackBar(
           content: Text(
             permanent
-                ? 'Bluetooth permissions permanently denied — open Settings.'
+                ? 'Bluetooth permissions permanently denied - open Settings.'
                 : 'Bluetooth permissions are required for BLE commissioning.',
           ),
           action: permanent ? const SnackBarAction(label: 'Settings', onPressed: openAppSettings) : null,
@@ -304,7 +335,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
     _ctrl.reset();
     await _scanQr();
     // After re-scanning from a failed attempt, restart commissioning
-    // automatically — the same behaviour as opening with initialPayload.
+    // automatically - the same behaviour as opening with initialPayload.
     if (!mounted || _ctrl.parsed == null || _ctrl.rawPayload == null) return;
     if (_netType == 0 && !_threadExplicitlySelected) {
       final ok = await _ensureThreadDataset();
@@ -370,7 +401,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
   // ── Commission ─────────────────────────────────────────────────────────────
 
   Future<void> _commission() async {
-    // When retrying, the form widget may not be in the tree — skip validation.
+    // When retrying, the form widget may not be in the tree - skip validation.
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) return;
     if (_ctrl.rawPayload == null) return;
 
@@ -745,12 +776,12 @@ class _CommissionScreenState extends State<CommissionScreen> {
                 TextSpan(text: entry.message),
                 if (isSuccess)
                   const TextSpan(
-                    text: ' — success',
+                    text: ' - success',
                     style: TextStyle(color: Color(0xFF34A853)),
                   ),
                 if (isError)
                   const TextSpan(
-                    text: ' — failed',
+                    text: ' - failed',
                     style: TextStyle(color: Color(0xFFE53935)),
                   ),
               ],
@@ -866,7 +897,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
                         decoration: InputDecoration(
                           labelText: 'Discriminator',
                           hintText: _ctrl.parsed?.hasShortDiscriminator ?? false
-                              ? 'Unknown — manual codes only carry 4 bits'
+                              ? 'Unknown - manual codes only carry 4 bits'
                               : '${_ctrl.parsed?.discriminator ?? 3840}',
                           border: const OutlineInputBorder(),
                         ),
@@ -1129,7 +1160,7 @@ class _PayloadEntryState extends State<_PayloadEntry> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Code recognised — ${widget.parsed!.suggestedName}',
+                  'Code recognised - ${widget.parsed!.suggestedName}',
                   style: const TextStyle(fontSize: 13, color: Color(0xFF34A853)),
                 ),
               ),
@@ -1208,7 +1239,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
         SnackBar(
           content: Text(
             result.permanentlyDenied
-                ? 'Location permission permanently denied — open Settings to enable Wi-Fi scanning.'
+                ? 'Location permission permanently denied - open Settings to enable Wi-Fi scanning.'
                 : 'Location permission is required to scan for Wi-Fi networks.',
           ),
           action: result.permanentlyDenied ? const SnackBarAction(label: 'Settings', onPressed: openAppSettings) : null,
@@ -1286,7 +1317,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                     onPressed: _loadingNetworks ? null : _loadNetworks,
                   ),
                 ),
-                hint: Text(_loadingNetworks ? 'Scanning…' : 'Select a network'),
+                hint: Text(_loadingNetworks ? 'Scanning...' : 'Select a network'),
                 items: _networks
                     .map(
                       (net) => DropdownMenuItem(
@@ -1333,7 +1364,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
             // ── None ───────────────────────────────────────────────────
             if (widget.netType == 2)
               Text(
-                'No network credentials — for Ethernet-only devices.',
+                'No network credentials - for Ethernet-only devices.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
               ),
           ],
@@ -1392,10 +1423,10 @@ class _ThreadDatasetHeaderState extends State<_ThreadDatasetHeader> {
       subtitle = null;
     } else if (active.isEmpty) {
       title = 'Empty dataset';
-      subtitle = 'No credentials — device joins via MeshCoP';
+      subtitle = 'No credentials - device joins via MeshCoP';
     } else {
       title = active.label;
-      subtitle = active.hex.length > 16 ? '${active.hex.substring(0, 16)}…' : active.hex;
+      subtitle = active.hex.length > 16 ? '${active.hex.substring(0, 16)}...' : active.hex;
     }
 
     return Column(
@@ -1491,7 +1522,7 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
       _osImportError = null;
     });
     try {
-      final hex = await context.read<MatterFabricPort>().readSystemThreadCredentials();
+      final hex = await context.read<MatterChannel>().readSystemThreadCredentials();
 
       if (!mounted) return;
 
@@ -1503,7 +1534,7 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
         return;
       }
       if (hex.isEmpty) {
-        // User cancelled the OS picker — stay on sheet.
+        // User cancelled the OS picker - stay on sheet.
         setState(() {
           _loadingFromOs = false;
         });
@@ -1554,7 +1585,7 @@ class _ThreadDatasetPromptSheetState extends State<_ThreadDatasetPromptSheet> {
             // ── Saved datasets + Empty ─────────────────────────────────
             ...allItems.map((ds) {
               final subtitle = ds.hex.length > 20
-                  ? '${ds.hex.substring(0, 20)}…'
+                  ? '${ds.hex.substring(0, 20)}...'
                   : ds.hex;
               return ListTile(
                 leading: Icon(Icons.router_outlined, color: cs.onSurfaceVariant),
@@ -1661,9 +1692,9 @@ class _DatasetPickerSheet extends StatelessWidget {
             ...allItems.map((ds) {
               final isActive = active != null && active == ds;
               final subtitle = ds.isEmpty
-                  ? 'No credentials — device joins via MeshCoP'
+                  ? 'No credentials - device joins via MeshCoP'
                   : ds.hex.length > 20
-                  ? '${ds.hex.substring(0, 20)}…'
+                  ? '${ds.hex.substring(0, 20)}...'
                   : ds.hex;
               return ListTile(
                 leading: Icon(
@@ -1994,7 +2025,7 @@ class _WifiCredentialPanelState extends State<_WifiCredentialPanel> {
 // Shown when a manual pairing code is auto-started and the payload carries no
 // discovery-capability bits.  Manual codes are valid for both a factory-fresh
 // BLE device and an already-commissioned device sharing access via multi-admin
-// — the user must tell us which applies.
+// - the user must tell us which applies.
 
 extension on _CommissionScreenState {
   Future<CommissionMethod?> _showConnectionPicker() =>
@@ -2034,7 +2065,7 @@ extension on _CommissionScreenState {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Manual codes don\'t include this info — pick one to continue.',
+                'Manual codes don\'t include this info - pick one to continue.',
                 style: TextStyle(color: Colors.white54, fontSize: 13),
               ),
               const SizedBox(height: 20),
@@ -2048,7 +2079,7 @@ extension on _CommissionScreenState {
               _ConnectionTile(
                 icon: Icons.lan_outlined,
                 title: 'Already on a network',
-                subtitle: 'Multi-admin / shared from another app — discovered automatically via DNS-SD',
+                subtitle: 'Multi-admin / shared from another app - discovered automatically via DNS-SD',
                 onTap: () => Navigator.pop(sheetCtx, CommissionMethod.ip),
               ),
             ],
