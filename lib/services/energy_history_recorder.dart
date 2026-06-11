@@ -31,9 +31,11 @@ class EnergyHistoryRecorder {
     required String          deviceId,
     required DeviceStore     store,
     required void Function() onUpdated,
+    DateTime Function()      now = DateTime.now,
   })  : _deviceId  = deviceId,
         _store     = store,
-        _onUpdated = onUpdated {
+        _onUpdated = onUpdated,
+        _now       = now {
     _history = store.loadEnergyHistory(deviceId);
   }
 
@@ -42,6 +44,7 @@ class EnergyHistoryRecorder {
   final String          _deviceId;
   final DeviceStore     _store;
   final void Function() _onUpdated;
+  final DateTime Function() _now;
 
   List<EnergyBucket> _history = [];
 
@@ -124,7 +127,7 @@ class EnergyHistoryRecorder {
   }
 
   void _prune() {
-    final cutoff = DateTime.now().subtract(_kRetention);
+    final cutoff = _now().subtract(_kRetention);
     _history.removeWhere((b) => b.time.isBefore(cutoff));
   }
 }

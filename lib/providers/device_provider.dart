@@ -24,15 +24,19 @@ enum DeviceProviderState { idle, loading, error }
 class DeviceProvider extends ChangeNotifier {
   // ── Constructor ───────────────────────────────────────────────────────────
 
-  DeviceProvider(this._store, MatterPort channel, {FluxCoapService? controllerService})
-      : _channel = channel,
-        _ctrlService = controllerService {
+  DeviceProvider(this._store, MatterPort channel, {
+    FluxCoapService? controllerService,
+    DateTime Function() now = DateTime.now,
+  })  : _channel     = channel,
+        _ctrlService = controllerService,
+        _now         = now {
     _load();
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
     Future.microtask(_startAllSubscriptions);
     if (_ctrlService != null) Future.microtask(_reconcileWithController);
   }
   final DeviceStore _store;
+  final DateTime Function() _now;
   MatterPort _channel;
   /// Non-null in hub mode — used to reconcile the device list with the
   /// controller's NVS on startup and to seed [isOnline] from [Device.reachable].
@@ -499,10 +503,10 @@ class DeviceProvider extends ChangeNotifier {
     final periodicExportedMwh        = attrs['periodicEnergyExportedMwh']   as int?;
 
     EnergyHistoryRecorder recorder() => _energyRecorders[device.id] ??=
-        EnergyHistoryRecorder(deviceId: device.id, store: _store, onUpdated: notifyListeners);
+        EnergyHistoryRecorder(deviceId: device.id, store: _store, onUpdated: notifyListeners, now: _now);
 
     if (newCumulativeMwh != null) {
-      recorder().record(DateTime.now(), newCumulativeMwh,
+      recorder().record(_now(), newCumulativeMwh,
           exportedMwh: newCumulativeExportedMwh);
     } else if (periodicMwh != null && periodicMwh > 0) {
       final baseline = _liveCache[device.id]?.cumulativeEnergyMwh ?? 0;
@@ -517,7 +521,7 @@ class DeviceProvider extends ChangeNotifier {
       }
 
       _liveCache[device.id] = _liveCache[device.id]!.merge(cacheUpdate);
-      recorder().record(DateTime.now(), updated, exportedMwh: updatedExported);
+      recorder().record(_now(), updated, exportedMwh: updatedExported);
     }
 
     // Infer device type from subscription attributes when the stored type
