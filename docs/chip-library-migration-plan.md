@@ -1,3 +1,5 @@
+> Historical document — superseded; kept for reference.
+
 # Plan: Replace Hand-Rolled Chip Widgets with Flutter Chip Library
 
 ## Summary

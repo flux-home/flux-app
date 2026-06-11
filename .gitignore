@@ -66,3 +66,7 @@ ld_workaround
 # Local agent / tool state
 .antigravitycli/
 .agents/REVIEW_PLAN.md
+.claude/
+
+# Stale build artifacts
+/chip/
