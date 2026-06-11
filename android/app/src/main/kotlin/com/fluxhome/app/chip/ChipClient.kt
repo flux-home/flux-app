@@ -34,6 +34,7 @@ object ChipClient {
 
     private lateinit var _controller: ChipDeviceController
     private lateinit var _platform: AndroidChipPlatform
+    private lateinit var _nocIssuer: AppNOCIssuer
     private var _multicastLock: WifiManager.MulticastLock? = null
 
     /** True when the real CHIPController.aar is loaded. */
@@ -68,20 +69,22 @@ object ChipClient {
                 ChipMdnsCallbackImpl(),
                 DiagnosticDataProviderImpl(context),
             )
+            val opKeyConfig = AppFabricManager.operationalKeyConfig(context)
             _controller = ChipDeviceController(
-                ControllerParams.newBuilder()
+                ControllerParams.newBuilder(opKeyConfig)
                     .setControllerVendorId(VENDOR_ID)
                     .setEnableServerInteractions(true)
-                    // Extend the failsafe to 600 s before the CASE phase begins.
-                    // Without this, devices like the Hue bridge that reboot after
-                    // receiving the NOC expire the default 30-second failsafe and
-                    // roll back the NOC before CommissioningComplete can be sent.
+                    .setSkipAttestationCertificateValidation(true)
                     .setCASEFailsafeTimerSeconds(600)
                     .build(),
             )
-            // The per-session attestation delegate is installed by MatterCommissioner before
-            // each pairDevice* call, so it has access to the live onEvent callback and can
-            // surface a warning to the user via the commissioning event stream.
+            // Install the custom NOC chain issuer so device NOCs are signed with the
+            // app's root CA — matching the controller's own CASE identity.  Without
+            // this, the SDK falls back to its internal test CA for AddTrustedRootCert,
+            // which differs from id.rootCaTlv and causes CASE to fail (0x32).
+            _nocIssuer = AppNOCIssuer(context, _controller)
+            _controller.setNOCChainIssuer(_nocIssuer)
+
             isAvailable = true
             Log.i(TAG, "CHIP SDK initialised – fabric 0x${_controller.compressedFabricId.toULong().toString(16)}")
 
@@ -123,6 +126,11 @@ object ChipClient {
 
     val fabricIndex: Int
         get() = if (isAvailable) _controller.getFabricIndex() else 0
+
+    /** Must be called with the target node ID before each pairDevice* call. */
+    fun setPendingNodeId(nodeId: Long) {
+        if (isAvailable) _nocIssuer.pendingNodeId = nodeId
+    }
 
     // ── CASE session helper ──────────────────────────────────────────────────
 

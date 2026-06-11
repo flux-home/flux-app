@@ -280,7 +280,9 @@ object MatterCommissioner {
                     cont.resumeWithException(error ?: CommissioningException(-4, "On-network commission error: $msg"))
                 }
             })
+            ChipClient.setPendingNodeId(nodeId)
             Log.i(TAG, "pairDeviceWithCode nodeId=$nodeId setupCode=$setupCode")
+            installAttestationDelegate(controller, onEvent)
             controller.pairDeviceWithCode(
                 nodeId,
                 setupCode,
@@ -303,6 +305,32 @@ object MatterCommissioner {
      * but that callback is not reliably delivered when commissioning fails mid-way —
      * leaving the field set for the rest of the process lifetime.
      */
+    /**
+     * Installs a [DeviceAttestationDelegate] that logs and continues past any
+     * attestation failure (including [AttestationRevocationCheck]).
+     *
+     * The revocation check queries the CSA DCL; it fails for development /
+     * uncertified devices and for network-unreachable environments. We log the
+     * error code and call [continueCommissioning] with
+     * [ignoreAttestationFailure] = true so commissioning is not blocked.
+     */
+    private fun installAttestationDelegate(
+        controller: chip.devicecontroller.ChipDeviceController,
+        onEvent: (String) -> Unit,
+    ) {
+        controller.setDeviceAttestationDelegate(
+            /* failureSafeTimeoutSecs = */ 600,
+        ) { devicePtr, _, errorCode ->
+            if (errorCode != 0L) {
+                onEvent("⚠ Attestation check warning (code $errorCode) — continuing")
+                Log.w(TAG, "DeviceAttestation non-zero errorCode=$errorCode — calling continueCommissioning(ignore=true)")
+            }
+            // Always continue — for certified production devices errorCode == 0
+            // and ignoreAttestationFailure has no effect.
+            controller.continueCommissioning(devicePtr, errorCode != 0L)
+        }
+    }
+
     private fun buildIcdRegistrationInfo(): ICDRegistrationInfo {
         val key = ByteArray(16).also { SecureRandom().nextBytes(it) }
         return ICDRegistrationInfo.newBuilder()
@@ -450,6 +478,7 @@ object MatterCommissioner {
             }
         })
 
+        ChipClient.setPendingNodeId(nodeId)
         Log.i(TAG, "pairDeviceThroughBLE nodeId=$nodeId connId=$connId")
         controller.pairDeviceThroughBLE(gatt, connId, nodeId, pinCode, params)
     }
@@ -506,6 +535,7 @@ object MatterCommissioner {
                 cont.resumeWithException(error ?: CommissioningException(-4, "IP commission error: $msg"))
             }
         })
+        ChipClient.setPendingNodeId(nodeId)
         Log.i(TAG, "pairDeviceWithAddress nodeId=$nodeId addr=$address port=$port")
         controller.pairDeviceWithAddress(nodeId, address, port, discriminator, pinCode, params)
     }

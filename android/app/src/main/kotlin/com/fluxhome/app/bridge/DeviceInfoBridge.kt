@@ -1,11 +1,13 @@
 package com.fluxhome.app.bridge
 
 import android.util.Log
+import com.fluxhome.app.chip.AppFabricManager
 import com.fluxhome.app.chip.ChipClient
 import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import com.fluxhome.app.chip.clusters.DescriptorCluster
 import com.fluxhome.app.chip.clusters.IdentifyCluster
+import com.fluxhome.app.chip.clusters.OperationalCredentialsCluster
 import io.flutter.plugin.common.MethodChannel
 
 private const val TAG = "DeviceInfoBridge"
@@ -51,6 +53,22 @@ class DeviceInfoBridge(private val core: BridgeCore) {
             core.main.post { result.success(typeId) }
         }
 
+    fun readFabrics(nodeId: Long, result: MethodChannel.Result) =
+        core.requireChip(result) {
+            val fabrics = OperationalCredentialsCluster.readFabrics(core.context, nodeId)
+            core.main.post {
+                result.success(fabrics.map { f ->
+                    mapOf(
+                        "fabricIndex" to f.fabricIndex,
+                        "fabricId"    to "0x%016X".format(f.fabricId),
+                        "nodeId"      to "0x%016X".format(f.nodeId),
+                        "vendorId"    to "0x%04X".format(f.vendorId),
+                        "label"       to f.label,
+                    )
+                })
+            }
+        }
+
     fun identify(nodeId: Long, seconds: Int, result: MethodChannel.Result) =
         core.requireChip(result) {
             IdentifyCluster.sendIdentify(core.context, nodeId, seconds)
@@ -76,6 +94,27 @@ class DeviceInfoBridge(private val core: BridgeCore) {
      *   discriminator, ipAddress, port, deviceType, vendorId, productId,
      *   commissioningMode (enum name), deviceName, instanceName.
      */
+    /**
+     * Generates a one-time NOC + exports the Root CA and IPK so Dart can
+     * call POST /fabric/provision and install the app's fabric on the controller.
+     *
+     * Returns a map with ByteArray values: rootCaTlv, nocTlv, opPrivKey, ipk,
+     * and a Long fabricId.  The caller must treat opPrivKey as sensitive.
+     */
+    fun exportFabricForController(result: MethodChannel.Result) =
+        core.requireChip(result) {
+            val creds = AppFabricManager.generateControllerCredentials(core.context)
+            core.main.post {
+                result.success(mapOf(
+                    "rootCaTlv" to creds.rootCaTlv,
+                    "nocTlv"    to creds.nocTlv,
+                    "opPrivKey" to creds.opPrivKey,
+                    "ipk"       to creds.ipk,
+                    "fabricId"  to creds.fabricId,
+                ))
+            }
+        }
+
     fun discoverCommissionableNodes(result: MethodChannel.Result, scanMs: Long = 5_000L) =
         core.requireChip(result) {
             Log.i(TAG, "discoverCommissionableNodes: scanning via NsdManager…")

@@ -65,6 +65,12 @@ class MatterBridge(context: Context) {
     fun parsePayload(payload: String, result: MethodChannel.Result) =
         commissioning.parsePayload(payload, result)
 
+    fun grantControllerAccess(nodeId: Long, result: MethodChannel.Result) =
+        commissioning.grantControllerAccess(nodeId, result)
+
+    fun readAcl(nodeId: Long, result: MethodChannel.Result) =
+        commissioning.readAcl(nodeId, result)
+
     // ── Subscriptions ─────────────────────────────────────────────────────────
     fun startSubscription(nodeId: Long, result: MethodChannel.Result) =
         subscriptions.startSubscription(nodeId, result)
@@ -111,6 +117,9 @@ class MatterBridge(context: Context) {
     fun readDeviceType(nodeId: Long, result: MethodChannel.Result) =
         deviceInfo.readDeviceType(nodeId, result)
 
+    fun readFabrics(nodeId: Long, result: MethodChannel.Result) =
+        deviceInfo.readFabrics(nodeId, result)
+
     fun identify(nodeId: Long, seconds: Int, result: MethodChannel.Result) =
         deviceInfo.identify(nodeId, seconds, result)
 
@@ -122,6 +131,9 @@ class MatterBridge(context: Context) {
 
     fun discoverCommissionableNodes(result: MethodChannel.Result) =
         deviceInfo.discoverCommissionableNodes(result)
+
+    fun exportFabricForController(result: MethodChannel.Result) =
+        deviceInfo.exportFabricForController(result)
 
     // ── OnOff + Level ─────────────────────────────────────────────────────────
     fun toggleDevice(nodeId: Long, on: Boolean, result: MethodChannel.Result) =

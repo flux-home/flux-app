@@ -261,13 +261,13 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<List<FabricDescriptor>> readFabrics(int nodeId) =>
-    _invoke<List<FabricDescriptor>>(
+  Future<List<FabricDescriptor>?> readFabrics(int nodeId) =>
+    _invoke<List<FabricDescriptor>?>(
       'readFabrics',
-      const [],
+      null,
       args: {'nodeId': nodeId},
       decode: (raw) {
-        if (raw == null) return const [];
+        if (raw == null) return null;
         return (raw as List<dynamic>)
             .map((e) => FabricDescriptor.fromMap(e as Map<dynamic, dynamic>))
             .toList();
@@ -452,6 +452,27 @@ class MatterChannel implements MatterPort {
     decode: (raw) =>
         (raw as List<dynamic>?)?.map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>)).toList() ?? [],
   );
+
+  @override
+  Future<bool> grantControllerAccess(int nodeId) =>
+      _invoke('grantControllerAccess', false, args: {'nodeId': nodeId});
+
+  @override
+  Future<String> readAcl(int nodeId) =>
+      _invoke('readAcl', '[]', args: {'nodeId': nodeId});
+
+  @override
+  Future<FabricExportData?> exportFabricForController() async {
+    final raw = await _invoke<Map<Object?, Object?>?>('exportFabricForController', null);
+    if (raw == null) return null;
+    return FabricExportData(
+      rootCaTlv: Uint8List.fromList((raw['rootCaTlv'] as List).cast<int>()),
+      nocTlv:    Uint8List.fromList((raw['nocTlv']    as List).cast<int>()),
+      opPrivKey: Uint8List.fromList((raw['opPrivKey'] as List).cast<int>()),
+      ipk:       Uint8List.fromList((raw['ipk']       as List).cast<int>()),
+      fabricId:  raw['fabricId'] as int,
+    );
+  }
 
   @override
   Future<void> provideCredentials({String? ssid, String? password, String? threadDatasetHex}) => _invoke<void>(

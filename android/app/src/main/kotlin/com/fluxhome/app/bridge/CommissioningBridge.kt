@@ -6,6 +6,7 @@ import com.fluxhome.app.chip.CommissioningException
 import com.fluxhome.app.chip.MatterCommissioner
 import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.SetupPayloadHelper
+import com.fluxhome.app.chip.clusters.AccessControlCluster
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import io.flutter.plugin.common.MethodChannel
 import matter.onboardingpayload.CommissioningFlow
@@ -224,6 +225,20 @@ class CommissioningBridge(private val core: BridgeCore) {
             result.error("PARSE_ERROR", e.message, null)
         }
     }
+
+    // ── ACL grant for controller access ──────────────────────────────────────
+
+    fun grantControllerAccess(nodeId: Long, result: MethodChannel.Result) =
+        core.requireChip(result) {
+            AccessControlCluster.grantControllerAccess(core.context, nodeId)
+            core.main.post { result.success(true) }
+        }
+
+    fun readAcl(nodeId: Long, result: MethodChannel.Result) =
+        core.requireChip(result) {
+            val acl = AccessControlCluster.readAcl(core.context, nodeId)
+            core.main.post { result.success(acl) }
+        }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
