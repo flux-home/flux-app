@@ -9,6 +9,7 @@ import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
+import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -59,9 +60,6 @@ class FluxControllerEndpoint {
 
 /// Unified CoAP/DTLS client for the Flux Controller.
 ///
-/// Replaces both the former HTTP [FluxControllerService] and the old
-/// WebSocket port.
-///
 /// **Resource map** (all payloads binary protobuf, Content-Format 42):
 /// ```
 /// GET  /info                         → ControllerInfo
@@ -70,13 +68,12 @@ class FluxControllerEndpoint {
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// DEL  /devices?id=<hex>             → StatusResponse
-/// POST /commission                   ← CommissionNotify → StatusResponse (async)
-/// GET  /events/commission  Observe   → CommissionUpdate { event | result }
+/// POST /fabric/provision             ← FabricProvision → FabricProvisionResult
+/// POST /node/register                ← RegisterNodeRequest → BoolResult
 /// GET  /events?id=<hex>    Observe   → DeviceStateEvent
 /// POST /command                      ← DeviceCommand → BoolResult
-/// POST /read                         ← ReadRequest   → BoolResult (data via Observe)
-/// POST /fabric/window                ← OpenWindowRequest → WindowResult
-/// POST /fabric/discover              ← DiscoverRequest   → DiscoverResult
+/// POST /write                        ← WriteAttrRequest → BoolResult
+/// POST /read                         ← ReadRequest → BoolResult (data via Observe)
 /// ```
 class FluxCoapService implements MatterPort {
 
@@ -109,6 +106,7 @@ class FluxCoapService implements MatterPort {
       final psk = endpoint.psk!;
       return CoapClient(
         endpoint.coapUri('/'),
+        config: _DtlsConfig(),
         pskCredentialsCallback: (_) => PskCredentials(
           identity:     (endpoint.dtlsIdentity ?? endpoint.host).codeUnits,
           preSharedKey: psk,
@@ -217,116 +215,64 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) { debugPrint('FluxCoapService getDeviceList: $e'); return null; }
   }
 
-  // ── Commission resource ────────────────────────────────────────────────────
+  // ── Fabric provisioning — POST /fabric/provision ─────────────────────────
 
-  /// Commissions a device via the controller.
-  ///
-  /// 1. Registers a CoAP Observe on `/events/commission`.
-  /// 2. POSTs `CommissionNotify` to `/commission` — controller responds with
-  ///    `StatusResponse{code=0}` immediately (non-blocking).
-  /// 3. Waits for `CommissionUpdate{result{…}}` notifications via Observe.
-  ///
-  /// Returns the controller-assigned `node_id` on success, null on failure.
-  Future<int?> sendCommissionNotify({
-    required int    phoneNodeId,
-    required String setupCode,
-    String          ipv6Address = '',
+  /// Installs the app's fabric identity on the controller (Node 0x0002).
+  /// Call once when [getInfo] returns `fabricId == 0` (controller unprovisioned).
+  Future<$proto.FabricProvisionResult?> provisionFabric({
+    required int       fabricId,
+    required int       nodeId,
+    required Uint8List rootCaTlv,
+    required Uint8List nocTlv,
+    required Uint8List opPrivKey,
+    required Uint8List ipk,
+    Uint8List?         icacTlv,
+    int                vendorId = 0,
   }) async {
-    final resultCompleter = Completer<int?>();
-    CoapObserveClientRelation? obs;
-    // Gate: ignore Observe responses that arrive before the POST is accepted.
-    // The firmware sends its last cached CommissionResult as the initial Observe
-    // ACK — if a previous attempt failed, this would prematurely complete with
-    // null before the new commission even starts.
-    bool postAccepted = false;
-
-    // 1. Register observe on /events/commission
-    try {
-      final req = CoapRequest.get(
-        endpoint.coapUri('/events/commission'),
-        accept: _proto,
-      );
-      obs = await _client.observe(req);
-      obs.listen((resp) {
-        if (!postAccepted) return; // ignore stale cached state
-        if (_disposed || resultCompleter.isCompleted) return;
-        final bytes = Uint8List.fromList(resp.payload);
-        if (bytes.isEmpty) return;
-        try {
-          final cu = $proto.CommissionUpdate.fromBuffer(bytes);
-          switch (cu.whichBody()) {
-            case $proto.CommissionUpdate_Body.event:
-              _commissionEventsCtrl.add(cu.event.text);
-            case $proto.CommissionUpdate_Body.result:
-              final r = cu.result;
-              if (!r.success) {
-                final msg = r.error.isNotEmpty ? r.error : 'Commission failed';
-                debugPrint('FluxCoapService commission error: $msg');
-                _commissionEventsCtrl.add('✗ Controller: $msg');
-              }
-              resultCompleter.complete(r.success ? r.nodeId.toInt() : null);
-              if (obs != null && !obs.isCancelled) {
-                _client.cancelObserveProactive(obs);
-              }
-            case $proto.CommissionUpdate_Body.notSet:
-              break;
-          }
-        } on Exception catch (e) {
-          debugPrint('FluxCoapService commission observe decode: $e');
-        }
-      }, onDone: () {
-        if (!resultCompleter.isCompleted) resultCompleter.complete(null);
-      }, onError: (Object e) {
-        debugPrint('FluxCoapService commission observe error: $e');
-        if (!resultCompleter.isCompleted) resultCompleter.complete(null);
-      });
-    } on Exception catch (e) {
-      debugPrint('FluxCoapService: failed to observe /events/commission: $e');
-    }
-
-    // 2. POST commission request — returns StatusResponse{code=0} immediately
-    final notify = $proto.CommissionNotify()
-      ..nodeId      = Int64(phoneNodeId)
-      ..setupCode   = setupCode
-      ..ipv6Address = ipv6Address;
-    final postResp = await _post('/commission', notify.writeToBuffer(),
-        timeout: const Duration(seconds: 10));
-
-    if (postResp == null) {
-      const msg = 'POST /commission failed (no response)';
-      debugPrint('FluxCoapService.sendCommissionNotify: $msg');
-      _commissionEventsCtrl.add('✗ $msg');
-      resultCompleter.complete(null);
-    } else {
-      try {
-        final sr = $proto.StatusResponse.fromBuffer(postResp);
-        if (sr.code != 0) {
-          debugPrint('FluxCoapService commission rejected: ${sr.message}');
-          _commissionEventsCtrl.add('✗ Controller rejected: ${sr.message}');
-          resultCompleter.complete(null);
-        } else {
-          // POST accepted — open the gate so real Observe notifications flow.
-          postAccepted = true;
-        }
-      } on Exception catch (_) {
-        // Non-proto or empty body — assume accepted.
-        postAccepted = true;
-      }
-    }
-
-    // 3. Wait for CommissionUpdate.result via Observe (up to 120 s)
-    try {
-      return await resultCompleter.future.timeout(const Duration(seconds: 120));
-    } on TimeoutException catch (_) {
-      const msg = 'Commission timed out (120s) — no result from controller';
-      debugPrint('FluxCoapService.sendCommissionNotify: $msg');
-      _commissionEventsCtrl.add('✗ $msg');
+    final req = $proto.FabricProvision()
+      ..fabricId  = Int64(fabricId)
+      ..nodeId    = Int64(nodeId)
+      ..rootCaTlv = rootCaTlv
+      ..nocTlv    = nocTlv
+      ..opPrivKey = opPrivKey
+      ..ipk       = ipk
+      ..vendorId  = vendorId;
+    if (icacTlv != null) req.icacTlv = icacTlv;
+    final body = await _post('/fabric/provision', req.writeToBuffer(),
+        timeout: const Duration(seconds: 30));
+    if (body == null) return null;
+    try { return $proto.FabricProvisionResult.fromBuffer(body); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.provisionFabric: $e');
       return null;
-    } finally {
-      if (obs != null && !obs.isCancelled) {
-        try { _client.cancelObserveReactive(obs); } on Exception catch (_) {}
-      }
     }
+  }
+
+  // ── Node registration — POST /node/register ───────────────────────────────
+
+  /// Notifies the controller that a device has been commissioned into the shared
+  /// fabric and grants it access (ACL already written by the app via BLE).
+  /// The controller opens a CASE session and subscribes to the device.
+  Future<bool> registerNode({
+    required int nodeId,
+    required String name,
+    int fabricId  = 0, // 0 = skip sanity check on controller side
+    int vendorId  = 0,
+    int productId = 0,
+    int deviceType = 0,
+  }) async {
+    final req = $proto.RegisterNodeRequest()
+      ..fabricId   = Int64(fabricId)
+      ..nodeId     = Int64(nodeId)
+      ..name       = name
+      ..vendorId   = vendorId
+      ..productId  = productId
+      ..deviceType = deviceType;
+    final body = await _post('/node/register', req.writeToBuffer(),
+        timeout: const Duration(seconds: 30));
+    if (body == null) return false;
+    try { return $proto.BoolResult.fromBuffer(body).success; }
+    on Exception catch (_) { return false; }
   }
 
   // ── MatterSubscriptionPort — GET /events?id=<hex> ─────────────────────────
@@ -349,7 +295,11 @@ class FluxCoapService implements MatterPort {
           _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, e.toString()));
           if (!_disposed) {
             Future.delayed(const Duration(seconds: 5),
-                () => startSubscription(nodeId));
+                () => startSubscription(nodeId))
+              .catchError((Object e) {
+                debugPrint('FluxCoapService sub $nodeId retry error: $e');
+                return false;
+              });
           }
         },
         onDone: () {
@@ -358,12 +308,16 @@ class FluxCoapService implements MatterPort {
           if (!_disposed) {
             _deviceStateCtrl.add(SubscriptionResubscribingEvent(nodeId, 0));
             Future.delayed(const Duration(seconds: 5),
-                () => startSubscription(nodeId));
+                () => startSubscription(nodeId))
+              .catchError((Object e) {
+                debugPrint('FluxCoapService sub $nodeId retry error: $e');
+                return false;
+              });
           }
         },
       );
       return true;
-    } on Exception catch (e) {
+    } catch (e) {
       debugPrint('FluxCoapService.startSubscription($nodeId): $e');
       return false;
     }
@@ -412,18 +366,18 @@ class FluxCoapService implements MatterPort {
 
   // ── Cluster commands — POST /command ───────────────────────────────────────
 
-  // Matter TLV minimal encoder
-  static const _tlvStructStart  = 0x15;
-  static const _tlvEndContainer = 0x18;
-  static Uint8List _struct(List<int> f) =>
-      Uint8List.fromList([_tlvStructStart, ...f, _tlvEndContainer]);
-  static List<int> _u8(int t, int v)  => [0x24, t, v & 0xFF];
-  static List<int> _u16(int t, int v) => [0x25, t, v & 0xFF, (v >> 8) & 0xFF];
-  static List<int> _bytes(int t, List<int> b) => [0x30, t, b.length, ...b];
-  static Uint8List _emptyStruct() => _struct([]);
+  static $proto.CommandArg _arg(String name,
+      {bool? boolVal, int? uintVal, int? intVal, String? strVal}) {
+    final a = $proto.CommandArg()..name = name;
+    if (boolVal != null)      a.boolVal = boolVal;
+    else if (uintVal != null) a.uintVal = uintVal;
+    else if (intVal  != null) a.intVal  = intVal;
+    else if (strVal  != null) a.strVal  = strVal;
+    return a;
+  }
 
   Future<bool> _sendCmd(
-    int nodeId, int clusterId, int commandId, Uint8List payload, {
+    int nodeId, int clusterId, int commandId, List<$proto.CommandArg> args, {
     int endpoint = 1, Duration timeout = _timeout30,
   }) async {
     final cmd = $proto.DeviceCommand()
@@ -431,7 +385,7 @@ class FluxCoapService implements MatterPort {
       ..endpointId = endpoint
       ..clusterId  = clusterId
       ..commandId  = commandId
-      ..payload    = payload;
+      ..args.addAll(args);
     final body = await _post('/command', cmd.writeToBuffer(), timeout: timeout);
     if (body == null) return false;
     try { return $proto.BoolResult.fromBuffer(body).success; }
@@ -445,33 +399,37 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<bool> toggleDevice(int nodeId, {required bool on}) =>
-      _sendCmd(nodeId, _clOnOff, on ? 1 : 0, _emptyStruct());
+      _sendCmd(nodeId, _clOnOff, on ? 1 : 0, []);
 
   @override
   Future<bool> setLevel(int nodeId, int level) =>
-      _sendCmd(nodeId, _clLevel, 4,
-          _struct([..._u8(0, level), ..._u16(1, 0), ..._u8(2, 0), ..._u8(3, 0)]));
+      _sendCmd(nodeId, _clLevel, 4, [
+        _arg('level',          uintVal: level),
+        _arg('transitionTime', uintVal: 0),
+        _arg('optionsMask',    uintVal: 0),
+        _arg('optionsOverride',uintVal: 0),
+      ]);
 
   @override
   Future<bool> stepLevel(int nodeId, {required bool stepUp}) =>
-      _sendCmd(nodeId, _clLevel, 6,
-          _struct([
-            ..._u8(0, stepUp ? 0 : 1),
-            ..._u8(1, 25),
-            ..._u16(2, 2),
-            ..._u8(3, 0), ..._u8(4, 0),
-          ]));
+      _sendCmd(nodeId, _clLevel, 6, [
+        _arg('stepMode',       uintVal: stepUp ? 0 : 1),
+        _arg('stepSize',       uintVal: 25),
+        _arg('transitionTime', uintVal: 2),
+        _arg('optionsMask',    uintVal: 0),
+        _arg('optionsOverride',uintVal: 0),
+      ]);
 
   // ── Window Covering ────────────────────────────────────────────────────────
 
   static const _clCovering = 0x0102;
 
-  @override Future<bool> coveringUp(int n)   => _sendCmd(n, _clCovering, 0, _emptyStruct());
-  @override Future<bool> coveringDown(int n) => _sendCmd(n, _clCovering, 1, _emptyStruct());
-  @override Future<bool> coveringStop(int n) => _sendCmd(n, _clCovering, 2, _emptyStruct());
+  @override Future<bool> coveringUp(int n)   => _sendCmd(n, _clCovering, 0, []);
+  @override Future<bool> coveringDown(int n) => _sendCmd(n, _clCovering, 1, []);
+  @override Future<bool> coveringStop(int n) => _sendCmd(n, _clCovering, 2, []);
   @override
   Future<bool> coveringGoToLift(int nodeId, int percent100ths) =>
-      _sendCmd(nodeId, _clCovering, 5, _struct([..._u16(0, percent100ths)]));
+      _sendCmd(nodeId, _clCovering, 5, [_arg('liftPercent100thsValue', uintVal: percent100ths)]);
 
   // ── Color Control ──────────────────────────────────────────────────────────
 
@@ -479,26 +437,26 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<bool> setColorTemperature(int nodeId, int mireds) =>
-      _sendCmd(nodeId, _clColor, 0x0A,
-          _struct([..._u16(0, mireds), ..._u16(1, 0), ..._u8(2, 0), ..._u8(3, 0)]));
+      _sendCmd(nodeId, _clColor, 0x0A, [
+        _arg('colorTemperatureMireds', uintVal: mireds),
+        _arg('transitionTime',         uintVal: 0),
+        _arg('optionsMask',            uintVal: 0),
+        _arg('optionsOverride',        uintVal: 0),
+      ]);
 
   // ── Door Lock ──────────────────────────────────────────────────────────────
 
   static const _clLock = 0x0101;
 
   @override
-  Future<bool> lockDoor(int nodeId, {String? pin}) {
-    final p = pin != null && pin.isNotEmpty
-        ? _struct([..._bytes(0, pin.codeUnits)]) : _emptyStruct();
-    return _sendCmd(nodeId, _clLock, 0, p);
-  }
+  Future<bool> lockDoor(int nodeId, {String? pin}) =>
+      _sendCmd(nodeId, _clLock, 0,
+          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : []);
 
   @override
-  Future<bool> unlockDoor(int nodeId, {String? pin}) {
-    final p = pin != null && pin.isNotEmpty
-        ? _struct([..._bytes(0, pin.codeUnits)]) : _emptyStruct();
-    return _sendCmd(nodeId, _clLock, 1, p);
-  }
+  Future<bool> unlockDoor(int nodeId, {String? pin}) =>
+      _sendCmd(nodeId, _clLock, 1,
+          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : []);
 
   // ── Identify ───────────────────────────────────────────────────────────────
 
@@ -508,16 +466,52 @@ class FluxCoapService implements MatterPort {
   Future<void> identify(int nodeId, {int seconds = 15}) async {
     try {
       await _sendCmd(nodeId, _clIdentify, 0,
-          _struct([..._u16(0, seconds)]), endpoint: 0);
+          [_arg('identifyTime', uintVal: seconds)], endpoint: 0);
     } on Exception catch (_) {}
   }
 
-  // ── Thermostat / Fan — WriteAttribute (stubbed until firmware exposes it) ──
+  // ── WriteAttribute — POST /write ──────────────────────────────────────────
 
-  @override Future<bool> writeHeatingSetpoint(int n, int c) async => false;
-  @override Future<bool> writeSystemMode(int n, int m)       async => false;
-  @override Future<bool> setFanMode(int n, int m)            async => false;
-  @override Future<bool> setFanPercent(int n, int p)         async => false;
+  Future<bool> _writeAttr(
+    int nodeId, {
+    required int clusterId,
+    required int attrId,
+    int? intVal,
+    bool? boolVal,
+    String? jsonVal,
+    int endpointId = 0xFFFF, // 0xFFFF = auto (endpoint 1)
+  }) async {
+    final req = $proto.WriteAttrRequest()
+      ..nodeId     = Int64(nodeId)
+      ..endpointId = endpointId
+      ..clusterId  = clusterId
+      ..attrId     = attrId;
+    if (intVal != null)  req.intVal  = intVal;
+    if (boolVal != null) req.boolVal = boolVal;
+    if (jsonVal != null) req.jsonVal = jsonVal;
+    final body = await _post('/write', req.writeToBuffer(), timeout: _timeout30);
+    if (body == null) return false;
+    return $proto.BoolResult.fromBuffer(body).success;
+  }
+
+  static const int _clThermostat = 0x0201;
+  static const int _clFan        = 0x0202;
+
+  @override
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) =>
+      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x0012, intVal: centidegrees);
+
+  @override
+  Future<bool> writeSystemMode(int nodeId, int mode) =>
+      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x001C, intVal: mode);
+
+  @override
+  Future<bool> setFanMode(int nodeId, int mode) =>
+      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0000, intVal: mode);
+
+  @override
+  Future<bool> setFanPercent(int nodeId, int percent) =>
+      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0002, intVal: percent);
 
   // ── Reads — POST /read ─────────────────────────────────────────────────────
   //
@@ -535,6 +529,18 @@ class FluxCoapService implements MatterPort {
     required List<int> attrs,
     Duration timeout = const Duration(seconds: 10),
   }) async {
+    // Register the listener BEFORE sending the POST so the Observe response
+    // cannot arrive in the gap between _post completing and listen() being
+    // called (broadcast streams do not buffer — a missed event is lost).
+    final completer = Completer<Map<String, dynamic>>();
+    late StreamSubscription<DeviceStateEvent> sub;
+    sub = deviceStateUpdates.listen((ev) {
+      if (ev is SubscriptionUpdateEvent && ev.nodeId == nodeId) {
+        if (!completer.isCompleted) completer.complete(ev.attrs);
+        sub.cancel();
+      }
+    });
+
     try {
       final req = $proto.ReadRequest()
         ..nodeId = Int64(nodeId)
@@ -542,19 +548,11 @@ class FluxCoapService implements MatterPort {
         ..clusterIds.addAll(clusters)
         ..attrIds.addAll(attrs);
       final body = await _post('/read', req.writeToBuffer(), timeout: _timeout30);
-      if (body == null) return null;
+      if (body == null) { sub.cancel(); return null; }
       final ok = $proto.BoolResult.fromBuffer(body).success;
-      if (!ok) return null;
+      if (!ok) { sub.cancel(); return null; }
 
-      // Wait for the attrs to arrive via the Observe stream.
-      final completer = Completer<Map<String, dynamic>>();
-      late StreamSubscription<DeviceStateEvent> sub;
-      sub = deviceStateUpdates.listen((ev) {
-        if (ev is SubscriptionUpdateEvent && ev.nodeId == nodeId) {
-          if (!completer.isCompleted) completer.complete(ev.attrs);
-          sub.cancel();
-        }
-      });
+      // Wait for attrs to arrive via the /events?id= Observe stream.
       try {
         return await completer.future.timeout(timeout);
       } on TimeoutException catch (_) {
@@ -562,6 +560,7 @@ class FluxCoapService implements MatterPort {
         return null;
       }
     } on Exception catch (e) {
+      sub.cancel();
       debugPrint('FluxCoapService._readAttrs $nodeId: $e');
       return null;
     }
@@ -587,24 +586,20 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<BasicInfo?> readBasicInfo(int nodeId) async {
-    final a = await _readAttrs(nodeId, endpoints: [0], clusters: [0x0028],
-        attrs: [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 15, 18]);
-    if (a == null) return null;
-    String s(String k) => (a[k] ?? '').toString();
-    return BasicInfo(
-      vendorName:        s('vendorName'),
-      vendorId:          s('vendorId'),
-      productName:       s('productName'),
-      productId:         s('productId'),
-      hwVersion:         s('hwVersion'),
-      softwareVersion:   s('swVersion'),
-      softwareVersionNum: a['swVersionNum'] as int?,
-      manufacturingDate: s('manufacturingDate'),
-      partNumber:        s('partNumber'),
-      productUrl:        s('productUrl'),
-      serialNumber:      s('serialNumber'),
-      uniqueId:          s('uniqueId'),
-    );
+    // BasicInformation cluster attributes are string-valued (vendor name,
+    // product name, serial, etc.).  The Attr proto only carries bool/int/long
+    // — no string field.  Any read response would arrive with empty keys, and
+    // updating the cache with those empty strings would overwrite a valid
+    // snapshot.  Return null so callers leave the cache unchanged.
+    return null;
+  }
+
+  @override
+  Future<List<FabricDescriptor>?> readFabrics(int nodeId) async {
+    // Hub-managed devices: read via firmware /read (cluster 0x003E attr 0x0001)
+    // Stub — returns empty list until firmware exposes a direct Fabrics read.
+    // TODO: implement once firmware support is available.
+    return const [];
   }
 
   @override
@@ -643,25 +638,9 @@ class FluxCoapService implements MatterPort {
 
   // ── MatterFabricPort ───────────────────────────────────────────────────────
 
-  /// Open a commissioning window on a device — POST /fabric/window
   @override
   Future<ShareDeviceResult?> shareDevice(int nodeId,
-      {int vendorId = 0, int productId = 0}) async {
-    try {
-      final req  = $proto.OpenWindowRequest()
-        ..nodeId         = Int64(nodeId)
-        ..timeoutSeconds = 180;
-      final body = await _post('/fabric/window', req.writeToBuffer(),
-          timeout: const Duration(seconds: 60));
-      if (body == null) return null;
-      final w = $proto.WindowResult.fromBuffer(body);
-      if (!w.success) return null;
-      return ShareDeviceResult(
-        qrCodePayload:     w.setupCode,
-        manualPairingCode: w.setupCode,
-      );
-    } on Exception catch (_) { return null; }
-  }
+      {int vendorId = 0, int productId = 0}) async => null;
 
   /// Remove a device — DELETE /devices?id=<hex>
   @override
@@ -669,15 +648,7 @@ class FluxCoapService implements MatterPort {
       _delete('/devices', query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
 
   @override
-  Future<List<CommissionableDevice>> discoverCommissionableNodes() async {
-    try {
-      final req  = $proto.DiscoverRequest()..timeoutSeconds = 10;
-      final body = await _post('/fabric/discover', req.writeToBuffer(),
-          timeout: const Duration(seconds: 15));
-      if (body == null) return const [];
-      return const []; // DiscoverResult.node_ids only; full device info tbd
-    } on Exception catch (_) { return const []; }
-  }
+  Future<List<CommissionableDevice>> discoverCommissionableNodes() async => const [];
 
   @override
   Future<String?> getFabricId() async {
@@ -700,6 +671,15 @@ class FluxCoapService implements MatterPort {
   // ── MatterCommissionPort — BLE stays on local MatterChannel ───────────────
 
   @override
+  Future<bool> grantControllerAccess(int nodeId) async => true; // ACL written via MatterChannel
+
+  @override
+  Future<String> readAcl(int nodeId) async => '[]'; // not applicable on hub side
+
+  @override
+  Future<FabricExportData?> exportFabricForController() async => null; // hub side: use local channel
+
+  @override
   Future<ParsedPayload?> parsePayload(String payload) async => null;
 
   @override
@@ -711,11 +691,11 @@ class FluxCoapService implements MatterPort {
   Future<CommissionResult> commissionViaIp({
     required String ipAddress, required int discriminator,
     required int setupPinCode, int port = 5540,
-  }) async => CommissionResult.err('Use CommissionNotify for hub commissioning');
+  }) async => CommissionResult.err('Hub does not commission — use local MatterChannel');
 
   @override
   Future<CommissionResult> commissionViaCode({required String setupCode}) async =>
-      CommissionResult.err('Use CommissionNotify for hub commissioning');
+      CommissionResult.err('Hub does not commission — use local MatterChannel');
 
   @override Future<List<WifiNetwork>> scanWifiNetworks() async => const [];
   @override Future<void> provideCredentials({
@@ -757,4 +737,27 @@ class FluxCoapService implements MatterPort {
     _deviceStateCtrl.close();
     _commissionEventsCtrl.close();
   }
+}
+
+// ── DTLS CoAP config ──────────────────────────────────────────────────────────
+//
+// OpenSSL 3.0 does NOT include PSK cipher suites in its default cipher list.
+// We must explicitly set them so the ClientHello includes ciphers that the
+// firmware's mbedTLS actually supports.  securityLevel=0 drops the minimum
+// key-length floor that OpenSSL 3 enforces by default (level 1), which would
+// otherwise silently exclude some PSK suites.
+class _DtlsConfig extends CoapConfigDefault {
+  @override
+  String? get dtlsCiphers =>
+      'PSK-AES128-GCM-SHA256:'
+      'PSK-AES256-GCM-SHA384:'
+      'PSK-AES128-CCM8:'
+      'PSK-AES256-CCM8:'
+      'PSK-AES128-CBC-SHA256:'
+      'PSK-AES256-CBC-SHA384:'
+      'PSK-AES128-CBC-SHA:'
+      'PSK-AES256-CBC-SHA';
+
+  @override
+  int? get openSslSecurityLevel => 0;
 }
