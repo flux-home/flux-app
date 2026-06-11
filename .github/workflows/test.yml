@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (e.g. rapid PR pushes).
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+
+      # ── Flutter (cached) ────────────────────────────────────────────────────
+      # Pure-Dart unit tests run on the VM — no Android SDK/NDK or
+      # CHIPController.aar needed (the commissioning tests use fakes, never the
+      # platform channel).
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # ── Pub cache ───────────────────────────────────────────────────────────
+      - name: Cache pub packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter test
+        run: flutter test
