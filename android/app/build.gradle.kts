@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -26,10 +25,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        jvmToolchain(17)
     }
 
     defaultConfig {
@@ -75,18 +75,20 @@ dependencies {
             implementation(files("libs/SetupPayloadParser.jar"))
         }
         // Transitive deps required by CHIPController
-        implementation("com.google.protobuf:protobuf-java:3.22.0")
-        implementation("com.google.code.gson:gson:2.10.1")
+        implementation("com.google.protobuf:protobuf-java:4.35.0")
+        implementation("com.google.code.gson:gson:2.14.0")
     } else {
         // ── Compile-time stubs (simulation mode at runtime) ──────────────────
         implementation(project(":chip-stub"))
     }
 
     // Thread Network credential store (Play Services, all build variants)
-    implementation("com.google.android.gms:play-services-threadnetwork:16.0.0")
+    implementation("com.google.android.gms:play-services-threadnetwork:16.3.0")
 
     // Coroutines (used by MatterCommissioner, ClusterClient, BleConnectionManager)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 flutter {
