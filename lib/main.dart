@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -49,6 +49,9 @@ Future<void> main() async {
   // switches DeviceProvider to hub mode once a controller is found.
   final hubConn  = HubConnection(null);
   final provider = DeviceProvider(store, localChannel);
+  // React to any controller service swap (background discovery, Flux Hub "↺",
+  // re-adding a controller) without an app restart.
+  provider.attachHubConnection(hubConn);
 
   debugPrint('main: starting in standalone mode, discovering controller in background…');
 
@@ -130,13 +133,65 @@ Future<void> main() async {
       }
     }
 
+    // setService notifies HubConnection listeners; DeviceProvider (attached
+    // above) adopts hub mode in response — no separate adoptHubMode call needed.
     hubConn.setService(svc);
-    provider.adoptHubMode(svc);
   }));
 }
 
-class MatterHomeApp extends StatelessWidget {
+class MatterHomeApp extends StatefulWidget {
   const MatterHomeApp({super.key});
+
+  @override
+  State<MatterHomeApp> createState() => _MatterHomeAppState();
+}
+
+class _MatterHomeAppState extends State<MatterHomeApp>
+    with WidgetsBindingObserver {
+  /// How often to re-fetch the controller's device list while the app is in
+  /// the foreground.  Keeps controller-side changes (devices added/removed on
+  /// another phone, reachability flips) visible without a manual refresh.
+  static const _pollInterval = Duration(seconds: 45);
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _sync());
+  }
+
+  void _sync() {
+    if (!mounted) return;
+    unawaited(context.read<DeviceProvider>().syncWithController());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Catch anything that changed while backgrounded, then resume polling.
+        _sync();
+        _startPolling();
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        _pollTimer?.cancel();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

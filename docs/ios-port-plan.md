@@ -80,9 +80,9 @@ not to explicit subscribe calls. The Dart API and `MatterPort` interface are unc
 These are the only places where Android leaks through the `MatterPort` boundary.
 Fix before any iOS work begins.
 
-> **Current state (2026-05-24)**: ALL THREE still need fixing.
+> **Current state (2026-06-11)**: Pre-work item 1 (method rename) is **DONE** — `readSystemThreadCredentials` is live everywhere. Items 2 and 3 still apply.
 
-### 1. Method name rename
+### 1. Method name rename ✅ DONE
 
 **Files**: `matter_port.dart` (line 111), `matter_channel.dart` (line 341),
 `commission_screen.dart` (line 1484), `thread_settings_screen.dart` (line 162)

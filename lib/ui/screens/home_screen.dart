@@ -2,6 +2,8 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/room.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
 import 'package:matter_home/ui/theme.dart';
@@ -45,11 +47,36 @@ class HomeScreen extends StatelessWidget {
 
           // If every room is empty the device list is empty overall.
           final totalDevices = groups.fold<int>(0, (sum, g) => sum + g.$2.length);
-          if (totalDevices == 0) {
-            return const _EmptyDeviceHint();
-          }
 
-          return CustomScrollView(
+          return RefreshIndicator(
+            // Pull down to re-fetch the controller's device list. No-op in
+            // standalone mode (no controller connected).
+            onRefresh: () => provider.syncWithController(),
+            child: totalDevices == 0
+                ? const CustomScrollView(
+                    // AlwaysScrollable so the pull gesture works even when the
+                    // (otherwise non-scrolling) empty hint is shown.
+                    physics: AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _EmptyDeviceHint(),
+                      ),
+                    ],
+                  )
+                : _buildDeviceList(context, groups),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDeviceList(
+    BuildContext context,
+    List<(Room, List<DeviceView>)> groups,
+  ) {
+    return CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               for (final (room, views) in groups)
                 if (room.isNoRoom && views.isEmpty) ...[] else ...[
@@ -99,9 +126,6 @@ class HomeScreen extends StatelessWidget {
               const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
             ],
           );
-        },
-      ),
-    );
   }
 }
 
