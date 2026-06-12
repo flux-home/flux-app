@@ -16,6 +16,7 @@ import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/energy_history_recorder.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
+import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -33,7 +34,26 @@ class DeviceProvider extends ChangeNotifier {
     _load();
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
     Future.microtask(_startAllSubscriptions);
-    if (_ctrlService != null) Future.microtask(_reconcileWithController);
+    if (_ctrlService != null) Future.microtask(syncWithController);
+  }
+
+  /// Wires this provider to the app-wide [HubConnection] so that any later
+  /// service swap (background discovery, the Flux Hub "↺" button, re-adding a
+  /// controller) is adopted automatically.  Without this, swapping the service
+  /// in [HubConnection] would leave this provider running against the old —
+  /// now disposed — [FluxCoapService].
+  void attachHubConnection(HubConnection hub) {
+    _hubConn = hub;
+    hub.addListener(_onHubConnectionChanged);
+  }
+
+  HubConnection? _hubConn;
+
+  void _onHubConnectionChanged() {
+    final svc = _hubConn?.service;
+    if (svc != null && !identical(svc, _ctrlService)) {
+      unawaited(adoptHubMode(svc));
+    }
   }
   final DeviceStore _store;
   final DateTime Function() _now;
@@ -111,6 +131,7 @@ class DeviceProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _hubConn?.removeListener(_onHubConnectionChanged);
     for (final t in _establishTimeouts.values) {
       t?.cancel();
     }
@@ -162,26 +183,51 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Controller reconciliation ─────────────────────────────────────────────────
 
-  /// Reconciles the local device list with the controller’s NVS list.
+  bool _syncInFlight = false;
+
+  /// Public entry point for refreshing the device list from the controller.
   ///
-  /// Called at startup in hub mode.  Two things happen:
+  /// Safe to call from anywhere and as often as needed — pull-to-refresh, the
+  /// app-resume lifecycle hook, the periodic foreground poll, or the Flux Hub
+  /// "↺" button.  Concurrent calls are coalesced into the in-flight one.
+  /// No-op when not in hub mode.
+  Future<void> syncWithController() async {
+    if (_syncInFlight) return;
+    _syncInFlight = true;
+    try {
+      await _reconcileWithController();
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  /// Reconciles the local device list with the controller’s list so the two
+  /// stay in sync without an app restart.  Three things happen:
   ///  1. Controller devices not in the local store are added automatically
-  ///     (e.g. commissioned on a previous session or from another phone).
-  ///  2. [isOnline] is seeded from [Device.reachable] so the home screen shows
-  ///     correct reachability before any WS subscription arrives.
+  ///     (e.g. commissioned on a previous session or from another phone) and
+  ///     their subscriptions started so live state flows immediately.
+  ///  2. [isOnline] is re-seeded from [Device.reachable] for known devices.
+  ///  3. Controller-managed devices the controller no longer reports are
+  ///     removed locally (e.g. deleted from another phone) — the controller is
+  ///     the source of truth for controller-managed nodes.
+  ///
+  /// A `null` device list (transient CoAP/DTLS failure) leaves the list
+  /// untouched; an empty-but-non-null list is treated as authoritative.
   Future<void> _reconcileWithController() async {
     final svc = _ctrlService;
     if (svc == null) return;
 
     final raw = await svc.getDeviceList();
-    if (raw == null || raw.isEmpty) return;
+    if (raw == null) return; // transient failure — never wipe on a failed read
 
     var changed = false;
     final now   = DateTime.now();
+    final controllerNodeIds = <int>{};
 
     for (final cd in raw) {
       final nodeId = cd.nodeId.toInt();
-      final idx    = _devices.indexWhere((d) => d.nodeId == nodeId);
+      controllerNodeIds.add(nodeId);
+      final idx = _devices.indexWhere((d) => d.nodeId == nodeId);
 
       if (idx == -1) {
         // Device on controller but not locally — add it.
@@ -201,10 +247,14 @@ class DeviceProvider extends ChangeNotifier {
         );
         _devices.add(device);
         changed = true;
+        // Start the subscription so the freshly-discovered device delivers
+        // live state without waiting for the next launch.  Guarded against
+        // double-subscribe by _subscribedNodeIds.
+        unawaited(_startSubscription(device));
         debugPrint('DeviceProvider: added controller device '
             '$nodeId (${device.name})');
       } else {
-        // Already known — seed online state from controller’s reachable flag.
+        // Already known — re-seed online state from controller’s reachable flag.
         if (_devices[idx].isOnline != cd.reachable) {
           _devices[idx] = _devices[idx].copyWith(isOnline: cd.reachable);
           changed = true;
@@ -212,10 +262,41 @@ class DeviceProvider extends ChangeNotifier {
       }
     }
 
+    // Drop controller-managed devices the controller no longer reports.
+    // Phone-commissioned devices are never auto-removed here — they live in the
+    // local CHIP fabric and are owned by this app.
+    final stale = _devices
+        .where((d) =>
+            d.managedBy == ManagedBy.controller &&
+            !controllerNodeIds.contains(d.nodeId))
+        .map((d) => d.id)
+        .toList();
+    for (final id in stale) {
+      await _purgeControllerDevice(id);
+      changed = true;
+    }
+
     if (changed) {
       await _persist();
       notifyListeners();
     }
+  }
+
+  /// Local-only removal of a controller-managed device that the controller has
+  /// already dropped.  Stops the subscription and purges caches but — unlike
+  /// [removeDevice] — does NOT call the controller or local CHIP fabric, since
+  /// the node is already gone on the controller side.
+  Future<void> _purgeControllerDevice(String deviceId) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return;
+    await _stopSubscription(_devices[idx]);
+    _establishTimeouts.remove(deviceId)?.cancel();
+    final idx2 = _indexById(deviceId);
+    if (idx2 != -1) _devices.removeAt(idx2);
+    _liveCache.remove(deviceId);
+    _clusterCache.remove(deviceId);
+    _snapshots.remove(deviceId);
+    debugPrint('DeviceProvider: purged stale controller device $deviceId');
   }
 
   // ── Late hub-mode adoption ───────────────────────────────────────────────
@@ -227,6 +308,9 @@ class DeviceProvider extends ChangeNotifier {
   /// to the CoAP service, restarts subscriptions, and runs reconciliation.
   Future<void> adoptHubMode(FluxCoapService svc) async {
     if (_disposed) return;
+    // Idempotent: re-adopting the same service (e.g. listener + explicit call)
+    // must not tear down and rebuild healthy subscriptions.
+    if (identical(svc, _ctrlService)) return;
 
     // Tear down existing subscriptions and listener.
     await _deviceStateSub?.cancel();
@@ -248,7 +332,7 @@ class DeviceProvider extends ChangeNotifier {
     // Rewire event listener and restart subscriptions.
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
     await _startAllSubscriptions();
-    await _reconcileWithController();
+    await syncWithController();
   }
 
   /// Persists both the commissioning records and the live-state snapshots.
