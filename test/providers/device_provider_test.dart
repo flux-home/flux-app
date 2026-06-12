@@ -493,33 +493,24 @@ void main() {
     });
   });
 
-  // ── 9. Known latent bug: establish timer not cancelled on removeDevice ────────
+  // ── 9. Establish timer is cancelled on removeDevice ───────────────────────────
   //
-  // removeDevice() calls _stopSubscription but does NOT cancel
-  // _establishTimeouts[deviceId]. The 15s timer fires after the device is gone,
-  // calls refreshDevice() with the old id, _indexById returns -1, and the call
-  // short-circuits — no crash, but a dangling timer fires and a lookup happens.
-  //
-  // The test below documents the pre-fix state: removeDevice leaves the provider
-  // in a clean device-list state. After fixing (cancel the timer in removeDevice),
-  // this test still passes and the fix is verified by the lack of a dangling call.
+  // removeDevice() now cancels _establishTimeouts[deviceId] immediately after
+  // _stopSubscription so no dangling timer fires for a gone device.
 
   group('timer leak fix', () {
-    test('removeDevice leaves provider in a clean state (pre-fix: timer still fires)', () async {
+    test('removeDevice cancels establish-fallback timer and cleans up caches', () async {
       final d = _device();
       final (provider, fake) = await _build(devices: [d]);
 
-      // Remove before the established event arrives — timer is still armed.
+      // Remove before the established event arrives — timer was armed.
       await provider.removeDevice(d.id);
       await pumpEventQueue();
 
-      // Device is gone immediately.
+      // Device is fully removed; timer was cancelled so no dangling lookup fires.
       expect(provider.devices, isEmpty);
       expect(provider.liveDataFor(d.id), isNull);
       expect(fake.stoppedSubscriptions, contains(d.nodeId));
-      // Note: _establishTimeouts[d.id] is NOT cancelled here (pre-fix).
-      // The 15s timer will fire after this test ends and call refreshDevice
-      // which will short-circuit because _indexById returns -1.
     });
   });
 }

@@ -945,6 +945,7 @@ class DeviceProvider extends ChangeNotifier {
     if (idx == -1) return false;
     final device = _devices[idx];
     await _stopSubscription(device);
+    _establishTimeouts.remove(deviceId)?.cancel();
     // Always notify the controller — it tracks all registered nodes regardless
     // of who commissioned them.
     await _ctrlService?.removeDevice(device.nodeId);
