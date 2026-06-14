@@ -86,7 +86,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-threadnetwork:16.3.0")
 
     // Coroutines (used by MatterCommissioner, ClusterClient, BleConnectionManager)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
