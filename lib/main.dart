@@ -1,17 +1,19 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/router.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_controller_discovery.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/services/wifi_scan_service.dart';
 import 'package:matter_home/ui/theme.dart';
 import 'package:provider/provider.dart';
@@ -27,19 +29,22 @@ Future<void> main() async {
   final store        = await DeviceStore.open();
   final localChannel = MatterChannel();
 
-  // ── Bootstrap PSK (one-time) ──────────────────────────────────────────────
-  // Ensures the known hub PSK is always stored so DTLS works across reinstalls.
-  // Remove once the QR-scan setup flow is the primary path.
-  const _hubPskHex  = 'a089ebcce62353bf5f84e4fb4855f7f0';
-  const _hubDtlsId  = 'flux-controller-e25311'; // stable controller ID from QR
-  final existingPsk = await ControllerSettings.loadPsk(_hubDtlsId);
-  if (existingPsk == null) {
-    final pskBytes = Uint8List.fromList(List.generate(
-        16, (i) => int.parse(
-            _hubPskHex.substring(i * 2, i * 2 + 2), radix: 16)));
-    await ControllerSettings.savePsk(_hubDtlsId, pskBytes,
-        dtlsIdentity: _hubDtlsId);
-    debugPrint('main: bootstrapped PSK for controller $_hubDtlsId');
+  // ── Bootstrap PSK (debug only) ────────────────────────────────────────────
+  // Dev convenience: seeds the known dev-hub PSK so DTLS works across reinstalls
+  // without re-scanning the QR. Gated to debug builds so it never ships — the
+  // QR-scan setup flow is the only PSK source in release builds.
+  if (kDebugMode) {
+    const hubPskHex = 'a089ebcce62353bf5f84e4fb4855f7f0';
+    const hubDtlsId = 'flux-controller-e25311'; // stable controller ID from QR
+    final existingPsk = await ControllerSettings.loadPsk(hubDtlsId);
+    if (existingPsk == null) {
+      final pskBytes = Uint8List.fromList(List.generate(
+          16, (i) => int.parse(
+              hubPskHex.substring(i * 2, i * 2 + 2), radix: 16)));
+      await ControllerSettings.savePsk(hubDtlsId, pskBytes,
+          dtlsIdentity: hubDtlsId);
+      debugPrint('main: bootstrapped dev-hub PSK for $hubDtlsId');
+    }
   }
 
   // ── Boot immediately in standalone mode ──────────────────────────────────
@@ -52,6 +57,35 @@ Future<void> main() async {
   // React to any controller service swap (background discovery, Flux Hub "↺",
   // re-adding a controller) without an app restart.
   provider.attachHubConnection(hubConn);
+
+  // On an adopted (controller-owned) fabric the phone holds no CA key, so the
+  // native commissioning flow forwards each device CSR here to be signed by the
+  // controller via POST /fabric/sign-noc.
+  //
+  // DEPRECATED — slated for removal once the commission-then-handoff flow lands
+  // (see flux-proto/docs/flows.md "commission-then-handoff"). The controller
+  // will commission devices onto its own fabric directly, so this CSR-forwarding
+  // path (and /fabric/sign-noc) goes away.
+  localChannel.deviceNocSigner = (csr, nodeId) async {
+    final svc = hubConn.service;
+    if (svc == null) {
+      debugPrint('deviceNocSigner: NOT connected to a hub — cannot sign device NOC');
+      return null;
+    }
+    final res = await svc.signDeviceNoc(csr: csr, nodeId: nodeId);
+    if (res == null) {
+      debugPrint('deviceNocSigner: hub /fabric/sign-noc returned no response');
+      return null;
+    }
+    if (!res.success) {
+      debugPrint('deviceNocSigner: hub refused to sign — ${res.error}');
+      return null;
+    }
+    return (
+      noc:  Uint8List.fromList(res.nocDer),
+      icac: res.icacDer.isEmpty ? null : Uint8List.fromList(res.icacDer),
+    );
+  };
 
   debugPrint('main: starting in standalone mode, discovering controller in background…');
 
@@ -98,40 +132,21 @@ Future<void> main() async {
     debugPrint('main: controller found at $ep — switching to hub mode');
     final svc = FluxCoapService(ep);
 
-    // Check whether the controller needs fabric provisioning.
-    // fabric_id == 0 means the controller has no operational identity yet.
-    // The app must call POST /fabric/provision before the controller can open
-    // CASE sessions or register nodes.
-    final info = await svc.getInfo();
-    if (info != null && info.fabricId.toInt() == 0) {
-      final hostname = ep.dtlsIdentity ?? ep.host;
-      final alreadyProvisioned = await ControllerSettings.isProvisioned(hostname);
-      if (!alreadyProvisioned) {
-        debugPrint('main: controller not provisioned — running fabric provision flow');
-        final creds = await localChannel.exportFabricForController();
-        if (creds != null) {
-          final result = await svc.provisionFabric(
-            fabricId:  creds.fabricId,
-            nodeId:    0x0002,
-            rootCaTlv: creds.rootCaTlv,
-            nocTlv:    creds.nocTlv,
-            opPrivKey: creds.opPrivKey,
-            ipk:       creds.ipk,
-            vendorId:  0xFFF1,
-          );
-          if (result != null && result.success) {
-            await ControllerSettings.saveProvisionedFlag(hostname);
-            debugPrint('main: controller provisioned — '
-                'fabricIndex=${result.fabricIndex} '
-                'compressedFabricId=0x${result.compressedFabricId.toHexString()}');
-          } else {
-            debugPrint('main: provisioning failed — ${result?.error ?? 'no response'}');
-          }
-        } else {
-          debugPrint('main: exportFabricForController returned null — CHIP SDK unavailable?');
-        }
-      }
-    }
+    // Fabric: the controller owns it and the app *enrolls* to join.  Enrollment
+    // has side effects (imports an identity + relaunches the process), so it is
+    // NEVER auto-run on boot — that would loop if a join can't complete.  It is
+    // user-initiated only (Settings → Flux Hub → Join hub).  Here we just log
+    // the current state.  See docs/multi-phone-fabric.md.
+    final state = await FabricSyncService(localFabric: localChannel, controller: svc)
+        .readState();
+    debugPrint('main: fabric state — ${state.name}');
+
+    // Put both on one Thread network, controller as source of truth: adopt the
+    // controller's network if it has one, otherwise seed it with the app's.
+    final thread = await ThreadSyncService(svc)
+        .ensureInSync(log: (m) => debugPrint('main: thread sync — $m'));
+    debugPrint('main: thread sync result — ${thread.status.name}'
+        '${thread.message != null ? ' (${thread.message})' : ''}');
 
     // setService notifies HubConnection listeners; DeviceProvider (attached
     // above) adopts hub mode in response — no separate adoptHubMode call needed.

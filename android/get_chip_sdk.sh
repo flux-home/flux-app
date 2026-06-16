@@ -6,12 +6,14 @@
 # SetupPayloadParser.jar) and places them in android/app/libs/.
 #
 # Usage:
-#   bash android/get_chip_sdk.sh [--build | --ci]
+#   bash android/get_chip_sdk.sh [--release | --build | --ci]
 #
-#   --ci     Download the latest successful build artifact from
-#            connectedhomeip GitHub Actions (requires gh CLI + authentication).
-#   --build  Clone connectedhomeip and build from source (slow, ~1–2 h).
-#            Requires: Android NDK 28.x, Python 3.10+, CMake 3.25+, Java 17.
+#   --release  (default) Download the pinned prebuilt CHIPController.aar from the
+#              flux-home/flux-app GitHub release (fast, requires gh CLI + auth).
+#   --ci       Download the latest successful build artifact from
+#              connectedhomeip GitHub Actions (requires gh CLI + authentication).
+#   --build    Clone connectedhomeip and build from source (slow, ~1–2 h).
+#              Requires: Android NDK 28.x, Python 3.10+, CMake 3.25+, Java 17.
 #
 # After running successfully, re-run:
 #   flutter build apk --debug
@@ -24,9 +26,32 @@ LIBS_DIR="$SCRIPT_DIR/app/libs"
 CHIP_REPO="https://github.com/project-chip/connectedhomeip"
 CHIP_TAG="${CHIP_TAG:-v1.5.0.0}"   # override via env: CHIP_TAG=v1.4.2.0 bash ...
 
+# Prebuilt SDK release on the app repo (see --release mode).
+FLUX_REPO="${FLUX_REPO:-flux-home/flux-app}"
+SDK_RELEASE_TAG="${SDK_RELEASE_TAG:-chip-sdk-v1.5.0.0}"
+
 mkdir -p "$LIBS_DIR"
 
-MODE="${1:---build}"
+MODE="${1:---release}"
+
+# ── Prebuilt download from the flux-app GitHub release ─────────────────────
+if [[ "$MODE" == "--release" ]]; then
+    if ! command -v gh &>/dev/null; then
+        echo "Error: GitHub CLI (gh) not found. Install from https://cli.github.com/"
+        echo "       or download CHIPController.aar manually from:"
+        echo "       https://github.com/$FLUX_REPO/releases/tag/$SDK_RELEASE_TAG"
+        exit 1
+    fi
+    echo "Downloading CHIPController.aar from $FLUX_REPO release $SDK_RELEASE_TAG ..."
+    gh release download "$SDK_RELEASE_TAG" \
+        --repo "$FLUX_REPO" \
+        --pattern 'CHIPController.aar' \
+        --dir "$LIBS_DIR" \
+        --clobber
+    echo "Done. AAR placed in $LIBS_DIR"
+    echo "Now run: flutter build apk --release"
+    exit 0
+fi
 
 # ── CI download via GitHub CLI ─────────────────────────────────────────────
 if [[ "$MODE" == "--ci" ]]; then
@@ -89,5 +114,5 @@ if [[ "$MODE" == "--build" ]]; then
 fi
 
 echo "Unknown option: $MODE"
-echo "Usage: bash get_chip_sdk.sh [--build | --ci]"
+echo "Usage: bash get_chip_sdk.sh [--release | --build | --ci]"
 exit 1

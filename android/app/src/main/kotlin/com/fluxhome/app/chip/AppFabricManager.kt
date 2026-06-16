@@ -25,6 +25,22 @@ private const val K_APP_NOC   = "app_noc"
 private const val K_IPK       = "ipk"
 private const val K_FABRIC_ID = "fabric_id"
 
+// ── Adopted identity (controller-owned fabric the app enrolled onto) ──────────
+// When present these take precedence over the locally-generated fabric above:
+// the app operates as a leaf node whose NOC was issued by the controller (CA).
+private const val K_AD_ROOT     = "ad_root_tlv"
+private const val K_AD_ICAC     = "ad_icac_tlv"   // may be absent (single-level CA)
+private const val K_AD_NOC      = "ad_noc_tlv"
+private const val K_AD_IPK      = "ad_ipk"
+private const val K_AD_FABRIC   = "ad_fabric_id"
+private const val K_AD_NODE     = "ad_node_id"
+private const val K_AD_OP_PRIV  = "ad_op_priv"    // operational key, PKCS#8 (software)
+private const val K_AD_OP_PUB   = "ad_op_pub"     // operational key, X.509
+// Pending operational keypair: generated for a CSR, kept until the controller
+// returns the matching signed NOC via importAdoptedIdentity.
+private const val K_PEND_PRIV   = "pending_op_priv"
+private const val K_PEND_PUB    = "pending_op_pub"
+
 /**
  * Bump when the cert-minting scheme changes so existing fabrics are regenerated.
  *  v2: 3-tier chain (added ICAC) + back-dated certificate validity.
@@ -106,11 +122,37 @@ object AppFabricManager {
     fun getOrCreate(context: Context): FabricIdentity =
         cached ?: (load(context) ?: create(context))
 
+    /** Controller-issued operational identity installed via [importAdoptedIdentity]. */
+    data class AdoptedIdentity(
+        val rootCaTlv: ByteArray,
+        val icacTlv:   ByteArray?,
+        val nocTlv:    ByteArray,
+        val ipk:       ByteArray,
+        val fabricId:  Long,
+        val nodeId:    Long,
+        val opPrivPkcs8: ByteArray,
+        val opPubX509:   ByteArray,
+    )
+
     /**
-     * The controller's own operational identity (2-tier: Root → App node NOC).
-     * No intermediate certificate — the app node NOC is signed directly by the Root.
+     * The app's operational identity for the CHIP controller.
+     *
+     * Prefers an [AdoptedIdentity] (the app joined a controller-owned fabric:
+     * software operational key + controller-issued NOC).  Falls back to the
+     * locally-generated fabric (legacy / standalone, app-as-CA) otherwise.
      */
     fun operationalKeyConfig(context: Context): OperationalKeyConfig {
+        val adopted = adoptedIdentity(context)
+        if (adopted != null) {
+            val kp = SoftwareKeyPairDelegate.fromEncoded(adopted.opPrivPkcs8, adopted.opPubX509)
+            return OperationalKeyConfig(
+                kp,
+                adopted.rootCaTlv,
+                adopted.icacTlv,        // may be null (single-level CA)
+                adopted.nocTlv,
+                adopted.ipk,
+            )
+        }
         val id = getOrCreate(context)
         return OperationalKeyConfig(
             AppKeyPairDelegate(ALIAS_APP_NODE),
@@ -118,6 +160,109 @@ object AppFabricManager {
             null,           // no ICAC in the controller's own chain
             id.appNocTlv,
             id.ipk,
+        )
+    }
+
+    // ── Controller-owned fabric: enrollment (CSR) + adoption (import) ──────────
+
+    fun hasAdopted(context: Context): Boolean = adoptedIdentity(context) != null
+
+    /**
+     * The app's current operational **raw** fabric id (NOT compressed): the
+     * controller-issued fabric id when adopted, else the local fabric's id.
+     * The controller's `/info.fabric_id` reports this same raw value, so this
+     * is what [FabricSyncService] compares for membership.
+     */
+    fun operationalRawFabricId(context: Context): Long =
+        adoptedIdentity(context)?.fabricId ?: getOrCreate(context).fabricId
+
+    /**
+     * Generates a fresh operational keypair, persists it as *pending*, and
+     * returns its DER PKCS#10 CSR for [FluxCoapService.enrollFabric].  The
+     * matching signed NOC arrives later in [importAdoptedIdentity].
+     */
+    fun generateOperationalCsr(context: Context): ByteArray {
+        val kp  = SoftwareKeyPairDelegate.generate()
+        val csr = kp.createCertificateSigningRequest()
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit().run {
+            putString(K_PEND_PRIV, Base64.encodeToString(kp.keyPair.private.encoded, Base64.DEFAULT))
+            putString(K_PEND_PUB,  Base64.encodeToString(kp.keyPair.public.encoded,  Base64.DEFAULT))
+            apply()
+        }
+        Log.i(TAG, "Generated operational CSR (${csr.size} bytes) for fabric enrollment")
+        return csr
+    }
+
+    /**
+     * Installs the controller-issued credentials ([nocTlv] signed by the
+     * controller CA for the pending operational key) as the app's adopted
+     * identity.  Returns false if there is no pending keypair to match.
+     */
+    fun importAdoptedIdentity(
+        context: Context,
+        rootCaTlv: ByteArray,
+        icacTlv:   ByteArray?,
+        nocTlv:    ByteArray,
+        ipk:       ByteArray,
+        fabricId:  Long,
+        nodeId:    Long,
+    ): Boolean {
+        val p = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val priv = p.getString(K_PEND_PRIV, null) ?: run {
+            Log.e(TAG, "importAdoptedIdentity: no pending operational keypair")
+            return false
+        }
+        val pub = p.getString(K_PEND_PUB, null) ?: return false
+
+        p.edit().run {
+            putString(K_AD_ROOT,   Base64.encodeToString(rootCaTlv, Base64.DEFAULT))
+            if (icacTlv != null && icacTlv.isNotEmpty()) {
+                putString(K_AD_ICAC, Base64.encodeToString(icacTlv, Base64.DEFAULT))
+            } else {
+                remove(K_AD_ICAC)
+            }
+            putString(K_AD_NOC,    Base64.encodeToString(nocTlv, Base64.DEFAULT))
+            putString(K_AD_IPK,    Base64.encodeToString(ipk,    Base64.DEFAULT))
+            putLong  (K_AD_FABRIC, fabricId)
+            putLong  (K_AD_NODE,   nodeId)
+            putString(K_AD_OP_PRIV, priv)
+            putString(K_AD_OP_PUB,  pub)
+            remove(K_PEND_PRIV)
+            remove(K_PEND_PUB)
+            apply()
+        }
+        Log.i(TAG, "Imported adopted identity: fabricId=0x%016X node=0x%016X".format(fabricId, nodeId))
+        return true
+    }
+
+    /** Removes the adopted identity so the app reverts to its local fabric.
+     *  Uses commit() (synchronous) so it is durable before a relaunch. */
+    fun clearAdopted(context: Context) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit().run {
+            remove(K_AD_ROOT); remove(K_AD_ICAC); remove(K_AD_NOC); remove(K_AD_IPK)
+            remove(K_AD_FABRIC); remove(K_AD_NODE); remove(K_AD_OP_PRIV); remove(K_AD_OP_PUB)
+            commit()
+        }
+        Log.w(TAG, "Cleared adopted identity — reverted to local fabric")
+    }
+
+    fun adoptedIdentity(context: Context): AdoptedIdentity? {
+        val p = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val root = p.getString(K_AD_ROOT, null) ?: return null
+        val noc  = p.getString(K_AD_NOC,  null) ?: return null
+        val ipk  = p.getString(K_AD_IPK,  null) ?: return null
+        val priv = p.getString(K_AD_OP_PRIV, null) ?: return null
+        val pub  = p.getString(K_AD_OP_PUB,  null) ?: return null
+        val icac = p.getString(K_AD_ICAC, null)
+        return AdoptedIdentity(
+            rootCaTlv   = Base64.decode(root, Base64.DEFAULT),
+            icacTlv     = icac?.let { Base64.decode(it, Base64.DEFAULT) },
+            nocTlv      = Base64.decode(noc, Base64.DEFAULT),
+            ipk         = Base64.decode(ipk, Base64.DEFAULT),
+            fabricId    = p.getLong(K_AD_FABRIC, 0L),
+            nodeId      = p.getLong(K_AD_NODE, 0L),
+            opPrivPkcs8 = Base64.decode(priv, Base64.DEFAULT),
+            opPubX509   = Base64.decode(pub, Base64.DEFAULT),
         )
     }
 

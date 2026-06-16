@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/ota_progress.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -1072,26 +1071,6 @@ class DeviceInfoScreen extends StatefulWidget {
 }
 
 class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
-  List<FabricDescriptor>? _fabrics;
-  bool _fabricsLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFabrics();
-  }
-
-  Future<void> _loadFabrics() async {
-    setState(() => _fabricsLoading = true);
-    try {
-      final port = context.read<MatterClusterPort>();
-      final fabrics = await port.readFabrics(widget.device.nodeId);
-      if (mounted) setState(() { _fabrics = fabrics; _fabricsLoading = false; });
-    } catch (_) {
-      if (mounted) setState(() { _fabrics = null; _fabricsLoading = false; });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs   = Theme.of(context).colorScheme;
@@ -1141,15 +1120,6 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     )
                   : Column(children: rows),
             ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Commissioned fabrics ──────────────────────────────────────────
-          _FabricsCard(
-            fabrics: _fabrics,
-            loading: _fabricsLoading,
-            onRefresh: _loadFabrics,
           ),
 
           const SizedBox(height: 20),
@@ -1206,142 +1176,6 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       '${dt.hour.toString().padLeft(2, '0')}:'
       '${dt.minute.toString().padLeft(2, '0')}';
 }
-
-// ── Commissioned fabrics card ─────────────────────────────────────────────────
-
-class _FabricsCard extends StatelessWidget {
-  const _FabricsCard({
-    required this.fabrics,
-    required this.loading,
-    required this.onRefresh,
-  });
-
-  final List<FabricDescriptor>? fabrics;
-  final bool loading;
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    Widget body;
-    if (loading) {
-      body = const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    } else if (fabrics == null || fabrics!.isEmpty) {
-      body = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        child: Text(
-          fabrics == null ? 'Could not read fabrics' : 'No fabrics found',
-          style: TextStyle(color: cs.onSurfaceVariant),
-        ),
-      );
-    } else {
-      body = Column(
-        children: fabrics!.asMap().entries.map((entry) {
-          final i = entry.key;
-          final f = entry.value;
-          final isLast = i == fabrics!.length - 1;
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: _FabricRow(fabric: f),
-              ),
-              if (!isLast) Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-            ],
-          );
-        }).toList(),
-      );
-    }
-
-    return Card(
-      color: cs.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-            child: Row(
-              children: [
-                Icon(Icons.lan_outlined, size: 18, color: cs.onSurfaceVariant),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    loading
-                        ? 'Commissioned fabrics — loading…'
-                        : 'Commissioned fabrics'
-                            '\${fabrics != null ? " (\${fabrics!.length})" : ""}',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: cs.onSurfaceVariant),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 18),
-                  onPressed: loading ? null : onRefresh,
-                  tooltip: 'Refresh',
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          body,
-        ],
-      ),
-    );
-  }
-}
-
-class _FabricRow extends StatelessWidget {
-  const _FabricRow({required this.fabric});
-  final FabricDescriptor fabric;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs   = Theme.of(context).colorScheme;
-    final mono = TextStyle(fontFamily: 'monospace', fontSize: 12, color: cs.onSurface);
-    final dim  = TextStyle(fontSize: 11, color: cs.onSurfaceVariant);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 28, height: 28,
-          margin: const EdgeInsets.only(top: 2, right: 12),
-          decoration: BoxDecoration(
-            color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            '\${fabric.fabricIndex}',
-            style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w700,
-              color: cs.onPrimaryContainer,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (fabric.label.isNotEmpty)
-                Text(fabric.label,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-              Row(children: [Text('Fabric ', style: dim), Text(fabric.fabricId, style: mono)]),
-              Row(children: [Text('Node   ', style: dim), Text(fabric.nodeId,   style: mono)]),
-              Row(children: [Text('Vendor ', style: dim), Text(fabric.vendorId, style: mono)]),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 
 class _BatteryCard extends StatelessWidget {
   const _BatteryCard({required this.battery});

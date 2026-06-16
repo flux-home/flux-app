@@ -6,6 +6,7 @@ import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'matter_fakes.dart' show FakeMatterPort;
@@ -225,6 +226,25 @@ class FakeFluxCoapService extends FluxCoapService {
     registeredName = name;
     registeredDeviceType = deviceType;
     return registerNodeResult;
+  }
+}
+
+/// ── FakeFabricSyncService ─────────────────────────────────────────────────────
+///
+/// Returns a canned [FabricState] without touching real ports, so
+/// CommissioningController tests can exercise the join-membership branch.
+/// Extends the real service (its ports are unused stubs).
+class FakeFabricSyncService extends FabricSyncService {
+  FakeFabricSyncService()
+      : super(localFabric: FakeMatterPort(), controller: FakeFluxCoapService());
+
+  FabricState stateResult = FabricState.inSync;
+  int calls = 0;
+
+  @override
+  Future<FabricState> readState() async {
+    calls++;
+    return stateResult;
   }
 }
 

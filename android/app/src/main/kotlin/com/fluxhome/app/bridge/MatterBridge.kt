@@ -125,6 +125,9 @@ class MatterBridge(context: Context) {
     fun getFabricId(result: MethodChannel.Result) =
         deviceInfo.getFabricId(result)
 
+    fun getRawFabricId(result: MethodChannel.Result) =
+        deviceInfo.getRawFabricId(result)
+
     fun getVendorId(result: MethodChannel.Result) =
         deviceInfo.getVendorId(result)
 
@@ -133,6 +136,19 @@ class MatterBridge(context: Context) {
 
     fun exportFabricForController(result: MethodChannel.Result) =
         deviceInfo.exportFabricForController(result)
+
+    fun generateOperationalCsr(result: MethodChannel.Result) =
+        deviceInfo.generateOperationalCsr(result)
+
+    fun importControllerFabric(
+        rootCaTlv: ByteArray?,
+        icacTlv:   ByteArray?,
+        nocTlv:    ByteArray?,
+        ipk:       ByteArray?,
+        fabricId:  Long,
+        nodeId:    Long,
+        result:    MethodChannel.Result,
+    ) = deviceInfo.importControllerFabric(rootCaTlv, icacTlv, nocTlv, ipk, fabricId, nodeId, result)
 
     // ── OnOff + Level ─────────────────────────────────────────────────────────
     fun toggleDevice(nodeId: Long, on: Boolean, result: MethodChannel.Result) =

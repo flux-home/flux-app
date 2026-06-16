@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:matter_home/services/controller_settings.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
+import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -22,10 +25,21 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   ControllerInfo?  _info;
   bool             _loading      = false;
   bool             _syncing      = false;
-  bool             _pushingThread = false;
   Uint8List?       _storedPsk;
   bool             _pskLoaded    = false;
   ThreadDataset?   _activeDataset;
+
+  /// Controller fabric state vs. the app (null = not yet checked / unknown —
+  /// never alarm the user on null).
+  FabricState?     _fabricState;
+  bool             _syncingThread = false;
+
+  /// Live reachability: true once a `/info` read succeeds, false when it fails.
+  /// This is the real "connected" signal — [HubConnection.isConnected] only
+  /// means "a hub was discovered at some point", which stays true even offline.
+  bool             _online   = false;
+  bool             _probing  = false;
+  Timer?           _poll;
 
   @override
   void initState() {
@@ -34,6 +48,18 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     _loadActiveDataset();
     final svc = context.read<HubConnection>().service;
     if (svc != null) _fetchInfo(svc);
+    // Re-probe periodically so the status reflects the hub going on/offline
+    // while this screen is open.
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) {
+      final s = context.read<HubConnection>().service;
+      if (s != null && !_probing && !_loading) _fetchInfo(s);
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
   }
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -54,14 +80,31 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   }
 
   Future<void> _fetchInfo(FluxCoapService svc) async {
+    if (mounted) setState(() => _probing = true);
     final info = await svc.getInfo();
-    if (mounted) setState(() => _info = info);
+    if (!mounted) return;
+    setState(() {
+      _info    = info;
+      _online  = info != null; // real reachability
+      _probing = false;
+    });
+    if (info != null) _checkSync(svc);
+  }
+
+  /// Read-only fabric classification — drives the status banner.
+  /// Never provisions; seeding only happens when the user taps the action.
+  Future<void> _checkSync(FluxCoapService svc) async {
+    final state = await FabricSyncService(
+      localFabric: context.read<MatterChannel>(),
+      controller: svc,
+    ).readState();
+    if (mounted) setState(() => _fabricState = state);
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   Future<void> _rediscover() async {
-    setState(() { _loading = true; _info = null; });
+    setState(() { _loading = true; _info = null; _fabricState = null; _online = false; });
     final hub   = context.read<HubConnection>();
     final found = await hub.reconnect();
     if (!mounted) return;
@@ -165,84 +208,67 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     await ControllerSettings.clearPsk(id);
     await hub.reconnect();
     if (mounted) {
-      setState(() { _storedPsk = null; _info = null; });
+      setState(() { _storedPsk = null; _info = null; _fabricState = null; _online = false; });
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Controller removed')));
+          const SnackBar(content: Text('Hub removed')));
     }
   }
 
-  Future<void> _syncFabric() async {
+  /// Joins this phone to the hub's fabric by enrolling (the hub signs our CSR)
+  /// and importing the issued identity.  Triggered by the "Join hub" banner /
+  /// Advanced action.
+  Future<void> _repairHub() async {
     final hub = context.read<HubConnection>();
     final svc = hub.service;
     if (svc == null) return;
 
     setState(() => _syncing = true);
     try {
-      final localChannel = context.read<MatterChannel>();
-      final creds = await localChannel.exportFabricForController();
-      if (!mounted) return;
-      if (creds == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to export fabric — CHIP SDK not ready')));
-        return;
-      }
-
-      final result = await svc.provisionFabric(
-        fabricId:  creds.fabricId,
-        nodeId:    0x0002,
-        rootCaTlv: creds.rootCaTlv,
-        nocTlv:    creds.nocTlv,
-        opPrivKey: creds.opPrivKey,
-        ipk:       creds.ipk,
-        vendorId:  0xFFF1,
-      );
+      final sync = await FabricSyncService(
+        localFabric: context.read<MatterChannel>(),
+        controller: svc,
+      ).ensureInSync();
       if (!mounted) return;
 
-      if (result != null && result.success) {
-        final hostname = hub.service?.endpoint.dtlsIdentity
-            ?? _info?.hostname
-            ?? hub.service?.endpoint.host ?? '';
-        if (hostname.isNotEmpty) {
-          await ControllerSettings.saveProvisionedFlag(hostname);
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Fabric synced to controller')));
-        _fetchInfo(svc);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Sync failed: ${result?.error ?? 'no response'}')));
-      }
+      final message = switch (sync.status) {
+        FabricSyncStatus.adopted            => 'Joined the hub — restarting to finish…',
+        FabricSyncStatus.inSync             => 'Already connected to this hub ✓',
+        FabricSyncStatus.adoptRequired      => 'Joining a hub isn\'t supported on '
+            'this device yet — update the app',
+        FabricSyncStatus.controllerNotReady => 'Hub is still starting up — try again in a moment',
+        FabricSyncStatus.notReady           => 'Not ready yet — please try again in a moment',
+        FabricSyncStatus.unreachable        => 'Hub is offline — check it\'s powered on and nearby',
+        FabricSyncStatus.failed             => 'Couldn\'t join the hub — please try again',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      if (sync.ok) _fetchInfo(svc);
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
   }
 
-  Future<void> _pushThreadDataset() async {
+  /// Reconciles the Thread network with the hub as source of truth: adopts the
+  /// hub's network if it has one, otherwise pushes the app's active dataset.
+  Future<void> _syncThread() async {
     final svc = context.read<HubConnection>().service;
-    if (svc == null || _activeDataset == null) return;
+    if (svc == null) return;
 
-    final hex = _activeDataset!.hex.replaceAll(RegExp(r'\s'), '');
-    if (hex.isEmpty) return;
-
-    setState(() => _pushingThread = true);
+    setState(() => _syncingThread = true);
     try {
-      final bytes = Uint8List.fromList(List.generate(
-        hex.length ~/ 2,
-        (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16),
-      ));
-      final ok = await svc.postThreadDataset(bytes);
+      final result = await ThreadSyncService(svc).ensureInSync();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok
-            ? 'Thread dataset pushed to controller ✓'
-            : 'Push failed — check controller logs'),
-      ));
-    } on Exception catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+
+      final message = switch (result.status) {
+        ThreadSyncStatus.adopted     => 'Using the hub\'s Thread network ✓',
+        ThreadSyncStatus.pushed      => 'Thread network sent to the hub ✓',
+        ThreadSyncStatus.inSync      => 'Thread network already in sync ✓',
+        ThreadSyncStatus.nothingToDo => 'No Thread network configured yet',
+        ThreadSyncStatus.unreachable => 'Couldn\'t reach the hub — try again',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      if (result.status == ThreadSyncStatus.adopted) _loadActiveDataset();
     } finally {
-      if (mounted) setState(() => _pushingThread = false);
+      if (mounted) setState(() => _syncingThread = false);
     }
   }
 
@@ -263,9 +289,10 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs  = Theme.of(context).colorScheme;
-    final hub = context.watch<HubConnection>();
-    final connected = hub.isConnected;
+    context.watch<HubConnection>(); // rebuild when the service is swapped
+    // "connected" = the hub is actually reachable right now (last /info ok),
+    // not merely "a hub was discovered once" (hub.isConnected).
+    final connected = _online;
     final hasPsk    = _pskLoaded && _storedPsk != null;
 
     return Scaffold(
@@ -277,198 +304,302 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                 ? const SizedBox(width: 18, height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.refresh_outlined),
-            tooltip: 'Search for controller',
+            tooltip: 'Search again',
             onPressed: _loading ? null : _rediscover,
           ),
         ],
       ),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 40),
         children: [
           const SizedBox(height: 8),
 
-          // ── Connection status ─────────────────────────────────────────────
-          _sectionLabel(context, 'Connection'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 3),
-                    width: 10, height: 10,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: connected
-                          ? Colors.green.shade400
-                          : cs.outline,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: connected && _info != null
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Connected',
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 6),
-                              _row('Host',     _info!.hostname),
-                              _row('IP',       _info!.ethernetIp),
-                              _row('Firmware', _info!.firmwareVersion),
-                            ],
-                          )
-                        : Text(
-                            _loading
-                                ? 'Searching…'
-                                : connected
-                                    ? 'Connected — loading info…'
-                                    : hasPsk
-                                        ? 'Controller not found.\nTap ↺ to search again.'
-                                        : 'No controller added yet.\nTap "Add Controller" below.',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: cs.onSurfaceVariant),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _statusHeader(connected: connected, hasPsk: hasPsk),
 
-          const SizedBox(height: 24),
+          if (connected && _fabricState == FabricState.needsAdopt)
+            _joinBanner(),
+          if (connected && _fabricState == FabricState.controllerNotReady)
+            _startingUpBanner(),
 
-          // ── Controller ────────────────────────────────────────────────────
-          _sectionLabel(context, 'Controller'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                if (hasPsk) ...[
-                  ListTile(
-                    leading: Icon(Icons.lock_outlined,
-                        color: connected
-                            ? Colors.green.shade400
-                            : cs.onSurfaceVariant),
-                    title: Text(
-                      connected ? 'Secured (DTLS)' : 'Controller added',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    subtitle: Text(
-                      'PSK: ${_pskSummary(_storedPsk!)}',
-                      style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          color: cs.onSurfaceVariant),
-                    ),
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    leading: Icon(Icons.delete_outline,
-                        color: cs.error),
-                    title: Text('Remove controller',
-                        style: TextStyle(color: cs.error)),
-                    onTap: _clearPsk,
-                  ),
-                ] else ...[
-                  ListTile(
-                    leading: const Icon(Icons.add_circle_outline),
-                    title: const Text('Add Controller'),
-                    subtitle: const Text('Scan the QR code on the controller'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _loading ? null : _addController,
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          if (connected && _activeDataset != null) ...[
-            const SizedBox(height: 24),
-            _sectionLabel(context, 'Thread'),
-            Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              child: ListTile(
-                leading: _pushingThread
-                    ? SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: cs.primary))
-                    : Icon(Icons.upload_outlined, color: cs.primary),
-                title: const Text('Push Thread dataset'),
-                subtitle: Text(
-                  _activeDataset!.label,
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                ),
-                onTap: _pushingThread ? null : _pushThreadDataset,
-              ),
-            ),
-          ],
-
-          if (connected) ...[
-            const SizedBox(height: 24),
-            _sectionLabel(context, 'Fabric'),
+          if (hasPsk) ...[
+            const SizedBox(height: 8),
+            _sectionLabel(context, 'Hub'),
             Card(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
-                  if (_info != null)
-                    ListTile(
-                      leading: Icon(
-                        _info!.fabricId.toInt() != 0
-                            ? Icons.verified_outlined
-                            : Icons.sync_problem_outlined,
-                        color: _info!.fabricId.toInt() != 0
-                            ? Colors.green.shade400
-                            : cs.error,
-                      ),
-                      title: Text(
-                        _info!.fabricId.toInt() != 0
-                            ? 'Provisioned'
-                            : 'Not provisioned',
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                      subtitle: _info!.fabricId.toInt() != 0
-                          ? Text(
-                              'Fabric ID: 0x${_info!.fabricId.toHexString()}',
-                              style: TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 12,
-                                  color: cs.onSurfaceVariant),
-                            )
-                          : Text(
-                              'Controller has no fabric identity',
-                              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-                            ),
-                    ),
-                  if (_info != null)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                   ListTile(
-                    leading: _syncing
-                        ? SizedBox(
-                            width: 20, height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: cs.primary))
-                        : const Icon(Icons.sync_outlined),
-                    title: Text(
-                      _info?.fabricId.toInt() != 0
-                          ? 'Re-sync fabric'
-                          : 'Sync fabric to controller',
-                    ),
-                    subtitle: const Text(
-                        'Sends the app\'s Root CA and controller NOC via CoAP'),
-                    onTap: _syncing ? null : _syncFabric,
+                    leading: Icon(Icons.lock_outline,
+                        color: connected
+                            ? Colors.green.shade400
+                            : Theme.of(context).colorScheme.onSurfaceVariant),
+                    title: const Text('Secure connection'),
+                    subtitle: Text(connected
+                        ? 'Your hub is connected and encrypted'
+                        : 'Set up — will connect when in range'),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: Icon(Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error),
+                    title: Text('Remove hub',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    onTap: _clearPsk,
                   ),
                 ],
               ),
             ),
+          ] else ...[
+            const SizedBox(height: 8),
+            _sectionLabel(context, 'Hub'),
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              child: ListTile(
+                leading: const Icon(Icons.add_circle_outline),
+                title: const Text('Add your hub'),
+                subtitle: const Text('Scan the QR code on the hub to connect'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _loading ? null : _addController,
+              ),
+            ),
           ],
 
-          const SizedBox(height: 40),
+          if (connected && _info != null &&
+              _info!.firmwareVersion.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _sectionLabel(context, 'About'),
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              child: ListTile(
+                leading: const Icon(Icons.memory_outlined),
+                title: const Text('Software'),
+                subtitle: Text('Version ${_info!.firmwareVersion}'),
+              ),
+            ),
+          ],
+
+          if (connected) _advancedSection(),
         ],
       ),
     );
+  }
+
+  // ── Status header ────────────────────────────────────────────────────────
+
+  Widget _statusHeader({required bool connected, required bool hasPsk}) {
+    final cs = Theme.of(context).colorScheme;
+    final (String title, String? subtitle) = switch (true) {
+      _ when _loading                       => ('Searching for your hub…', null),
+      _ when connected                      => ('Connected', _hubName()),
+      _ when hasPsk && _probing && !_online => ('Checking hub…', null),
+      _ when hasPsk                         => ('Hub offline',
+          'Make sure it\'s powered on and on the same Wi-Fi, then tap ↻'),
+      _                                     => ('No hub yet', 'Add your hub to get started'),
+    };
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 12, height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: connected ? Colors.green.shade400 : cs.outline,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: cs.onSurfaceVariant)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A friendly name for the hub — falls back to a generic label.
+  String _hubName() {
+    final host = _info?.hostname ?? '';
+    return host.isNotEmpty ? host : 'Flux Hub';
+  }
+
+  // ── Banners ────────────────────────────────────────────────────────────────
+
+  /// Shown when the hub has a fabric this phone hasn't joined yet.
+  Widget _joinBanner() {
+    final cs = Theme.of(context).colorScheme;
+    return _bannerCard(
+      color: cs.primaryContainer,
+      fg: cs.onPrimaryContainer,
+      icon: Icons.group_add_outlined,
+      title: 'Join this hub',
+      body: 'Connect this phone to the hub so it can see and control the same '
+          'devices as your other phones.',
+      action: FilledButton.icon(
+        onPressed: _syncing ? null : _repairHub,
+        icon: _syncing
+            ? const SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.check_circle_outline, size: 18),
+        label: Text(_syncing ? 'Joining…' : 'Join hub'),
+      ),
+    );
+  }
+
+  /// Shown briefly while the hub is still generating its identity on first boot.
+  Widget _startingUpBanner() {
+    final cs = Theme.of(context).colorScheme;
+    return _bannerCard(
+      color: cs.surfaceContainerHighest,
+      fg: cs.onSurface,
+      icon: Icons.hourglass_top_outlined,
+      title: 'Hub is starting up',
+      body: 'Your hub is getting ready. This only takes a moment — pull to '
+          'refresh if it doesn\'t finish.',
+    );
+  }
+
+  Widget _bannerCard({
+    required Color color,
+    required Color fg,
+    required IconData icon,
+    required String title,
+    required String body,
+    Widget? action,
+  }) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      color: color,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: fg),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(color: fg, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(body,
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: fg)),
+                  if (action != null) ...[
+                    const SizedBox(height: 10),
+                    action,
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Advanced / Diagnostics (collapsed by default) ──────────────────────────
+
+  Widget _advancedSection() {
+    final cs = Theme.of(context).colorScheme;
+    final fabricProvisioned = (_info?.fabricId.toInt() ?? 0) != 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          leading: const Icon(Icons.tune_outlined),
+          title: const Text('Advanced'),
+          subtitle: const Text('Diagnostics & technical details'),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          children: [
+            // Connection details
+            if (_info != null) ...[
+              _detailRow('Host', _info!.hostname),
+              if (_info!.ethernetIp.isNotEmpty)
+                _detailRow('IP address', _info!.ethernetIp),
+              if (_info!.firmwareVersion.isNotEmpty)
+                _detailRow('Firmware', _info!.firmwareVersion),
+              if (_info!.uptimeSeconds > 0)
+                _detailRow('Uptime', _formatUptime(_info!.uptimeSeconds)),
+            ],
+            if (_storedPsk != null)
+              _detailRow('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
+            _detailRow(
+              'Fabric',
+              fabricProvisioned
+                  ? '0x${_info!.fabricId.toHexString()} · ${_fabricStateLabel()}'
+                  : 'none',
+            ),
+
+            const Divider(height: 1, indent: 16, endIndent: 16),
+
+            // Technical actions
+            ListTile(
+              leading: _syncing
+                  ? SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: cs.primary))
+                  : const Icon(Icons.sync_outlined),
+              title: const Text('Join hub fabric'),
+              subtitle: const Text(
+                  'Enroll this phone on the hub\'s fabric (the hub signs our '
+                  'certificate)'),
+              onTap: _syncing ? null : _repairHub,
+            ),
+            ListTile(
+              leading: _syncingThread
+                  ? SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: cs.primary))
+                  : const Icon(Icons.hub_outlined),
+              title: const Text('Sync Thread network'),
+              subtitle: Text(_activeDataset != null && !_activeDataset!.isEmpty
+                  ? 'Adopt the hub\'s network, or send "${_activeDataset!.label}"'
+                  : 'Adopt the hub\'s Thread network if it has one'),
+              onTap: _syncingThread ? null : _syncThread,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fabricStateLabel() => switch (_fabricState) {
+        FabricState.inSync             => 'joined',
+        FabricState.needsAdopt         => 'not joined',
+        FabricState.controllerNotReady => 'hub starting up',
+        _                              => 'unknown',
+      };
+
+  static String _formatUptime(int seconds) {
+    final d = seconds ~/ 86400;
+    final h = (seconds % 86400) ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    if (d > 0) return '${d}d ${h}h';
+    if (h > 0) return '${h}h ${m}m';
+    return '${m}m';
   }
 
   Widget _sectionLabel(BuildContext context, String label) => Padding(
@@ -479,15 +610,19 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
             letterSpacing: 0.8)),
   );
 
-  Widget _row(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 2),
-    child: Row(children: [
-      SizedBox(width: 72,
-          child: Text('$label:', style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w500))),
-      Expanded(child: Text(value, style: const TextStyle(
-          fontSize: 12, fontFamily: 'monospace'))),
-    ]),
+  Widget _detailRow(String label, String value) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 92,
+            child: Text(label, style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        Expanded(child: Text(value, style: const TextStyle(
+            fontSize: 13, fontFamily: 'monospace'))),
+      ],
+    ),
   );
 }
 

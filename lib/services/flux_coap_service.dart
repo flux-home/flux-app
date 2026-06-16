@@ -219,6 +219,10 @@ class FluxCoapService implements MatterPort {
 
   /// Installs the app's fabric identity on the controller (Node 0x0002).
   /// Call once when [getInfo] returns `fabricId == 0` (controller unprovisioned).
+  ///
+  /// When [rcacPrivKey] (the raw 32-byte RCAC private scalar) is supplied the
+  /// controller stores it and becomes the fabric CA, so it can later answer
+  /// [enrollFabric] and [signDeviceNoc] for additional phones / devices.
   Future<$proto.FabricProvisionResult?> provisionFabric({
     required int       fabricId,
     required int       nodeId,
@@ -227,23 +231,70 @@ class FluxCoapService implements MatterPort {
     required Uint8List opPrivKey,
     required Uint8List ipk,
     Uint8List?         icacTlv,
+    Uint8List?         rcacPrivKey,
     int                vendorId = 0,
   }) async {
     final req = $proto.FabricProvision()
       ..fabricId  = Int64(fabricId)
       ..nodeId    = Int64(nodeId)
-      ..rootCaTlv = rootCaTlv
-      ..nocTlv    = nocTlv
+      ..rootCaDer = rootCaTlv
+      ..nocDer    = nocTlv
       ..opPrivKey = opPrivKey
       ..ipk       = ipk
       ..vendorId  = vendorId;
-    if (icacTlv != null) req.icacTlv = icacTlv;
+    if (icacTlv != null) req.icacDer = icacTlv;
+    if (rcacPrivKey != null) req.rcacPrivKey = rcacPrivKey;
     final body = await _post('/fabric/provision', req.writeToBuffer(),
         timeout: const Duration(seconds: 30));
     if (body == null) return null;
     try { return $proto.FabricProvisionResult.fromBuffer(body); }
     on Exception catch (e) {
       debugPrint('FluxCoapService.provisionFabric: $e');
+      return null;
+    }
+  }
+
+  // ── Fabric enrollment — POST /fabric/enroll ──────────────────────────────
+
+  /// Enrolls this phone onto the controller's fabric.  Sends a DER PKCS#10
+  /// [csr]; the controller (acting as CA) signs it and returns the full
+  /// credential set the phone needs to import as its operational identity.
+  /// [nodeId] of 0 lets the controller assign one.
+  Future<$proto.FabricEnrollResponse?> enrollFabric({
+    required Uint8List csr,
+    int                nodeId = 0,
+  }) async {
+    final req = $proto.FabricEnrollRequest()
+      ..csr    = csr
+      ..nodeId = Int64(nodeId);
+    final body = await _post('/fabric/enroll', req.writeToBuffer(),
+        timeout: const Duration(seconds: 30));
+    if (body == null) return null;
+    try { return $proto.FabricEnrollResponse.fromBuffer(body); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.enrollFabric: $e');
+      return null;
+    }
+  }
+
+  // ── Delegated device-NOC signing — POST /fabric/sign-noc ─────────────────
+
+  /// Forwards a device's [csr] (captured mid-commissioning) to the controller
+  /// for signing, so the fabric root key never leaves the controller.  Returns
+  /// the signed device NOC chain.  [nodeId] of 0 lets the controller assign one.
+  Future<$proto.FabricSignNocResponse?> signDeviceNoc({
+    required Uint8List csr,
+    int                nodeId = 0,
+  }) async {
+    final req = $proto.FabricSignNocRequest()
+      ..csr    = csr
+      ..nodeId = Int64(nodeId);
+    final body = await _post('/fabric/sign-noc', req.writeToBuffer(),
+        timeout: const Duration(seconds: 30));
+    if (body == null) return null;
+    try { return $proto.FabricSignNocResponse.fromBuffer(body); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.signDeviceNoc: $e');
       return null;
     }
   }
@@ -656,6 +707,9 @@ class FluxCoapService implements MatterPort {
     return info != null ? info.fabricId.toHexString() : null;
   }
 
+  @override
+  Future<String?> getRawFabricId() async => null; // hub side: use local channel
+
   @override Future<int?> getVendorId() async => null;
   @override Future<bool> downloadAndFlash({
     required int nodeId, required String otaUrl,
@@ -678,6 +732,12 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<FabricExportData?> exportFabricForController() async => null; // hub side: use local channel
+
+  @override
+  Future<Uint8List?> generateOperationalCsr() async => null; // hub side: use local channel
+
+  @override
+  Future<bool> importControllerFabric(FabricImportData creds) async => false; // hub side: use local channel
 
   @override
   Future<ParsedPayload?> parsePayload(String payload) async => null;

@@ -14,6 +14,32 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+/// Connection lifecycle stages reported by the controller for each device.
+class ConnectivityState extends $pb.ProtobufEnum {
+  static const ConnectivityState CONNECTIVITY_UNKNOWN =
+      ConnectivityState._(0, _omitEnumNames ? '' : 'CONNECTIVITY_UNKNOWN');
+  static const ConnectivityState CONNECTIVITY_DISCOVERING =
+      ConnectivityState._(1, _omitEnumNames ? '' : 'CONNECTIVITY_DISCOVERING');
+  static const ConnectivityState CONNECTIVITY_SUBSCRIBED =
+      ConnectivityState._(2, _omitEnumNames ? '' : 'CONNECTIVITY_SUBSCRIBED');
+  static const ConnectivityState CONNECTIVITY_RETRYING =
+      ConnectivityState._(3, _omitEnumNames ? '' : 'CONNECTIVITY_RETRYING');
+
+  static const $core.List<ConnectivityState> values = <ConnectivityState>[
+    CONNECTIVITY_UNKNOWN,
+    CONNECTIVITY_DISCOVERING,
+    CONNECTIVITY_SUBSCRIBED,
+    CONNECTIVITY_RETRYING,
+  ];
+
+  static final $core.List<ConnectivityState?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 3);
+  static ConnectivityState? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ConnectivityState._(super.value, super.name);
+}
+
 class DeviceEventType extends $pb.ProtobufEnum {
   static const DeviceEventType DEVICE_EVENT_ESTABLISHED =
       DeviceEventType._(0, _omitEnumNames ? '' : 'DEVICE_EVENT_ESTABLISHED');
@@ -23,16 +49,19 @@ class DeviceEventType extends $pb.ProtobufEnum {
       DeviceEventType._(2, _omitEnumNames ? '' : 'DEVICE_EVENT_ERROR');
   static const DeviceEventType DEVICE_EVENT_RESUBSCRIBING =
       DeviceEventType._(3, _omitEnumNames ? '' : 'DEVICE_EVENT_RESUBSCRIBING');
+  static const DeviceEventType DEVICE_EVENT_DISCOVERING =
+      DeviceEventType._(4, _omitEnumNames ? '' : 'DEVICE_EVENT_DISCOVERING');
 
   static const $core.List<DeviceEventType> values = <DeviceEventType>[
     DEVICE_EVENT_ESTABLISHED,
     DEVICE_EVENT_ATTRS_UPDATE,
     DEVICE_EVENT_ERROR,
     DEVICE_EVENT_RESUBSCRIBING,
+    DEVICE_EVENT_DISCOVERING,
   ];
 
   static final $core.List<DeviceEventType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 3);
+      $pb.ProtobufEnum.$_initByValueList(values, 4);
   static DeviceEventType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

@@ -23,10 +23,23 @@ See [docs/SUPPORTED_DEVICES.md](docs/SUPPORTED_DEVICES.md) for the full list of 
 | NDK | 28.2.13676358 |
 
 The real CHIP SDK AAR (`CHIPController.aar`, ~31 MB) is **not bundled** in this repository.
-Obtain it by running the helper script:
+
+**Fastest — download the prebuilt SDK from the GitHub release** (recommended):
 
 ```bash
-bash android/get_chip_sdk.sh
+bash android/get_chip_sdk.sh --release
+```
+
+This pulls the pinned build from
+[`flux-home/flux-app` release `chip-sdk-v1.5.0.0`](https://github.com/flux-home/flux-app/releases/tag/chip-sdk-v1.5.0.0)
+(requires the `gh` CLI, authenticated) and drops `CHIPController.aar` into
+`android/app/libs/`. The same release also carries `Matter.xcframework.zip` for the iOS build.
+
+Other options:
+
+```bash
+bash android/get_chip_sdk.sh --ci      # latest connectedhomeip GitHub Actions artifact
+bash android/get_chip_sdk.sh --build   # build from source (~1–2 h)
 ```
 
 Or place it manually at:
@@ -35,7 +48,8 @@ Or place it manually at:
 android/app/libs/CHIPController.aar
 ```
 
-Build it from [connectedhomeip](https://github.com/project-chip/connectedhomeip)
+To build the AAR yourself, build from
+[connectedhomeip](https://github.com/project-chip/connectedhomeip) (tag `v1.5.0.0`)
 or copy from an existing CHIPTool build:
 
 ```

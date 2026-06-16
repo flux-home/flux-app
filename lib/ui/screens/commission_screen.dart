@@ -5,6 +5,7 @@ import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/qr_payload_service.dart';
@@ -61,6 +62,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
   // ── Commissioning controller ──────────────────────────────────────────────
   late CommissioningController _ctrl;
 
+  /// Cached so [dispose] can remove the listener without calling
+  /// `context.read` during teardown (which throws once the element is defunct).
+  late final HubConnection _hub;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
@@ -75,12 +80,19 @@ class _CommissionScreenState extends State<CommissionScreen> {
       onNeedsCredentials: _credentialCallback,
       threadDataset: () => _threadCtrl.text,
       controllerService: hubService,
+      fabricSync: hubService == null
+          ? null
+          : FabricSyncService(
+              localFabric: context.read<MatterChannel>(),
+              controller: hubService,
+            ),
     );
     _ctrl.addListener(_onControllerChanged);
 
     // If hub discovery completes after the screen opens (race on first launch),
     // rebuild the controller so it uses the hub service for BLE handoff.
-    context.read<HubConnection>().addListener(_onHubConnectionChanged);
+    _hub = context.read<HubConnection>();
+    _hub.addListener(_onHubConnectionChanged);
 
     // Pre-fill Thread dataset from stored settings, then handle any initial
     // payload.  Both run after the async load so that _threadExplicitlySelected
@@ -126,6 +138,10 @@ class _CommissionScreenState extends State<CommissionScreen> {
       onNeedsCredentials: _credentialCallback,
       threadDataset: () => _threadCtrl.text,
       controllerService: hubService,
+      fabricSync: FabricSyncService(
+        localFabric: context.read<MatterChannel>(),
+        controller: hubService,
+      ),
     );
     _ctrl.addListener(_onControllerChanged);
     if (oldPayload != null) _ctrl.setPayload(oldPayload);
@@ -133,7 +149,7 @@ class _CommissionScreenState extends State<CommissionScreen> {
 
   @override
   void dispose() {
-    context.read<HubConnection>().removeListener(_onHubConnectionChanged);
+    _hub.removeListener(_onHubConnectionChanged);
     _ctrl
       ..removeListener(_onControllerChanged)
       ..dispose();

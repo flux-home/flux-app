@@ -4,6 +4,7 @@ import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/commissioning_fakes.dart';
@@ -26,6 +27,7 @@ void main() {
   /// requestBlePermissions; [threadDataset] seeds the local dataset getter.
   CommissioningController build({
     FakeFluxCoapService? controllerService,
+    FabricSyncService? fabricSync,
     CommissionCredentials? creds,
     bool blePermitted = true,
     String threadDataset = '',
@@ -37,6 +39,7 @@ void main() {
       onNeedsCredentials: (_) async => creds,
       threadDataset: () => threadDataset,
       controllerService: controllerService,
+      fabricSync: fabricSync,
     );
   }
 
@@ -104,7 +107,7 @@ void main() {
       expect(prefs.getString('last_matter_qr_payload'), isNull);
     });
 
-    test('Thread dataset auto-fetched from controller when empty (hub mode)', () async {
+    test('uses the hub Thread network in hub mode', () async {
       final svc = FakeFluxCoapService()..threadDatasetHexResult = 'AABBCCDD';
       final c = build(controllerService: svc);
       await setParsed(c);
@@ -122,6 +125,29 @@ void main() {
       expect(c.phase, CommissionPhase.done);
     });
 
+    test('hub Thread network is preferred over the app\'s local dataset', () async {
+      final svc = FakeFluxCoapService()..threadDatasetHexResult = 'AABBCCDD';
+      // App has its own local dataset, but the hub owns the network → hub wins.
+      final c = build(controllerService: svc, threadDataset: 'DEAD');
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
+
+      expect(svc.getThreadDatasetCalls, 1);
+      expect(port.lastThreadDatasetHex, 'AABBCCDD'); // hub's, not 'DEAD'
+    });
+
+    test('falls back to the app dataset when the hub has no Thread network', () async {
+      final svc = FakeFluxCoapService(); // threadDatasetHexResult = null
+      final c = build(controllerService: svc, threadDataset: 'DEAD');
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
+
+      expect(svc.getThreadDatasetCalls, 1);
+      expect(port.lastThreadDatasetHex, 'DEAD'); // hub had none → app dataset
+    });
+
     test('grantControllerAccess failure → failed, node not registered', () async {
       final svc = FakeFluxCoapService();
       port.aclGrantResult = false;
@@ -136,6 +162,39 @@ void main() {
       expect(provider.failCalled, isTrue);
       expect(c.phase, CommissionPhase.failed);
       expect(c.error, isNotNull);
+    });
+
+    test('on the hub fabric → device handed to controller', () async {
+      final svc = FakeFluxCoapService();
+      final sync = FakeFabricSyncService()..stateResult = FabricState.inSync;
+      final c = build(controllerService: svc, fabricSync: sync, threadDataset: 'DEAD');
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
+
+      expect(sync.calls, 1);
+      expect(port.grantAclCalls, 1);
+      expect(svc.registerNodeCalls, 1);
+      expect(provider.registeredManagedBy, ManagedBy.controller);
+      expect(c.phase, CommissionPhase.done);
+    });
+
+    test('not joined to hub → no handover, device kept on phone (no adopt)', () async {
+      final svc = FakeFluxCoapService();
+      final sync = FakeFabricSyncService()..stateResult = FabricState.needsAdopt;
+      final c = build(controllerService: svc, fabricSync: sync, threadDataset: 'DEAD');
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
+
+      expect(sync.calls, 1);
+      // Never adopts mid-commission, never hands a device to a hub we're not on.
+      expect(port.grantAclCalls, 0);
+      expect(svc.registerNodeCalls, 0);
+      // Commissioning still succeeds — the device stays usable via the phone.
+      expect(provider.registeredManagedBy, ManagedBy.phone);
+      expect(c.phase, CommissionPhase.done);
+      expect(provider.failCalled, isFalse);
     });
 
     test('commission failure → phase failed with error', () async {

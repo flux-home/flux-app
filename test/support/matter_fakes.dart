@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter_home/models/basic_info.dart';
@@ -164,6 +165,12 @@ class FakeMatterPort implements MatterPort {
   Future<FabricExportData?> exportFabricForController() async => null;
 
   @override
+  Future<Uint8List?> generateOperationalCsr() async => null;
+
+  @override
+  Future<bool> importControllerFabric(FabricImportData creds) async => false;
+
+  @override
   Future<bool> downloadAndFlash({
     required int nodeId,
     required String otaUrl,
@@ -179,6 +186,9 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<String?> getFabricId() async => null;
+
+  @override
+  Future<String?> getRawFabricId() async => null;
 
   @override
   Future<int?> getVendorId() async => null;

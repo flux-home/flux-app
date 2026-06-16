@@ -15,6 +15,23 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use connectivityStateDescriptor instead')
+const ConnectivityState$json = {
+  '1': 'ConnectivityState',
+  '2': [
+    {'1': 'CONNECTIVITY_UNKNOWN', '2': 0},
+    {'1': 'CONNECTIVITY_DISCOVERING', '2': 1},
+    {'1': 'CONNECTIVITY_SUBSCRIBED', '2': 2},
+    {'1': 'CONNECTIVITY_RETRYING', '2': 3},
+  ],
+};
+
+/// Descriptor for `ConnectivityState`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List connectivityStateDescriptor = $convert.base64Decode(
+    'ChFDb25uZWN0aXZpdHlTdGF0ZRIYChRDT05ORUNUSVZJVFlfVU5LTk9XThAAEhwKGENPTk5FQ1'
+    'RJVklUWV9ESVNDT1ZFUklORxABEhsKF0NPTk5FQ1RJVklUWV9TVUJTQ1JJQkVEEAISGQoVQ09O'
+    'TkVDVElWSVRZX1JFVFJZSU5HEAM=');
+
 @$core.Deprecated('Use deviceEventTypeDescriptor instead')
 const DeviceEventType$json = {
   '1': 'DeviceEventType',
@@ -23,6 +40,7 @@ const DeviceEventType$json = {
     {'1': 'DEVICE_EVENT_ATTRS_UPDATE', '2': 1},
     {'1': 'DEVICE_EVENT_ERROR', '2': 2},
     {'1': 'DEVICE_EVENT_RESUBSCRIBING', '2': 3},
+    {'1': 'DEVICE_EVENT_DISCOVERING', '2': 4},
   ],
 };
 
@@ -30,7 +48,7 @@ const DeviceEventType$json = {
 final $typed_data.Uint8List deviceEventTypeDescriptor = $convert.base64Decode(
     'Cg9EZXZpY2VFdmVudFR5cGUSHAoYREVWSUNFX0VWRU5UX0VTVEFCTElTSEVEEAASHQoZREVWSU'
     'NFX0VWRU5UX0FUVFJTX1VQREFURRABEhYKEkRFVklDRV9FVkVOVF9FUlJPUhACEh4KGkRFVklD'
-    'RV9FVkVOVF9SRVNVQlNDUklCSU5HEAM=');
+    'RV9FVkVOVF9SRVNVQlNDUklCSU5HEAMSHAoYREVWSUNFX0VWRU5UX0RJU0NPVkVSSU5HEAQ=');
 
 @$core.Deprecated('Use controllerInfoDescriptor instead')
 const ControllerInfo$json = {
@@ -42,6 +60,7 @@ const ControllerInfo$json = {
     {'1': 'ethernet_up', '3': 4, '4': 1, '5': 8, '10': 'ethernetUp'},
     {'1': 'fabric_id', '3': 5, '4': 1, '5': 4, '10': 'fabricId'},
     {'1': 'uptime_seconds', '3': 6, '4': 1, '5': 13, '10': 'uptimeSeconds'},
+    {'1': 'serial_number', '3': 7, '4': 1, '5': 9, '10': 'serialNumber'},
   ],
 };
 
@@ -50,7 +69,8 @@ final $typed_data.Uint8List controllerInfoDescriptor = $convert.base64Decode(
     'Cg5Db250cm9sbGVySW5mbxIpChBmaXJtd2FyZV92ZXJzaW9uGAEgASgJUg9maXJtd2FyZVZlcn'
     'Npb24SGgoIaG9zdG5hbWUYAiABKAlSCGhvc3RuYW1lEh8KC2V0aGVybmV0X2lwGAMgASgJUgpl'
     'dGhlcm5ldElwEh8KC2V0aGVybmV0X3VwGAQgASgIUgpldGhlcm5ldFVwEhsKCWZhYnJpY19pZB'
-    'gFIAEoBFIIZmFicmljSWQSJQoOdXB0aW1lX3NlY29uZHMYBiABKA1SDXVwdGltZVNlY29uZHM=');
+    'gFIAEoBFIIZmFicmljSWQSJQoOdXB0aW1lX3NlY29uZHMYBiABKA1SDXVwdGltZVNlY29uZHMS'
+    'IwoNc2VyaWFsX251bWJlchgHIAEoCVIMc2VyaWFsTnVtYmVy');
 
 @$core.Deprecated('Use threadDatasetDescriptor instead')
 const ThreadDataset$json = {
@@ -81,22 +101,23 @@ const FabricProvision$json = {
   '2': [
     {'1': 'fabric_id', '3': 1, '4': 1, '5': 4, '10': 'fabricId'},
     {'1': 'node_id', '3': 2, '4': 1, '5': 4, '10': 'nodeId'},
-    {'1': 'root_ca_tlv', '3': 3, '4': 1, '5': 12, '10': 'rootCaTlv'},
-    {'1': 'icac_tlv', '3': 4, '4': 1, '5': 12, '10': 'icacTlv'},
-    {'1': 'noc_tlv', '3': 5, '4': 1, '5': 12, '10': 'nocTlv'},
+    {'1': 'root_ca_der', '3': 3, '4': 1, '5': 12, '10': 'rootCaDer'},
+    {'1': 'icac_der', '3': 4, '4': 1, '5': 12, '10': 'icacDer'},
+    {'1': 'noc_der', '3': 5, '4': 1, '5': 12, '10': 'nocDer'},
     {'1': 'op_priv_key', '3': 6, '4': 1, '5': 12, '10': 'opPrivKey'},
     {'1': 'ipk', '3': 7, '4': 1, '5': 12, '10': 'ipk'},
     {'1': 'vendor_id', '3': 8, '4': 1, '5': 13, '10': 'vendorId'},
+    {'1': 'rcac_priv_key', '3': 9, '4': 1, '5': 12, '10': 'rcacPrivKey'},
   ],
 };
 
 /// Descriptor for `FabricProvision`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List fabricProvisionDescriptor = $convert.base64Decode(
     'Cg9GYWJyaWNQcm92aXNpb24SGwoJZmFicmljX2lkGAEgASgEUghmYWJyaWNJZBIXCgdub2RlX2'
-    'lkGAIgASgEUgZub2RlSWQSHgoLcm9vdF9jYV90bHYYAyABKAxSCXJvb3RDYVRsdhIZCghpY2Fj'
-    'X3RsdhgEIAEoDFIHaWNhY1RsdhIXCgdub2NfdGx2GAUgASgMUgZub2NUbHYSHgoLb3BfcHJpdl'
+    'lkGAIgASgEUgZub2RlSWQSHgoLcm9vdF9jYV9kZXIYAyABKAxSCXJvb3RDYURlchIZCghpY2Fj'
+    'X2RlchgEIAEoDFIHaWNhY0RlchIXCgdub2NfZGVyGAUgASgMUgZub2NEZXISHgoLb3BfcHJpdl'
     '9rZXkYBiABKAxSCW9wUHJpdktleRIQCgNpcGsYByABKAxSA2lwaxIbCgl2ZW5kb3JfaWQYCCAB'
-    'KA1SCHZlbmRvcklk');
+    'KA1SCHZlbmRvcklkEiIKDXJjYWNfcHJpdl9rZXkYCSABKAxSC3JjYWNQcml2S2V5');
 
 @$core.Deprecated('Use fabricProvisionResultDescriptor instead')
 const FabricProvisionResult$json = {
@@ -121,6 +142,103 @@ final $typed_data.Uint8List fabricProvisionResultDescriptor = $convert.base64Dec
     'JyaWNfaW5kZXgYAiABKA1SC2ZhYnJpY0luZGV4EjAKFGNvbXByZXNzZWRfZmFicmljX2lkGAMg'
     'ASgEUhJjb21wcmVzc2VkRmFicmljSWQSFAoFZXJyb3IYBCABKAlSBWVycm9y');
 
+@$core.Deprecated('Use mfgProvisionDescriptor instead')
+const MfgProvision$json = {
+  '1': 'MfgProvision',
+  '2': [
+    {'1': 'rcac_priv_key', '3': 1, '4': 1, '5': 12, '10': 'rcacPrivKey'},
+    {'1': 'serial_number', '3': 2, '4': 1, '5': 9, '10': 'serialNumber'},
+  ],
+};
+
+/// Descriptor for `MfgProvision`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List mfgProvisionDescriptor = $convert.base64Decode(
+    'CgxNZmdQcm92aXNpb24SIgoNcmNhY19wcml2X2tleRgBIAEoDFILcmNhY1ByaXZLZXkSIwoNc2'
+    'VyaWFsX251bWJlchgCIAEoCVIMc2VyaWFsTnVtYmVy');
+
+@$core.Deprecated('Use mfgProvisionResultDescriptor instead')
+const MfgProvisionResult$json = {
+  '1': 'MfgProvisionResult',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+    {'1': 'error', '3': 2, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `MfgProvisionResult`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List mfgProvisionResultDescriptor = $convert.base64Decode(
+    'ChJNZmdQcm92aXNpb25SZXN1bHQSGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2VzcxIUCgVlcnJvch'
+    'gCIAEoCVIFZXJyb3I=');
+
+@$core.Deprecated('Use fabricEnrollRequestDescriptor instead')
+const FabricEnrollRequest$json = {
+  '1': 'FabricEnrollRequest',
+  '2': [
+    {'1': 'csr', '3': 1, '4': 1, '5': 12, '10': 'csr'},
+    {'1': 'node_id', '3': 2, '4': 1, '5': 4, '10': 'nodeId'},
+  ],
+};
+
+/// Descriptor for `FabricEnrollRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fabricEnrollRequestDescriptor = $convert.base64Decode(
+    'ChNGYWJyaWNFbnJvbGxSZXF1ZXN0EhAKA2NzchgBIAEoDFIDY3NyEhcKB25vZGVfaWQYAiABKA'
+    'RSBm5vZGVJZA==');
+
+@$core.Deprecated('Use fabricEnrollResponseDescriptor instead')
+const FabricEnrollResponse$json = {
+  '1': 'FabricEnrollResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+    {'1': 'noc_der', '3': 2, '4': 1, '5': 12, '10': 'nocDer'},
+    {'1': 'icac_der', '3': 3, '4': 1, '5': 12, '10': 'icacDer'},
+    {'1': 'root_ca_der', '3': 4, '4': 1, '5': 12, '10': 'rootCaDer'},
+    {'1': 'ipk', '3': 5, '4': 1, '5': 12, '10': 'ipk'},
+    {'1': 'fabric_id', '3': 6, '4': 1, '5': 4, '10': 'fabricId'},
+    {'1': 'node_id', '3': 7, '4': 1, '5': 4, '10': 'nodeId'},
+    {'1': 'error', '3': 8, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `FabricEnrollResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fabricEnrollResponseDescriptor = $convert.base64Decode(
+    'ChRGYWJyaWNFbnJvbGxSZXNwb25zZRIYCgdzdWNjZXNzGAEgASgIUgdzdWNjZXNzEhcKB25vY1'
+    '9kZXIYAiABKAxSBm5vY0RlchIZCghpY2FjX2RlchgDIAEoDFIHaWNhY0RlchIeCgtyb290X2Nh'
+    'X2RlchgEIAEoDFIJcm9vdENhRGVyEhAKA2lwaxgFIAEoDFIDaXBrEhsKCWZhYnJpY19pZBgGIA'
+    'EoBFIIZmFicmljSWQSFwoHbm9kZV9pZBgHIAEoBFIGbm9kZUlkEhQKBWVycm9yGAggASgJUgVl'
+    'cnJvcg==');
+
+@$core.Deprecated('Use fabricSignNocRequestDescriptor instead')
+const FabricSignNocRequest$json = {
+  '1': 'FabricSignNocRequest',
+  '2': [
+    {'1': 'csr', '3': 1, '4': 1, '5': 12, '10': 'csr'},
+    {'1': 'node_id', '3': 2, '4': 1, '5': 4, '10': 'nodeId'},
+  ],
+};
+
+/// Descriptor for `FabricSignNocRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fabricSignNocRequestDescriptor = $convert.base64Decode(
+    'ChRGYWJyaWNTaWduTm9jUmVxdWVzdBIQCgNjc3IYASABKAxSA2NzchIXCgdub2RlX2lkGAIgAS'
+    'gEUgZub2RlSWQ=');
+
+@$core.Deprecated('Use fabricSignNocResponseDescriptor instead')
+const FabricSignNocResponse$json = {
+  '1': 'FabricSignNocResponse',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+    {'1': 'noc_der', '3': 2, '4': 1, '5': 12, '10': 'nocDer'},
+    {'1': 'icac_der', '3': 3, '4': 1, '5': 12, '10': 'icacDer'},
+    {'1': 'node_id', '3': 4, '4': 1, '5': 4, '10': 'nodeId'},
+    {'1': 'error', '3': 5, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `FabricSignNocResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fabricSignNocResponseDescriptor = $convert.base64Decode(
+    'ChVGYWJyaWNTaWduTm9jUmVzcG9uc2USGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2VzcxIXCgdub2'
+    'NfZGVyGAIgASgMUgZub2NEZXISGQoIaWNhY19kZXIYAyABKAxSB2ljYWNEZXISFwoHbm9kZV9p'
+    'ZBgEIAEoBFIGbm9kZUlkEhQKBWVycm9yGAUgASgJUgVlcnJvcg==');
+
 @$core.Deprecated('Use deviceDescriptor instead')
 const Device$json = {
   '1': 'Device',
@@ -131,6 +249,14 @@ const Device$json = {
     {'1': 'vendor_id', '3': 4, '4': 1, '5': 13, '10': 'vendorId'},
     {'1': 'product_id', '3': 5, '4': 1, '5': 13, '10': 'productId'},
     {'1': 'device_type', '3': 6, '4': 1, '5': 13, '10': 'deviceType'},
+    {
+      '1': 'connectivity',
+      '3': 7,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ConnectivityState',
+      '10': 'connectivity'
+    },
   ],
 };
 
@@ -139,7 +265,8 @@ final $typed_data.Uint8List deviceDescriptor = $convert.base64Decode(
     'CgZEZXZpY2USFwoHbm9kZV9pZBgBIAEoBFIGbm9kZUlkEhIKBG5hbWUYAiABKAlSBG5hbWUSHA'
     'oJcmVhY2hhYmxlGAMgASgIUglyZWFjaGFibGUSGwoJdmVuZG9yX2lkGAQgASgNUgh2ZW5kb3JJ'
     'ZBIdCgpwcm9kdWN0X2lkGAUgASgNUglwcm9kdWN0SWQSHwoLZGV2aWNlX3R5cGUYBiABKA1SCm'
-    'RldmljZVR5cGU=');
+    'RldmljZVR5cGUSOwoMY29ubmVjdGl2aXR5GAcgASgOMhcuZmx1eC5Db25uZWN0aXZpdHlTdGF0'
+    'ZVIMY29ubmVjdGl2aXR5');
 
 @$core.Deprecated('Use deviceListDescriptor instead')
 const DeviceList$json = {
@@ -268,6 +395,7 @@ const CommandArg$json = {
     {'1': 'uint_val', '3': 3, '4': 1, '5': 13, '9': 0, '10': 'uintVal'},
     {'1': 'int_val', '3': 4, '4': 1, '5': 17, '9': 0, '10': 'intVal'},
     {'1': 'str_val', '3': 5, '4': 1, '5': 9, '9': 0, '10': 'strVal'},
+    {'1': 'tag', '3': 6, '4': 1, '5': 13, '10': 'tag'},
   ],
   '8': [
     {'1': 'value'},
@@ -278,7 +406,8 @@ const CommandArg$json = {
 final $typed_data.Uint8List commandArgDescriptor = $convert.base64Decode(
     'CgpDb21tYW5kQXJnEhIKBG5hbWUYASABKAlSBG5hbWUSGwoIYm9vbF92YWwYAiABKAhIAFIHYm'
     '9vbFZhbBIbCgh1aW50X3ZhbBgDIAEoDUgAUgd1aW50VmFsEhkKB2ludF92YWwYBCABKBFIAFIG'
-    'aW50VmFsEhkKB3N0cl92YWwYBSABKAlIAFIGc3RyVmFsQgcKBXZhbHVl');
+    'aW50VmFsEhkKB3N0cl92YWwYBSABKAlIAFIGc3RyVmFsEhAKA3RhZxgGIAEoDVIDdGFnQgcKBX'
+    'ZhbHVl');
 
 @$core.Deprecated('Use deviceCommandDescriptor instead')
 const DeviceCommand$json = {

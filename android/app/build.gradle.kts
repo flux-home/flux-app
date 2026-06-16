@@ -82,6 +82,11 @@ dependencies {
         implementation(project(":chip-stub"))
     }
 
+    // PKCS#10 CSR building for controller-owned fabric enrollment (the CHIP SDK
+    // exposes no CSR builder and Android Keystore keys can't CSR).
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+
     // Thread Network credential store (Play Services, all build variants)
     implementation("com.google.android.gms:play-services-threadnetwork:16.3.0")
 

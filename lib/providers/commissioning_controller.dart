@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/services/qr_payload_service.dart';
@@ -186,6 +187,7 @@ class CommissioningController extends ChangeNotifier {
     required this.onNeedsCredentials,
     this.threadDataset = _returnEmpty,
     this.controllerService,
+    this.fabricSync,
   }) : _port = port,
        _provider = provider;
 
@@ -194,6 +196,11 @@ class CommissioningController extends ChangeNotifier {
 
   /// Non-null in hub mode: CoAP client for fabric provision + node register.
   final FluxCoapService? controllerService;
+
+  /// Non-null in hub mode: guarantees the controller carries the app's fabric
+  /// before a commissioned device is handed over to it.  When null (legacy /
+  /// tests), the handover proceeds without a fabric check.
+  final FabricSyncService? fabricSync;
 
   final Future<bool> Function() requestBlePermissions;
   /// Called when the device needs credentials during commissioning.
@@ -332,22 +339,29 @@ class CommissioningController extends ChangeNotifier {
         _ => NetworkType.ethernet,
       };
 
-      // Auto-fetch Thread dataset from controller when not supplied.
-      var threadHex = cfg.threadDatasetHex.isNotEmpty
-          ? cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '')
-          : threadDataset().replaceAll(RegExp(r'\s'), '');
+      // Resolve which Thread network to commission onto.  Precedence:
+      //   1. an explicit dataset chosen for THIS commission (expert mode),
+      //   2. the HUB's Thread network — the hub owns it, so devices must join
+      //      its mesh to be reachable by the controller and every phone,
+      //   3. the app's locally-configured active dataset (standalone fallback).
+      var threadHex = cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '');
 
       if (threadHex.isEmpty && controllerService != null && cfg.netType == 0) {
-        _appendRaw('▶ Fetching Thread dataset from controller…', level: LogLevel.step);
+        _appendRaw('▶ Using the hub\'s Thread network…', level: LogLevel.step);
         final fetched = await controllerService!.getThreadDatasetHex();
         if (fetched != null && fetched.isNotEmpty) {
           threadHex = fetched;
-          _appendRaw('✓ Thread dataset fetched (${fetched.length ~/ 2} bytes)',
+          _appendRaw('✓ Hub Thread network (${fetched.length ~/ 2} bytes)',
               level: LogLevel.success);
         } else {
-          _appendRaw('⚠ No Thread dataset on controller — continuing without',
+          _appendRaw('⚠ Hub has no Thread network — using app dataset if set',
               level: LogLevel.info);
         }
+      }
+
+      // Fallback: the app's own active dataset (e.g. standalone / hub has none).
+      if (threadHex.isEmpty && cfg.netType == 0) {
+        threadHex = threadDataset().replaceAll(RegExp(r'\s'), '');
       }
 
       _appendRaw('▶ Connecting to device via Bluetooth…', level: LogLevel.step);
@@ -382,32 +396,55 @@ class CommissioningController extends ChangeNotifier {
 
     if (commissionResult.success) {
       final nodeId = commissionResult.nodeId!;
+      var managedBy = ManagedBy.phone;
 
-      // ── Post-commission: grant controller access + register node ───────────
+      // ── Post-commission: hand the device over to the controller ────────────
       if (controllerService != null) {
-        _appendRaw('▶ Granting controller access…', level: LogLevel.step);
-        final aclOk = await _port.grantControllerAccess(nodeId);
-        if (!aclOk) {
-          error = 'Failed to grant controller access — device cannot be handed over';
-          _provider.failCommissioning(error);
-          phase = CommissionPhase.failed;
-          _appendRaw(error!, level: LogLevel.error);
-          notifyListeners();
-          return;
+        // Hand over only if this phone is ALREADY on the hub's fabric.  We check
+        // passively (readState) and never adopt here — adoption enrolls + relaunches
+        // the app, which must be user-initiated (Settings → Flux Hub → Join hub),
+        // not triggered mid-commission.  If not joined, keep the device on the phone.
+        var fabricOk = true;
+        if (fabricSync != null) {
+          _appendRaw('▶ Checking hub membership…', level: LogLevel.step);
+          final state = await fabricSync!.readState();
+          if (state == FabricState.inSync) {
+            _appendRaw('✓ On the hub\'s fabric', level: LogLevel.success);
+          } else {
+            fabricOk = false;
+            _appendRaw(
+                '⚠ This phone hasn\'t joined the hub (Settings → Flux Hub → '
+                'Join hub) — keeping device on phone',
+                level: LogLevel.info);
+          }
         }
-        _appendRaw('✓ Controller access granted', level: LogLevel.success);
 
-        _appendRaw('▶ Registering device with controller…', level: LogLevel.step);
-        final registered = await controllerService!.registerNode(
-          nodeId:     nodeId,
-          name:       name,
-          deviceType: commissionResult.deviceTypeId ?? 0,
-        );
-        if (registered) {
-          _appendRaw('✓ Device registered with controller', level: LogLevel.success);
-        } else {
-          _appendRaw('⚠ Controller registration pending — it will connect shortly',
-              level: LogLevel.info);
+        if (fabricOk) {
+          _appendRaw('▶ Granting controller access…', level: LogLevel.step);
+          final aclOk = await _port.grantControllerAccess(nodeId);
+          if (!aclOk) {
+            error = 'Failed to grant controller access — device cannot be handed over';
+            _provider.failCommissioning(error);
+            phase = CommissionPhase.failed;
+            _appendRaw(error!, level: LogLevel.error);
+            notifyListeners();
+            return;
+          }
+          _appendRaw('✓ Controller access granted', level: LogLevel.success);
+
+          _appendRaw('▶ Registering device with controller…', level: LogLevel.step);
+          final registered = await controllerService!.registerNode(
+            nodeId:     nodeId,
+            name:       name,
+            deviceType: commissionResult.deviceTypeId ?? 0,
+          );
+          if (registered) {
+            _appendRaw('✓ Device registered with controller', level: LogLevel.success);
+          } else {
+            _appendRaw('⚠ Controller registration pending — it will connect shortly',
+                level: LogLevel.info);
+          }
+          managedBy = ManagedBy.controller;
         }
       }
 
@@ -415,7 +452,7 @@ class CommissioningController extends ChangeNotifier {
         commissionResult,
         name,
         networkType,
-        managedBy: controllerService != null ? ManagedBy.controller : ManagedBy.phone,
+        managedBy: managedBy,
       );
       result = device;
       phase = CommissionPhase.done;

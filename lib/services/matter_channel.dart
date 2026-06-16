@@ -25,9 +25,39 @@ import 'package:matter_home/services/matter_port.dart';
 /// ([MatterSubscriptionPort], [MatterCommissionPort], [MatterClusterPort],
 /// [MatterFabricPort]) and be tested with fakes.
 class MatterChannel implements MatterPort {
+  MatterChannel() {
+    // Register the reverse (native → Dart) handler for device-NOC signing
+    // requests raised during commissioning on an adopted fabric.
+    _method.setMethodCallHandler(_handleNativeCall);
+  }
+
   static const _method = MethodChannel('com.fluxhome.app/matter');
   static const _events = EventChannel('com.fluxhome.app/commission_events');
   static const _deviceEvents = EventChannel('com.fluxhome.app/device_state');
+
+  /// Set by the app to sign a device CSR via the active controller (the hub is
+  /// the CA on an adopted fabric).  Returns the signed device NOC + the ICAC
+  /// that signed it (both X.509 DER), or null on failure.  The ICAC is required
+  /// — the CHIP SDK rejects a NOC chain with no intermediate.
+  /// Wired in [main] to the current [HubConnection] service.
+  Future<({Uint8List noc, Uint8List? icac})?> Function(Uint8List csr, int nodeId)?
+      deviceNocSigner;
+
+  Future<Object?> _handleNativeCall(MethodCall call) async {
+    switch (call.method) {
+      case 'signDeviceNoc':
+        final signer = deviceNocSigner;
+        if (signer == null) return null;
+        final args   = Map<String, dynamic>.from(call.arguments as Map);
+        final csr    = args['csr'] as Uint8List;
+        final nodeId = (args['nodeId'] as num).toInt();
+        final r      = await signer(csr, nodeId);
+        if (r == null) return null;
+        return {'noc': r.noc, if (r.icac != null) 'icac': r.icac};
+      default:
+        return null;
+    }
+  }
 
   // ── Internal helper ────────────────────────────────────────────────────────
 
@@ -465,14 +495,33 @@ class MatterChannel implements MatterPort {
   Future<FabricExportData?> exportFabricForController() async {
     final raw = await _invoke<Map<Object?, Object?>?>('exportFabricForController', null);
     if (raw == null) return null;
+    final rcac = raw['rcacPrivKey'] as List?;
     return FabricExportData(
       rootCaTlv: Uint8List.fromList((raw['rootCaTlv'] as List).cast<int>()),
       nocTlv:    Uint8List.fromList((raw['nocTlv']    as List).cast<int>()),
       opPrivKey: Uint8List.fromList((raw['opPrivKey'] as List).cast<int>()),
       ipk:       Uint8List.fromList((raw['ipk']       as List).cast<int>()),
       fabricId:  raw['fabricId'] as int,
+      rcacPrivKey: rcac == null ? null : Uint8List.fromList(rcac.cast<int>()),
     );
   }
+
+  @override
+  Future<Uint8List?> generateOperationalCsr() async {
+    final raw = await _invoke<List<Object?>?>('generateOperationalCsr', null);
+    return raw == null ? null : Uint8List.fromList(raw.cast<int>());
+  }
+
+  @override
+  Future<bool> importControllerFabric(FabricImportData creds) =>
+      _invoke<bool>('importControllerFabric', false, args: {
+        'rootCaTlv': creds.rootCaTlv,
+        if (creds.icacTlv != null) 'icacTlv': creds.icacTlv,
+        'nocTlv':    creds.nocTlv,
+        'ipk':       creds.ipk,
+        'fabricId':  creds.fabricId,
+        'nodeId':    creds.nodeId,
+      });
 
   @override
   Future<void> provideCredentials({String? ssid, String? password, String? threadDatasetHex}) => _invoke<void>(
@@ -517,6 +566,9 @@ class MatterChannel implements MatterPort {
 
   @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
+
+  @override
+  Future<String?> getRawFabricId() => _invoke<String?>('getRawFabricId', null);
 
   @override
   Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);

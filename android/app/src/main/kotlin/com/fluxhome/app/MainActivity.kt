@@ -42,6 +42,9 @@ class MainActivity : FlutterActivity() {
 
     private val bridge by lazy { MatterBridge(applicationContext) }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var methodChannel: MethodChannel? = null
+
     // Hold a WiFi multicast lock for the lifetime of the app.
     // Without this, Android's WiFi driver silently drops incoming multicast
     // packets, which breaks mDNS discovery of the Flux Controller.
@@ -100,8 +103,46 @@ class MainActivity : FlutterActivity() {
             })
 
         // ── MethodChannel ─────────────────────────────────────────────────────
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
-            .setMethodCallHandler { call, result ->
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
+        methodChannel = channel
+
+        // Forward device CSRs to the controller (Dart owns the CoAP/DTLS client).
+        // Called from the "noc-issuer" background thread during commissioning on
+        // an adopted fabric; hop to the main thread to invoke Dart and block the
+        // calling thread on a latch until the signed NOC comes back.
+        ChipClient.deviceNocSigner = ChipClient.DeviceNocSigner { csr, nodeId ->
+            val latch  = java.util.concurrent.CountDownLatch(1)
+            val holder = arrayOfNulls<ChipClient.SignedNoc>(1)
+            mainHandler.post {
+                channel.invokeMethod(
+                    "signDeviceNoc",
+                    mapOf("csr" to csr, "nodeId" to nodeId),
+                    object : MethodChannel.Result {
+                        override fun success(res: Any?) {
+                            val m = res as? Map<*, *>
+                            val noc = m?.get("noc") as? ByteArray
+                            if (noc != null) {
+                                holder[0] = ChipClient.SignedNoc(noc, m["icac"] as? ByteArray)
+                            }
+                            latch.countDown()
+                        }
+                        override fun error(code: String, msg: String?, details: Any?) {
+                            Log.e(TAG, "signDeviceNoc error: $code $msg")
+                            latch.countDown()
+                        }
+                        override fun notImplemented() {
+                            Log.e(TAG, "signDeviceNoc not implemented in Dart")
+                            latch.countDown()
+                        }
+                    },
+                )
+            }
+            // Bounded wait so a stuck controller can't hang commissioning forever.
+            latch.await(35, java.util.concurrent.TimeUnit.SECONDS)
+            holder[0]
+        }
+
+        channel.setMethodCallHandler { call, result ->
                 Log.d(TAG, "← ${call.method}")
                 when (call.method) {
                     "ping" ->
@@ -335,6 +376,20 @@ class MainActivity : FlutterActivity() {
 
                     "exportFabricForController" -> bridge.exportFabricForController(result)
 
+                    "generateOperationalCsr" -> bridge.generateOperationalCsr(result)
+
+                    "importControllerFabric" -> {
+                        val rootCaTlv = call.argument<ByteArray>("rootCaTlv")
+                        val icacTlv   = call.argument<ByteArray>("icacTlv")
+                        val nocTlv    = call.argument<ByteArray>("nocTlv")
+                        val ipk       = call.argument<ByteArray>("ipk")
+                        val fabricId  = (call.argument<Number>("fabricId"))?.toLong() ?: 0L
+                        val nodeId    = (call.argument<Number>("nodeId"))?.toLong() ?: 0L
+                        bridge.importControllerFabric(
+                            rootCaTlv, icacTlv, nocTlv, ipk, fabricId, nodeId, result,
+                        )
+                    }
+
                     "provideCredentials" -> {
                         val ssid     = call.argument<String?>("ssid")
                         val password = call.argument<String?>("password")
@@ -348,6 +403,9 @@ class MainActivity : FlutterActivity() {
 
                     "getFabricId" ->
                         bridge.getFabricId(result)
+
+                    "getRawFabricId" ->
+                        bridge.getRawFabricId(result)
 
                     "getVendorId" ->
                         bridge.getVendorId(result)
