@@ -205,38 +205,6 @@ final $typed_data.Uint8List mfgProvisionResultDescriptor = $convert.base64Decode
     'ChJNZmdQcm92aXNpb25SZXN1bHQSGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2VzcxIUCgVlcnJvch'
     'gCIAEoCVIFZXJyb3I=');
 
-@$core.Deprecated('Use fabricSignNocRequestDescriptor instead')
-const FabricSignNocRequest$json = {
-  '1': 'FabricSignNocRequest',
-  '2': [
-    {'1': 'csr', '3': 1, '4': 1, '5': 12, '10': 'csr'},
-    {'1': 'node_id', '3': 2, '4': 1, '5': 4, '10': 'nodeId'},
-  ],
-};
-
-/// Descriptor for `FabricSignNocRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List fabricSignNocRequestDescriptor = $convert.base64Decode(
-    'ChRGYWJyaWNTaWduTm9jUmVxdWVzdBIQCgNjc3IYASABKAxSA2NzchIXCgdub2RlX2lkGAIgAS'
-    'gEUgZub2RlSWQ=');
-
-@$core.Deprecated('Use fabricSignNocResponseDescriptor instead')
-const FabricSignNocResponse$json = {
-  '1': 'FabricSignNocResponse',
-  '2': [
-    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
-    {'1': 'noc_der', '3': 2, '4': 1, '5': 12, '10': 'nocDer'},
-    {'1': 'icac_der', '3': 3, '4': 1, '5': 12, '10': 'icacDer'},
-    {'1': 'node_id', '3': 4, '4': 1, '5': 4, '10': 'nodeId'},
-    {'1': 'error', '3': 5, '4': 1, '5': 9, '10': 'error'},
-  ],
-};
-
-/// Descriptor for `FabricSignNocResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List fabricSignNocResponseDescriptor = $convert.base64Decode(
-    'ChVGYWJyaWNTaWduTm9jUmVzcG9uc2USGAoHc3VjY2VzcxgBIAEoCFIHc3VjY2VzcxIXCgdub2'
-    'NfZGVyGAIgASgMUgZub2NEZXISGQoIaWNhY19kZXIYAyABKAxSB2ljYWNEZXISFwoHbm9kZV9p'
-    'ZBgEIAEoBFIGbm9kZUlkEhQKBWVycm9yGAUgASgJUgVlcnJvcg==');
-
 @$core.Deprecated('Use commissionRequestDescriptor instead')
 const CommissionRequest$json = {
   '1': 'CommissionRequest',
