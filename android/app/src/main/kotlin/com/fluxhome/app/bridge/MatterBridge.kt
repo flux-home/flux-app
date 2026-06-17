@@ -1,7 +1,6 @@
 package com.fluxhome.app.bridge
 
 import android.content.Context
-import com.fluxhome.app.chip.clusters.EnergyCluster
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
@@ -23,17 +22,10 @@ class MatterBridge(context: Context) {
 
     // ── Sub-bridges ───────────────────────────────────────────────────────────
     private val commissioning = CommissioningBridge(core)
-    private val subscriptions = SubscriptionBridge(core)
     private val ota           = OtaBridge(core)
     private val network       = NetworkBridge(core)
     private val diagnostics   = DiagnosticsBridge(core)
     private val deviceInfo    = DeviceInfoBridge(core)
-    private val onOff         = OnOffBridge(core)
-    private val covering      = CoveringBridge(core)
-    private val fan           = FanBridge(core)
-    private val color         = ColorBridge(core)
-    private val thermostat    = ThermostatBridge(core)
-    private val doorLock      = DoorLockBridge(core)
 
     // ── Event sink wiring (called from MainActivity) ──────────────────────────
     fun setEventSink(sink: EventChannel.EventSink?)       { core.commissionEventSink = sink }
@@ -58,24 +50,14 @@ class MatterBridge(context: Context) {
         commissioning.removeDevice(nodeId, result)
 
     fun openCommissioningWindow(nodeId: Long, vendorId: Int, productId: Int,
-                                result: MethodChannel.Result) =
-        commissioning.openCommissioningWindow(nodeId, vendorId, productId, result)
+                                awaitReachable: Boolean, result: MethodChannel.Result) =
+        commissioning.openCommissioningWindow(nodeId, vendorId, productId, awaitReachable, result)
+
+    fun removeFabric(nodeId: Long, fabricIndex: Int, result: MethodChannel.Result) =
+        deviceInfo.removeFabric(nodeId, fabricIndex, result)
 
     fun parsePayload(payload: String, result: MethodChannel.Result) =
         commissioning.parsePayload(payload, result)
-
-    fun grantControllerAccess(nodeId: Long, result: MethodChannel.Result) =
-        commissioning.grantControllerAccess(nodeId, result)
-
-    fun readAcl(nodeId: Long, result: MethodChannel.Result) =
-        commissioning.readAcl(nodeId, result)
-
-    // ── Subscriptions ─────────────────────────────────────────────────────────
-    fun startSubscription(nodeId: Long, result: MethodChannel.Result) =
-        subscriptions.startSubscription(nodeId, result)
-
-    fun stopSubscription(nodeId: Long, result: MethodChannel.Result) =
-        subscriptions.stopSubscription(nodeId, result)
 
     // ── OTA ───────────────────────────────────────────────────────────────────
     fun downloadAndFlash(nodeId: Long, otaUrl: String, targetVersion: Long,
@@ -125,9 +107,6 @@ class MatterBridge(context: Context) {
     fun getFabricId(result: MethodChannel.Result) =
         deviceInfo.getFabricId(result)
 
-    fun getRawFabricId(result: MethodChannel.Result) =
-        deviceInfo.getRawFabricId(result)
-
     fun getVendorId(result: MethodChannel.Result) =
         deviceInfo.getVendorId(result)
 
@@ -136,86 +115,4 @@ class MatterBridge(context: Context) {
 
     fun exportFabricForController(result: MethodChannel.Result) =
         deviceInfo.exportFabricForController(result)
-
-    fun generateOperationalCsr(result: MethodChannel.Result) =
-        deviceInfo.generateOperationalCsr(result)
-
-    fun importControllerFabric(
-        rootCaTlv: ByteArray?,
-        icacTlv:   ByteArray?,
-        nocTlv:    ByteArray?,
-        ipk:       ByteArray?,
-        fabricId:  Long,
-        nodeId:    Long,
-        result:    MethodChannel.Result,
-    ) = deviceInfo.importControllerFabric(rootCaTlv, icacTlv, nocTlv, ipk, fabricId, nodeId, result)
-
-    // ── OnOff + Level ─────────────────────────────────────────────────────────
-    fun toggleDevice(nodeId: Long, on: Boolean, result: MethodChannel.Result) =
-        onOff.toggleDevice(nodeId, on, result)
-
-    fun setLevel(nodeId: Long, level: Int, result: MethodChannel.Result) =
-        onOff.setLevel(nodeId, level, result)
-
-    fun stepLevel(nodeId: Long, stepUp: Boolean, result: MethodChannel.Result) =
-        onOff.stepLevel(nodeId, stepUp, result)
-
-    fun readDeviceState(nodeId: Long, result: MethodChannel.Result) =
-        onOff.readDeviceState(nodeId, result)
-
-    // ── Window Covering ───────────────────────────────────────────────────────
-    fun coveringUp(nodeId: Long, result: MethodChannel.Result) =
-        covering.coveringUp(nodeId, result)
-
-    fun coveringDown(nodeId: Long, result: MethodChannel.Result) =
-        covering.coveringDown(nodeId, result)
-
-    fun coveringStop(nodeId: Long, result: MethodChannel.Result) =
-        covering.coveringStop(nodeId, result)
-
-    fun coveringGoToLift(nodeId: Long, percent100ths: Int, result: MethodChannel.Result) =
-        covering.coveringGoToLift(nodeId, percent100ths, result)
-
-    // ── Fan ───────────────────────────────────────────────────────────────────
-    fun setFanMode(nodeId: Long, mode: Int, result: MethodChannel.Result) =
-        fan.setFanMode(nodeId, mode, result)
-
-    fun setFanPercent(nodeId: Long, percent: Int, result: MethodChannel.Result) =
-        fan.setFanPercent(nodeId, percent, result)
-
-    // ── Color ─────────────────────────────────────────────────────────────────
-    fun setColorTemperature(nodeId: Long, mireds: Int, result: MethodChannel.Result) =
-        color.setColorTemperature(nodeId, mireds, result)
-
-    // ── Thermostat ────────────────────────────────────────────────────────────
-    fun readThermostat(nodeId: Long, result: MethodChannel.Result) =
-        thermostat.readThermostat(nodeId, result)
-
-    fun writeHeatingSetpoint(nodeId: Long, centidegrees: Int, result: MethodChannel.Result) =
-        thermostat.writeHeatingSetpoint(nodeId, centidegrees, result)
-
-    fun writeSystemMode(nodeId: Long, mode: Int, result: MethodChannel.Result) =
-        thermostat.writeSystemMode(nodeId, mode, result)
-
-    // ── Door Lock ─────────────────────────────────────────────────────────────
-    fun lockDoor(nodeId: Long, pin: String?, result: MethodChannel.Result) =
-        doorLock.lockDoor(nodeId, pin, result)
-
-    fun unlockDoor(nodeId: Long, pin: String?, result: MethodChannel.Result) =
-        doorLock.unlockDoor(nodeId, pin, result)
-
-    fun readLockState(nodeId: Long, result: MethodChannel.Result) =
-        doorLock.readLockState(nodeId, result)
-
-    // ── Energy ────────────────────────────────────────────────────────────────
-    fun readCumulativeEnergy(nodeId: Long, endpoint: Int, result: MethodChannel.Result) =
-        core.requireChip(result) {
-            val data = EnergyCluster.readCumulativeEnergy(core.context, nodeId, endpoint)
-            core.main.post {
-                result.success(mapOf(
-                    "importedMwh" to data.importedMwh,
-                    "exportedMwh" to data.exportedMwh,
-                ))
-            }
-        }
 }

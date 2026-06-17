@@ -2,7 +2,7 @@ package chip.devicecontroller
 
 /**
  * Mirrors the real chip.devicecontroller.ClusterIDMapping generated class.
- * Only the clusters used by ClusterClient are stubbed here.
+ * Only the clusters actually used by the app's cluster bridges are stubbed here.
  */
 object ClusterIDMapping {
 

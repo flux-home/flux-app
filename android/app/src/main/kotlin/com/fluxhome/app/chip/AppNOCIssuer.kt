@@ -22,15 +22,22 @@ private fun certNotAfter(): Calendar =
     GregorianCalendar(TimeZone.getTimeZone("UTC")).apply { clear(); set(2099, Calendar.DECEMBER, 31, 23, 59, 59) }
 
 /**
- * Custom NOC chain issuer that signs device NOCs with the app's own CA.
+ * NOC chain issuer for the phone's **throwaway commissioning fabric**.
  *
- * Without this, the CHIP SDK falls back to its internal default CA when generating
- * the device NOC and AddTrustedRootCertificate.  That default CA differs from the
- * Root CA in [AppFabricManager] that the controller uses for its own CASE identity —
- * so CASE later fails with CHIP_ERROR_NO_SHARED_TRUSTED_ROOT (0x32).
+ * In the multi-admin commission-then-handoff flow the phone BLE-commissions a
+ * device onto its own local fabric only long enough to push Thread credentials
+ * and open an ECM window; the controller then commissions the device onto its
+ * OWN fabric and the phone removes this fabric (RemoveFabric).  So this issuer
+ * only ever signs with the app's local CA — there is no controller-CSR
+ * forwarding (that was the retired `/fabric/sign-noc` path).
  *
- * The device NOC is issued as a 3-tier chain (Root → ICAC → NOC).  This is mandatory:
- * the SDK's [ChipDeviceController.onNOCChainGeneration] JNI requires a non-null
+ * Without an issuer the CHIP SDK would fall back to its internal default CA;
+ * we sign explicitly so the phone's controller and the device NOC share a root
+ * and CASE works for the brief window we control the device (readFabrics /
+ * RemoveFabric).
+ *
+ * The device NOC is issued as a 3-tier chain (Root → ICAC → NOC).  This is
+ * mandatory: [ChipDeviceController.onNOCChainGeneration] requires a non-null
  * intermediate certificate and returns CHIP_ERROR_BAD_REQUEST (0x92) without one.
  *
  * Threading notes:
@@ -59,29 +66,12 @@ internal class AppNOCIssuer(
 
         Log.d(TAG, "onNOCChainGenerationNeeded: nodeId=0x%016X".format(nodeId))
 
-        // All work runs off the CHIP event-loop thread: it must not block on the
-        // network (controller path), and onNOCChainGeneration takes the same
-        // (non-recursive) stack lock the callback holds, so calling it inline
-        // would deadlock.
+        // Runs off the CHIP event-loop thread: onNOCChainGeneration takes the same
+        // (non-recursive) stack lock the callback holds, so calling it inline would
+        // deadlock.
         Thread {
             try {
-                val params = if (AppFabricManager.hasAdopted(context)) {
-                    buildFromController(csr, nodeId)
-                } else {
-                    buildLocally(csr, nodeId)
-                }
-                if (params == null) {
-                    // We can't produce a device NOC (hub unreachable / refused signing).
-                    // Abort the commissioning so it fails fast — otherwise the CHIP
-                    // state machine waits at GenerateNOCChain until the failsafe
-                    // timer expires (the app appears "stuck").
-                    Log.e(TAG, "No NOC chain for nodeId=0x%016X — aborting commissioning".format(nodeId))
-                    try { controller.stopDevicePairing(nodeId) } catch (e: Exception) {
-                        Log.e(TAG, "stopDevicePairing failed: ${e.message}")
-                    }
-                    return@Thread
-                }
-                controller.onNOCChainGeneration(params)
+                controller.onNOCChainGeneration(buildLocally(csr, nodeId))
                 Log.i(TAG, "Device NOC handed to SDK for nodeId=0x%016X".format(nodeId))
             } catch (e: Exception) {
                 Log.e(TAG, "onNOCChainGeneration failed: ${e.message}", e)
@@ -90,7 +80,7 @@ internal class AppNOCIssuer(
         }.also { it.name = "noc-issuer"; it.start() }
     }
 
-    /** Legacy / standalone (app is the CA): sign the device NOC with the app's ICAC. */
+    /** Signs the device NOC with the app's local CA (the throwaway fabric). */
     private fun buildLocally(csr: ByteArray, nodeId: Long): ControllerParams {
         val id           = AppFabricManager.getOrCreate(context)
         val icacKey      = AppKeyPairDelegate(ALIAS_ICAC)
@@ -109,48 +99,6 @@ internal class AppNOCIssuer(
             .setIntermediateCertificate(id.icacTlv)   // required by onNOCChainGeneration JNI
             .setOperationalCertificate(deviceNoc)
             .setIpk(id.ipk)
-            .setAdminSubject(controllerNodeId)
-            .build()
-    }
-
-    /**
-     * Controller-owned fabric: the phone holds no CA key, so forward the device
-     * CSR to the controller (`POST /fabric/sign-noc`) and install the returned
-     * NOC.
-     *
-     * NOTE: [ChipDeviceController.onNOCChainGeneration] historically requires a
-     * non-null intermediate cert (see AppFabricManager docs).  This path passes
-     * the controller-issued ICAC when the controller returns one; if the
-     * controller signs device NOCs directly with its root (no ICAC), this is a
-     * known integration risk to verify on-device.
-     */
-    private fun buildFromController(csr: ByteArray, nodeId: Long): ControllerParams? {
-        val signer  = ChipClient.deviceNocSigner ?: run {
-            Log.e(TAG, "adopted fabric but no deviceNocSigner set"); return null
-        }
-        val adopted = AppFabricManager.adoptedIdentity(context) ?: return null
-
-        Log.d(TAG, "Forwarding device CSR to controller for nodeId=0x%016X".format(nodeId))
-        val signed = signer.sign(csr, nodeId) ?: run {
-            Log.e(TAG, "controller did not sign device NOC for nodeId=0x%016X".format(nodeId)); return null
-        }
-        // The intermediate must be the ICAC that signed THIS device NOC (from the
-        // sign-noc response), not the phone's own adopted ICAC.  onNOCChainGeneration
-        // rejects a null intermediate (CHIP_ERROR_BAD_REQUEST 0x92), so the controller
-        // must return a 3-tier chain (root → ICAC → device NOC) with icac_der set.
-        val icac = signed.icacDer ?: adopted.icacTlv
-        if (icac == null) {
-            Log.e(TAG, "device NOC has no intermediate cert — controller must return "
-                + "icac_der (3-tier chain); onNOCChainGeneration will reject 2-tier")
-        }
-        Log.d(TAG, "Controller signed device NOC (${signed.nocDer.size} bytes, "
-            + "icac=${signed.icacDer?.size ?: 0} bytes)")
-
-        return ControllerParams.newBuilder()
-            .setRootCertificate(adopted.rootCaTlv)
-            .apply { icac?.let { setIntermediateCertificate(it) } }
-            .setOperationalCertificate(signed.nocDer)
-            .setIpk(adopted.ipk)
             .setAdminSubject(controllerNodeId)
             .build()
     }

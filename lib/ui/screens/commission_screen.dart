@@ -5,7 +5,6 @@ import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/providers/device_provider.dart';
-import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/qr_payload_service.dart';
@@ -80,12 +79,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
       onNeedsCredentials: _credentialCallback,
       threadDataset: () => _threadCtrl.text,
       controllerService: hubService,
-      fabricSync: hubService == null
-          ? null
-          : FabricSyncService(
-              localFabric: context.read<MatterChannel>(),
-              controller: hubService,
-            ),
     );
     _ctrl.addListener(_onControllerChanged);
 
@@ -138,10 +131,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
       onNeedsCredentials: _credentialCallback,
       threadDataset: () => _threadCtrl.text,
       controllerService: hubService,
-      fabricSync: FabricSyncService(
-        localFabric: context.read<MatterChannel>(),
-        controller: hubService,
-      ),
     );
     _ctrl.addListener(_onControllerChanged);
     if (oldPayload != null) _ctrl.setPayload(oldPayload);

@@ -1,14 +1,17 @@
 import 'dart:async';
 
+import 'package:fixnum/fixnum.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
+import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/device_store.dart';
-import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 import 'matter_fakes.dart' show FakeMatterPort;
 
 /// ── FakeMatterCommissionPort ────────────────────────────────────────────────
@@ -29,7 +32,17 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
   // ── Configurable results ──────────────────────────────────────────────────
   ParsedPayload? parsedResult;
   CommissionResult commissionResult = CommissionResult.ok(nodeId: 0x1234, deviceTypeId: 0x0101);
-  bool aclGrantResult = true;
+
+  /// ECM window result returned by [openCommissioningWindow] (null = failure).
+  ShareDeviceResult? windowResult = const ShareDeviceResult(
+      qrCodePayload: 'MT:FAKE', manualPairingCode: '00000000000',
+      passcode: 0x4D2, discriminator: 0x2A);
+
+  /// Fabrics returned by [readFabrics] (the post-handoff safety gate).
+  List<FabricDescriptor>? fabricsResult;
+
+  /// Result of [removeFabric].
+  bool removeFabricResult = true;
 
   /// Invoked inside commissionDevice / commissionViaIp / commissionViaCode.
   Future<void> Function()? onCommission;
@@ -39,7 +52,9 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
   int commissionDeviceCalls = 0;
   int commissionViaIpCalls = 0;
   int commissionViaCodeCalls = 0;
-  int grantAclCalls = 0;
+  int openWindowCalls = 0;
+  int readFabricsCalls = 0;
+  final List<({int nodeId, int fabricIndex})> removeFabricCalls = [];
 
   String? lastWifiSsid;
   String? lastWifiPassword;
@@ -118,13 +133,22 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
   }
 
   @override
-  Future<bool> grantControllerAccess(int nodeId) async {
-    grantAclCalls++;
-    return aclGrantResult;
+  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) async {
+    openWindowCalls++;
+    return windowResult;
   }
 
   @override
-  Future<String> readAcl(int nodeId) async => '';
+  Future<List<FabricDescriptor>?> readFabrics(int nodeId) async {
+    readFabricsCalls++;
+    return fabricsResult;
+  }
+
+  @override
+  Future<bool> removeFabric(int nodeId, int fabricIndex) async {
+    removeFabricCalls.add((nodeId: nodeId, fabricIndex: fabricIndex));
+    return removeFabricResult;
+  }
 }
 
 /// ── FakeDeviceProvider ──────────────────────────────────────────────────────
@@ -198,13 +222,22 @@ class FakeFluxCoapService extends FluxCoapService {
       : super(const FluxControllerEndpoint(host: '127.0.0.1', port: 5683));
 
   String? threadDatasetHexResult;
-  bool registerNodeResult = true;
+
+  /// When true, [commission] returns a successful result; otherwise a failure.
+  bool commissionSuccess = true;
+  /// RAW controller fabric id echoed in the [CommissionResult].
+  int commissionFabricId = 0xCAFE;
+  String commissionError = '';
+  /// When false, [commission] returns null (transport failure).
+  bool commissionReturnsResult = true;
 
   int getThreadDatasetCalls = 0;
-  int registerNodeCalls = 0;
-  int? registeredNodeId;
-  String? registeredName;
-  int? registeredDeviceType;
+  int commissionCalls = 0;
+  int? commissionedNodeId;
+  String? commissionedName;
+  int? commissionedPasscode;
+  int? commissionedDiscriminator;
+  int? commissionedDeviceType;
 
   @override
   Future<String?> getThreadDatasetHex() async {
@@ -213,38 +246,27 @@ class FakeFluxCoapService extends FluxCoapService {
   }
 
   @override
-  Future<bool> registerNode({
-    required int nodeId,
-    required String name,
-    int fabricId = 0,
+  Future<$proto.CommissionResult?> commission({
+    required int passcode,
+    required int discriminator,
+    int nodeId = 0,
+    String name = '',
     int vendorId = 0,
     int productId = 0,
     int deviceType = 0,
   }) async {
-    registerNodeCalls++;
-    registeredNodeId = nodeId;
-    registeredName = name;
-    registeredDeviceType = deviceType;
-    return registerNodeResult;
-  }
-}
-
-/// ── FakeFabricSyncService ─────────────────────────────────────────────────────
-///
-/// Returns a canned [FabricState] without touching real ports, so
-/// CommissioningController tests can exercise the join-membership branch.
-/// Extends the real service (its ports are unused stubs).
-class FakeFabricSyncService extends FabricSyncService {
-  FakeFabricSyncService()
-      : super(localFabric: FakeMatterPort(), controller: FakeFluxCoapService());
-
-  FabricState stateResult = FabricState.inSync;
-  int calls = 0;
-
-  @override
-  Future<FabricState> readState() async {
-    calls++;
-    return stateResult;
+    commissionCalls++;
+    commissionedNodeId = nodeId;
+    commissionedName = name;
+    commissionedPasscode = passcode;
+    commissionedDiscriminator = discriminator;
+    commissionedDeviceType = deviceType;
+    if (!commissionReturnsResult) return null;
+    return $proto.CommissionResult()
+      ..success = commissionSuccess
+      ..nodeId = Int64(nodeId)
+      ..fabricId = Int64(commissionFabricId)
+      ..error = commissionError;
   }
 }
 

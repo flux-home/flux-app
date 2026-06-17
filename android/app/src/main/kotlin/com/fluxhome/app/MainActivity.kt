@@ -42,7 +42,6 @@ class MainActivity : FlutterActivity() {
 
     private val bridge by lazy { MatterBridge(applicationContext) }
 
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var methodChannel: MethodChannel? = null
 
     // Hold a WiFi multicast lock for the lifetime of the app.
@@ -106,42 +105,6 @@ class MainActivity : FlutterActivity() {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
         methodChannel = channel
 
-        // Forward device CSRs to the controller (Dart owns the CoAP/DTLS client).
-        // Called from the "noc-issuer" background thread during commissioning on
-        // an adopted fabric; hop to the main thread to invoke Dart and block the
-        // calling thread on a latch until the signed NOC comes back.
-        ChipClient.deviceNocSigner = ChipClient.DeviceNocSigner { csr, nodeId ->
-            val latch  = java.util.concurrent.CountDownLatch(1)
-            val holder = arrayOfNulls<ChipClient.SignedNoc>(1)
-            mainHandler.post {
-                channel.invokeMethod(
-                    "signDeviceNoc",
-                    mapOf("csr" to csr, "nodeId" to nodeId),
-                    object : MethodChannel.Result {
-                        override fun success(res: Any?) {
-                            val m = res as? Map<*, *>
-                            val noc = m?.get("noc") as? ByteArray
-                            if (noc != null) {
-                                holder[0] = ChipClient.SignedNoc(noc, m["icac"] as? ByteArray)
-                            }
-                            latch.countDown()
-                        }
-                        override fun error(code: String, msg: String?, details: Any?) {
-                            Log.e(TAG, "signDeviceNoc error: $code $msg")
-                            latch.countDown()
-                        }
-                        override fun notImplemented() {
-                            Log.e(TAG, "signDeviceNoc not implemented in Dart")
-                            latch.countDown()
-                        }
-                    },
-                )
-            }
-            // Bounded wait so a stuck controller can't hang commissioning forever.
-            latch.await(35, java.util.concurrent.TimeUnit.SECONDS)
-            holder[0]
-        }
-
         channel.setMethodCallHandler { call, result ->
                 Log.d(TAG, "← ${call.method}")
                 when (call.method) {
@@ -175,68 +138,6 @@ class MainActivity : FlutterActivity() {
                         bridge.commissionViaCode(setupCode, nodeId, result)
                     }
 
-                    "toggleDevice" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val on     = call.argument<Boolean>("on") ?: false
-                        bridge.toggleDevice(nodeId, on, result)
-                    }
-
-                    "setLevel" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val level  = call.argument<Int>("level") ?: 0
-                        bridge.setLevel(nodeId, level, result)
-                    }
-
-                    "stepLevel" -> {
-                        val nodeId  = call.nodeIdArg() ?: 0L
-                        val stepUp  = call.argument<Boolean>("stepUp") ?: true
-                        bridge.stepLevel(nodeId, stepUp, result)
-                    }
-
-                    "coveringUp" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.coveringUp(nodeId, result)
-                    }
-
-                    "coveringDown" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.coveringDown(nodeId, result)
-                    }
-
-                    "coveringStop" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.coveringStop(nodeId, result)
-                    }
-
-                    "coveringGoToLift" -> {
-                        val nodeId        = call.nodeIdArg() ?: 0L
-                        val percent100ths = call.argument<Int>("percent100ths") ?: 0
-                        bridge.coveringGoToLift(nodeId, percent100ths, result)
-                    }
-
-                    "setFanMode" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val mode   = call.argument<Int>("mode") ?: 0
-                        bridge.setFanMode(nodeId, mode, result)
-                    }
-
-                    "setFanPercent" -> {
-                        val nodeId  = call.nodeIdArg() ?: 0L
-                        val percent = call.argument<Int>("percent") ?: 0
-                        bridge.setFanPercent(nodeId, percent, result)
-                    }
-
-                    "setColorTemperature" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val mireds = call.argument<Int>("mireds") ?: 370
-                        bridge.setColorTemperature(nodeId, mireds, result)
-                    }
-
-                    "readDeviceState" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readDeviceState(nodeId, result)
-                    }
-
                     "readBasicInfo" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readBasicInfo(nodeId, result)
@@ -251,41 +152,6 @@ class MainActivity : FlutterActivity() {
                     "readPartsList" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readPartsList(nodeId, result)
-                    }
-
-                    "readThermostat" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readThermostat(nodeId, result)
-                    }
-
-                    "writeHeatingSetpoint" -> {
-                        val nodeId      = call.nodeIdArg() ?: 0L
-                        val centidegrees = call.argument<Int>("centidegrees") ?: 0
-                        bridge.writeHeatingSetpoint(nodeId, centidegrees, result)
-                    }
-
-                    "writeSystemMode" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val mode   = call.argument<Int>("mode") ?: 0
-                        bridge.writeSystemMode(nodeId, mode, result)
-                    }
-
-                    "lockDoor" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val pin    = call.argument<String>("pin")
-                        bridge.lockDoor(nodeId, pin, result)
-                    }
-
-                    "unlockDoor" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        val pin    = call.argument<String>("pin")
-                        bridge.unlockDoor(nodeId, pin, result)
-                    }
-
-                    "readCumulativeEnergy" -> {
-                        val nodeId   = call.nodeIdArg() ?: 0L
-                        val endpoint = call.argument<Int>("endpoint") ?: 1
-                        bridge.readCumulativeEnergy(nodeId, endpoint, result)
                     }
 
                     "readThreadNetworkDiagnostics" -> {
@@ -331,22 +197,19 @@ class MainActivity : FlutterActivity() {
                         val nodeId    = call.nodeIdArg() ?: 0L
                         val vendorId  = call.argument<Int>("vendorId")  ?: 0
                         val productId = call.argument<Int>("productId") ?: 0
-                        bridge.openCommissioningWindow(nodeId, vendorId, productId, result)
+                        val awaitReachable = call.argument<Boolean>("awaitReachable") ?: true
+                        bridge.openCommissioningWindow(nodeId, vendorId, productId, awaitReachable, result)
+                    }
+
+                    "removeFabric" -> {
+                        val nodeId      = call.nodeIdArg() ?: 0L
+                        val fabricIndex = call.argument<Int>("fabricIndex") ?: 0
+                        bridge.removeFabric(nodeId, fabricIndex, result)
                     }
 
                     "removeDevice" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.removeDevice(nodeId, result)
-                    }
-
-                    "startSubscription" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.startSubscription(nodeId, result)
-                    }
-
-                    "stopSubscription" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.stopSubscription(nodeId, result)
                     }
 
                     "scanWifiNetworks" ->
@@ -364,31 +227,7 @@ class MainActivity : FlutterActivity() {
                         bridge.parsePayload(payload, result)
                     }
 
-                    "grantControllerAccess" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.grantControllerAccess(nodeId, result)
-                    }
-
-                    "readAcl" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readAcl(nodeId, result)
-                    }
-
                     "exportFabricForController" -> bridge.exportFabricForController(result)
-
-                    "generateOperationalCsr" -> bridge.generateOperationalCsr(result)
-
-                    "importControllerFabric" -> {
-                        val rootCaTlv = call.argument<ByteArray>("rootCaTlv")
-                        val icacTlv   = call.argument<ByteArray>("icacTlv")
-                        val nocTlv    = call.argument<ByteArray>("nocTlv")
-                        val ipk       = call.argument<ByteArray>("ipk")
-                        val fabricId  = (call.argument<Number>("fabricId"))?.toLong() ?: 0L
-                        val nodeId    = (call.argument<Number>("nodeId"))?.toLong() ?: 0L
-                        bridge.importControllerFabric(
-                            rootCaTlv, icacTlv, nocTlv, ipk, fabricId, nodeId, result,
-                        )
-                    }
 
                     "provideCredentials" -> {
                         val ssid     = call.argument<String?>("ssid")
@@ -403,9 +242,6 @@ class MainActivity : FlutterActivity() {
 
                     "getFabricId" ->
                         bridge.getFabricId(result)
-
-                    "getRawFabricId" ->
-                        bridge.getRawFabricId(result)
 
                     "getVendorId" ->
                         bridge.getVendorId(result)

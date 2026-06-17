@@ -4,10 +4,12 @@ import android.content.Context
 import android.util.Log
 import chip.devicecontroller.ClusterIDMapping.OperationalCredentials
 import chip.devicecontroller.model.ChipAttributePath
+import chip.devicecontroller.model.InvokeElement
 import com.fluxhome.app.chip.ChipClient
 import matter.tlv.AnonymousTag
 import matter.tlv.ContextSpecificTag
 import matter.tlv.TlvReader
+import matter.tlv.TlvWriter
 
 private const val TAG = "OpCredCluster"
 
@@ -34,6 +36,27 @@ internal object OperationalCredentialsCluster {
         readAttributes(context, nodeId, FABRICS_PATH, emptyList(), TAG) { state ->
             parseFabrics(state)
         }
+
+    // RemoveFabric command (0x0A): field 0 = FabricIndex (uint8).
+    private const val FIELD_FABRIC_INDEX = 0x00
+
+    /**
+     * Removes the fabric at [fabricIndex] from [nodeId] (OperationalCredentials
+     * RemoveFabric).  In the multi-admin handoff the phone calls this on its OWN
+     * throwaway fabric index once the controller fabric is confirmed present, so
+     * the device ends up on the controller fabric only.
+     */
+    suspend fun removeFabric(context: Context, nodeId: Long, fabricIndex: Int) {
+        val tlv = TlvWriter()
+            .startStructure(AnonymousTag)
+            .put(ContextSpecificTag(FIELD_FABRIC_INDEX), fabricIndex.toUByte())
+            .endStructure()
+            .getEncoded()
+        invoke(context, nodeId, InvokeElement.newInstance(
+            0, OperationalCredentials.ID, OperationalCredentials.Command.RemoveFabric.id, tlv, null,
+        ))
+        Log.i(TAG, "RemoveFabric idx=$fabricIndex → nodeId=0x%016X".format(nodeId))
+    }
 
     private fun parseFabrics(state: chip.devicecontroller.model.NodeState?): List<FabricDescriptor> {
         val tlv = state

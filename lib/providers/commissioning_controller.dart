@@ -7,9 +7,9 @@ import 'package:flutter/material.dart' show BuildContext;
 import 'package:flutter/widgets.dart' show BuildContext;
 
 import 'package:matter_home/models/commission_models.dart';
+import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/device_provider.dart';
-import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/services/qr_payload_service.dart';
@@ -187,20 +187,17 @@ class CommissioningController extends ChangeNotifier {
     required this.onNeedsCredentials,
     this.threadDataset = _returnEmpty,
     this.controllerService,
-    this.fabricSync,
   }) : _port = port,
        _provider = provider;
 
   final MatterCommissionPort _port;
   final DeviceProvider _provider;
 
-  /// Non-null in hub mode: CoAP client for fabric provision + node register.
+  /// The connected Flux hub's CoAP client.  Commissioning requires it: the
+  /// device is handed off to the controller (`POST /commission`), which
+  /// commissions it onto its own fabric.  Null when no hub is connected — in
+  /// which case [start] fails fast (there is no standalone commissioning).
   final FluxCoapService? controllerService;
-
-  /// Non-null in hub mode: guarantees the controller carries the app's fabric
-  /// before a commissioned device is handed over to it.  When null (legacy /
-  /// tests), the handover proceeds without a fabric check.
-  final FabricSyncService? fabricSync;
 
   final Future<bool> Function() requestBlePermissions;
   /// Called when the device needs credentials during commissioning.
@@ -281,6 +278,16 @@ class CommissioningController extends ChangeNotifier {
   /// on success or display the failure footer.
   Future<void> start(CommissionConfig config) async {
     if (rawPayload == null || parsed == null) return;
+
+    // Commission-then-handoff requires a hub: the device is commissioned onto a
+    // throwaway phone fabric, then handed to the controller.  Without a hub
+    // there is nothing to hand off to, so fail fast (no standalone path).
+    if (controllerService == null) {
+      error = 'No Flux hub connected — join a hub before adding devices';
+      phase = CommissionPhase.failed;
+      notifyListeners();
+      return;
+    }
 
     if (config.method == CommissionMethod.ble) {
       if (!await requestBlePermissions()) return;
@@ -394,75 +401,130 @@ class CommissioningController extends ChangeNotifier {
 
     if (sessionId != _sessionId) return; // cancelled while commission ran
 
-    if (commissionResult.success) {
-      final nodeId = commissionResult.nodeId!;
-      var managedBy = ManagedBy.phone;
-
-      // ── Post-commission: hand the device over to the controller ────────────
-      if (controllerService != null) {
-        // Hand over only if this phone is ALREADY on the hub's fabric.  We check
-        // passively (readState) and never adopt here — adoption enrolls + relaunches
-        // the app, which must be user-initiated (Settings → Flux Hub → Join hub),
-        // not triggered mid-commission.  If not joined, keep the device on the phone.
-        var fabricOk = true;
-        if (fabricSync != null) {
-          _appendRaw('▶ Checking hub membership…', level: LogLevel.step);
-          final state = await fabricSync!.readState();
-          if (state == FabricState.inSync) {
-            _appendRaw('✓ On the hub\'s fabric', level: LogLevel.success);
-          } else {
-            fabricOk = false;
-            _appendRaw(
-                '⚠ This phone hasn\'t joined the hub (Settings → Flux Hub → '
-                'Join hub) — keeping device on phone',
-                level: LogLevel.info);
-          }
-        }
-
-        if (fabricOk) {
-          _appendRaw('▶ Granting controller access…', level: LogLevel.step);
-          final aclOk = await _port.grantControllerAccess(nodeId);
-          if (!aclOk) {
-            error = 'Failed to grant controller access — device cannot be handed over';
-            _provider.failCommissioning(error);
-            phase = CommissionPhase.failed;
-            _appendRaw(error!, level: LogLevel.error);
-            notifyListeners();
-            return;
-          }
-          _appendRaw('✓ Controller access granted', level: LogLevel.success);
-
-          _appendRaw('▶ Registering device with controller…', level: LogLevel.step);
-          final registered = await controllerService!.registerNode(
-            nodeId:     nodeId,
-            name:       name,
-            deviceType: commissionResult.deviceTypeId ?? 0,
-          );
-          if (registered) {
-            _appendRaw('✓ Device registered with controller', level: LogLevel.success);
-          } else {
-            _appendRaw('⚠ Controller registration pending — it will connect shortly',
-                level: LogLevel.info);
-          }
-          managedBy = ManagedBy.controller;
-        }
-      }
-
-      final device = await _provider.registerCommissionedDevice(
-        commissionResult,
-        name,
-        networkType,
-        managedBy: managedBy,
-      );
-      result = device;
-      phase = CommissionPhase.done;
-      await QrPayloadService.clear();
-    } else {
+    if (!commissionResult.success) {
       error = commissionResult.error ?? 'Commissioning failed';
       _provider.failCommissioning(error);
       phase = CommissionPhase.failed;
       _appendRaw(error!, level: LogLevel.error);
+      notifyListeners();
+      return;
     }
+
+    final nodeId = commissionResult.nodeId!;
+    final svc    = controllerService!;
+    var managedBy = ManagedBy.phone;
+
+    // ── Commission-then-handoff (standard Matter multi-admin) ─────────────────
+    // Phone Pass-1 is done; stop projecting its remaining stages onto the human
+    // track and switch to handoff milestones.
+    stageIdx = kCommissionStages.length;
+    // 1. Open an ECM window on the device (still on our throwaway fabric).
+    _appendRaw('▶ Opening commissioning window…', level: LogLevel.step);
+    final window = await _port.openCommissioningWindow(nodeId);
+    if (sessionId != _sessionId) return; // cancelled while awaiting
+    if (window == null || window.passcode == 0 || window.discriminator == 0) {
+      _failHandoff('Could not open a commissioning window on the device');
+      return;
+    }
+    _appendRaw('✓ Window open (disc=${window.discriminator})', level: LogLevel.success);
+
+    // 2. Hand the device to the controller — it commissions onto its OWN fabric
+    //    with its own CA and registers + subscribes it itself.
+    _appendRaw('▶ Handing the device to the hub…', level: LogLevel.step);
+    _appendHuman('HUB COMMISSIONING');
+    // Pass nodeId 0 so the controller assigns the device's node ID on its own
+    // fabric. The controller owns id assignment there, and this avoids feeding
+    // the phone-fabric node ID through the wire (the proto field is uint64; a
+    // node ID with bit 31 set must not be sign-extended). Our post-handoff
+    // fabric gate uses the phone's own CASE session, not this id.
+    // device_address/port come from the phone's own mDNS scan of the open window
+    // (window.ipv6Address). The controller PASEs this directly because its own
+    // DNS-SD discovery can't identify the device over the OTBR proxy.
+    final handoff = await svc.commission(
+      passcode:      window.passcode,
+      discriminator: window.discriminator,
+      nodeId:        0,
+      name:          name,
+      deviceType:    commissionResult.deviceTypeId ?? 0,
+      deviceAddress: window.ipv6Address,
+      devicePort:    window.port,
+    );
+    if (sessionId != _sessionId) return;
+    if (handoff == null || !handoff.success) {
+      // Controller could not commission — NEVER remove our fabric; the device
+      // stays recoverable on the phone's throwaway fabric.
+      final why = (handoff?.error.isNotEmpty ?? false)
+          ? handoff!.error
+          : 'the hub could not commission the device';
+      _failHandoff('Handoff failed — $why');
+      return;
+    }
+
+    final controllerFabricHex =
+        handoff.fabricId.toHexString().toUpperCase().padLeft(16, '0');
+    _appendRaw('✓ Hub commissioned the device (fabric 0x$controllerFabricHex)',
+        level: LogLevel.success);
+    _appendHuman('HUB COMMISSIONED');
+    managedBy = ManagedBy.controller;
+
+    // 3. Safety gate + 4. RemoveFabric.  The controller's fabric MUST be present
+    //    on the device before we remove our own; on any doubt we keep our fabric
+    //    (the device stays recoverable, never orphaned).
+    _appendRaw('▶ Verifying the hub fabric on the device…', level: LogLevel.step);
+    _appendHuman('VERIFYING');
+    final fabrics = await _port.readFabrics(nodeId) ?? const <FabricDescriptor>[];
+    if (sessionId != _sessionId) return;
+
+    bool isControllerFabric(String id) =>
+        id.replaceFirst(RegExp('^0x', caseSensitive: false), '')
+          .toUpperCase()
+          .padLeft(16, '0') == controllerFabricHex;
+
+    if (!fabrics.any((f) => isControllerFabric(f.fabricId))) {
+      _appendRaw(
+          '⚠ Hub fabric not yet visible on the device — leaving this phone\'s '
+          'fabric in place (the device stays recoverable)',
+          level: LogLevel.info);
+    } else {
+      final mine = fabrics.where((f) => !isControllerFabric(f.fabricId)).toList();
+      if (mine.length == 1) {
+        _appendRaw('▶ Removing this phone\'s temporary fabric…', level: LogLevel.step);
+        final removed = await _port.removeFabric(nodeId, mine.single.fabricIndex);
+        if (sessionId != _sessionId) return;
+        _appendRaw(
+            removed
+                ? '✓ Device is now on the hub fabric only'
+                : '⚠ Could not remove this phone\'s fabric — the hub still controls the device',
+            level: removed ? LogLevel.success : LogLevel.info);
+      } else {
+        _appendRaw(
+            '⚠ Could not uniquely identify this phone\'s fabric '
+            '(${mine.length} candidates) — leaving it in place',
+            level: LogLevel.info);
+      }
+    }
+
+    final device = await _provider.registerCommissionedDevice(
+      commissionResult,
+      name,
+      networkType,
+      managedBy: managedBy,
+    );
+    result = device;
+    phase = CommissionPhase.done;
+    _appendHuman('COMPLETE', color: const Color(0xFF34A853));
+    await QrPayloadService.clear();
+    notifyListeners();
+  }
+
+  /// Fails the current commission with [msg].  Used for handoff failures where
+  /// the device remains on the phone's throwaway fabric (never orphaned).
+  void _failHandoff(String msg) {
+    error = msg;
+    _provider.failCommissioning(msg);
+    phase = CommissionPhase.failed;
+    _appendRaw(msg, level: LogLevel.error);
+    _appendHuman('FAILED', color: const Color(0xFFE53935));
     notifyListeners();
   }
 
@@ -574,6 +636,17 @@ class CommissioningController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Appends a milestone to the human-readable progress track.
+  ///
+  /// The controller handoff runs AFTER the phone's Pass-1 commissioning (whose
+  /// milestones arrive via [commissionEvents]). Without this the human track
+  /// would freeze at the phone's completion — and read as fully "done" — while
+  /// the hub is still commissioning the device onto its own fabric.
+  void _appendHuman(String text, {Color? color}) {
+    humanLog = [...humanLog, HumanEntry(text: text, color: color)];
+    notifyListeners();
+  }
+
   static Color? _humanColorFor(LogLevel lvl) => switch (lvl) {
     LogLevel.success => const Color(0xFF34A853),
     _ => null,
@@ -598,7 +671,10 @@ class CommissioningController extends ChangeNotifier {
     if (event.contains('ICD device detected')) return 'ICD REGISTERING';
     if (event.contains('Using Thread')) return 'THREAD DATASET';
     if (event.contains('Using Wi-Fi')) return 'WIFI CREDENTIALS';
-    if (event.startsWith('🎉')) return 'COMPLETE';
+    // The phone's Pass-1 completion is NOT the end of the flow — the controller
+    // handoff follows. Label it as a handoff step, not "COMPLETE" (which is
+    // reserved for phase == done, after the hub has commissioned the device).
+    if (event.startsWith('🎉')) return 'HANDING TO HUB';
     if (event.startsWith('✗')) return 'FAILED';
     return null;
   }

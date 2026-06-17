@@ -25,39 +25,11 @@ import 'package:matter_home/services/matter_port.dart';
 /// ([MatterSubscriptionPort], [MatterCommissionPort], [MatterClusterPort],
 /// [MatterFabricPort]) and be tested with fakes.
 class MatterChannel implements MatterPort {
-  MatterChannel() {
-    // Register the reverse (native → Dart) handler for device-NOC signing
-    // requests raised during commissioning on an adopted fabric.
-    _method.setMethodCallHandler(_handleNativeCall);
-  }
+  MatterChannel();
 
   static const _method = MethodChannel('com.fluxhome.app/matter');
   static const _events = EventChannel('com.fluxhome.app/commission_events');
   static const _deviceEvents = EventChannel('com.fluxhome.app/device_state');
-
-  /// Set by the app to sign a device CSR via the active controller (the hub is
-  /// the CA on an adopted fabric).  Returns the signed device NOC + the ICAC
-  /// that signed it (both X.509 DER), or null on failure.  The ICAC is required
-  /// — the CHIP SDK rejects a NOC chain with no intermediate.
-  /// Wired in [main] to the current [HubConnection] service.
-  Future<({Uint8List noc, Uint8List? icac})?> Function(Uint8List csr, int nodeId)?
-      deviceNocSigner;
-
-  Future<Object?> _handleNativeCall(MethodCall call) async {
-    switch (call.method) {
-      case 'signDeviceNoc':
-        final signer = deviceNocSigner;
-        if (signer == null) return null;
-        final args   = Map<String, dynamic>.from(call.arguments as Map);
-        final csr    = args['csr'] as Uint8List;
-        final nodeId = (args['nodeId'] as num).toInt();
-        final r      = await signer(csr, nodeId);
-        if (r == null) return null;
-        return {'noc': r.noc, if (r.icac != null) 'icac': r.icac};
-      default:
-        return null;
-    }
-  }
 
   // ── Internal helper ────────────────────────────────────────────────────────
 
@@ -484,14 +456,6 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<bool> grantControllerAccess(int nodeId) =>
-      _invoke('grantControllerAccess', false, args: {'nodeId': nodeId});
-
-  @override
-  Future<String> readAcl(int nodeId) =>
-      _invoke('readAcl', '[]', args: {'nodeId': nodeId});
-
-  @override
   Future<FabricExportData?> exportFabricForController() async {
     final raw = await _invoke<Map<Object?, Object?>?>('exportFabricForController', null);
     if (raw == null) return null;
@@ -507,23 +471,6 @@ class MatterChannel implements MatterPort {
   }
 
   @override
-  Future<Uint8List?> generateOperationalCsr() async {
-    final raw = await _invoke<List<Object?>?>('generateOperationalCsr', null);
-    return raw == null ? null : Uint8List.fromList(raw.cast<int>());
-  }
-
-  @override
-  Future<bool> importControllerFabric(FabricImportData creds) =>
-      _invoke<bool>('importControllerFabric', false, args: {
-        'rootCaTlv': creds.rootCaTlv,
-        if (creds.icacTlv != null) 'icacTlv': creds.icacTlv,
-        'nocTlv':    creds.nocTlv,
-        'ipk':       creds.ipk,
-        'fabricId':  creds.fabricId,
-        'nodeId':    creds.nodeId,
-      });
-
-  @override
   Future<void> provideCredentials({String? ssid, String? password, String? threadDatasetHex}) => _invoke<void>(
     'provideCredentials',
     null,
@@ -536,10 +483,31 @@ class MatterChannel implements MatterPort {
 
   @override
   Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0}) =>
+      _openWindow(nodeId, vendorId: vendorId, productId: productId, awaitReachable: true);
+
+  @override
+  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) =>
+      // Commission-then-handoff: scan for the device's CM=2 mDNS advertisement so
+      // we can hand the controller its IPv6 + port. The controller's own DNS-SD
+      // discovery can't identify the device — the OTBR's SRP->mDNS proxy strips
+      // the discriminator/CM TXT on its local query — so it PASEs this address
+      // directly instead.
+      _openWindow(nodeId, awaitReachable: true);
+
+  /// Opens an ECM window via the native `shareDevice` op.  [awaitReachable]
+  /// tells the bridge whether to block on the device's CM=2 mDNS advertisement
+  /// (needed for sharing; not for the controller handoff).
+  Future<ShareDeviceResult?> _openWindow(int nodeId,
+          {int vendorId = 0, int productId = 0, bool awaitReachable = true}) =>
       _invoke<ShareDeviceResult?>(
         'shareDevice',
         null,
-        args: {'nodeId': nodeId, 'vendorId': vendorId, 'productId': productId},
+        args: {
+          'nodeId': nodeId,
+          'vendorId': vendorId,
+          'productId': productId,
+          'awaitReachable': awaitReachable,
+        },
         decode: (raw) {
           if (raw == null) return null;
           final map = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
@@ -547,9 +515,17 @@ class MatterChannel implements MatterPort {
             qrCodePayload:     map['qrCodePayload']     as String,
             manualPairingCode: map['manualPairingCode'] as String,
             ipv6Address:       (map['ipv6Address'] as String?) ?? '',
+            port:              (map['port'] as num?)?.toInt() ?? 0,
+            passcode:          (map['passcode'] as num?)?.toInt() ?? 0,
+            discriminator:     (map['discriminator'] as num?)?.toInt() ?? 0,
           );
         },
       );
+
+  @override
+  Future<bool> removeFabric(int nodeId, int fabricIndex) =>
+      _invoke('removeFabric', false,
+          args: {'nodeId': nodeId, 'fabricIndex': fabricIndex});
 
   @override
   Future<bool> removeDevice(int nodeId) => _invoke('removeDevice', false, args: {'nodeId': nodeId});
@@ -566,9 +542,6 @@ class MatterChannel implements MatterPort {
 
   @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
-
-  @override
-  Future<String?> getRawFabricId() => _invoke<String?>('getRawFabricId', null);
 
   @override
   Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);

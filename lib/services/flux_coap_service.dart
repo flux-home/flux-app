@@ -69,7 +69,8 @@ class FluxControllerEndpoint {
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// DEL  /devices?id=<hex>             → StatusResponse
 /// POST /fabric/provision             ← FabricProvision → FabricProvisionResult
-/// POST /node/register                ← RegisterNodeRequest → BoolResult
+/// POST /fabric/enroll                ← FabricEnrollRequest → FabricEnrollResponse
+/// POST /commission                   ← CommissionRequest → CommissionResult
 /// GET  /events?id=<hex>    Observe   → DeviceStateEvent
 /// POST /command                      ← DeviceCommand → BoolResult
 /// POST /write                        ← WriteAttrRequest → BoolResult
@@ -116,6 +117,53 @@ class FluxCoapService implements MatterPort {
     return CoapClient(endpoint.coapUri('/'));
   }
 
+  // ── DTLS connection recovery ───────────────────────────────────────────────
+  // The DTLS session is established once and reused. If the controller reboots
+  // (or the session otherwise drops) the old client is permanently dead — every
+  // send then throws "Not connected!" or times out. Rebuild it on failure so the
+  // connection re-establishes instead of failing forever. Single-flighted so
+  // concurrent failures rebuild once.
+  Future<void>? _reconnecting;
+
+  Future<void> _reconnect() {
+    final inflight = _reconnecting;
+    if (inflight != null) return inflight;
+    final f = () async {
+      try { _client.close(); } on Exception catch (_) {}
+      if (!_disposed) _client = _buildClient();
+    }();
+    _reconnecting = f.whenComplete(() => _reconnecting = null);
+    return _reconnecting!;
+  }
+
+  /// Sends [req], recovering from a dead DTLS session. On a connection-level
+  /// error (e.g. "Not connected!") the request never reached the controller, so
+  /// we reconnect and retry once. On a timeout the controller may be mid-operation
+  /// (a commission can take ~60s), so we rebuild for the next call but do not
+  /// resend — and let the timeout propagate.
+  Future<CoapResponse> _send(CoapRequest req, Duration timeout,
+      {bool retryOnConnError = true}) async {
+    try {
+      return await _client.send(req).timeout(timeout);
+    } on TimeoutException {
+      unawaited(_reconnect());
+      rethrow;
+    } on Exception catch (e) {
+      if (_disposed) rethrow;
+      // Non-idempotent calls (e.g. POST /commission) must NOT be resent: the
+      // controller may still be mid-operation, and a resend starts a second,
+      // overlapping device commission that wedges the device. Reconnect for the
+      // next call, but surface this error instead of retrying.
+      if (!retryOnConnError) {
+        unawaited(_reconnect());
+        rethrow;
+      }
+      debugPrint('FluxCoapService: connection error ($e) — reconnecting and retrying once');
+      await _reconnect();
+      return await _client.send(req).timeout(timeout);
+    }
+  }
+
   // ── Low-level CoAP helpers ─────────────────────────────────────────────────
 
   static const _proto    = CoapMediaType.applicationOctetStream;
@@ -132,7 +180,7 @@ class FluxCoapService implements MatterPort {
     final t = timeout ?? (endpoint.hasDtls ? _timeout15 : _timeout5);
     try {
       final req  = CoapRequest.get(endpoint.coapUri(path, query: query), accept: _proto);
-      final resp = await _client.send(req).timeout(t);
+      final resp = await _send(req, t);
       if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
       return null;
     } on Exception catch (e) {
@@ -146,7 +194,7 @@ class FluxCoapService implements MatterPort {
     try {
       final req  = CoapRequest.put(endpoint.coapUri(path),
           payload: body, contentFormat: _proto, accept: _proto);
-      final resp = await _client.send(req).timeout(timeout);
+      final resp = await _send(req, timeout);
       if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
       return null;
     } on Exception catch (e) {
@@ -156,11 +204,11 @@ class FluxCoapService implements MatterPort {
   }
 
   Future<Uint8List?> _post(String path, Uint8List body,
-      {Duration timeout = _timeout30}) async {
+      {Duration timeout = _timeout30, bool retryOnConnError = true}) async {
     try {
       final req  = CoapRequest.post(endpoint.coapUri(path),
           payload: body, contentFormat: _proto, accept: _proto);
-      final resp = await _client.send(req).timeout(timeout);
+      final resp = await _send(req, timeout, retryOnConnError: retryOnConnError);
       if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
       return null;
     } on Exception catch (e) {
@@ -172,7 +220,7 @@ class FluxCoapService implements MatterPort {
   Future<bool> _delete(String path, {Map<String, String>? query}) async {
     try {
       final req  = CoapRequest.delete(endpoint.coapUri(path, query: query));
-      final resp = await _client.send(req).timeout(_timeout5);
+      final resp = await _send(req, _timeout5);
       return resp.code.isSuccess;
     } on Exception catch (e) {
       debugPrint('FluxCoapService DELETE $path: $e');
@@ -222,7 +270,7 @@ class FluxCoapService implements MatterPort {
   ///
   /// When [rcacPrivKey] (the raw 32-byte RCAC private scalar) is supplied the
   /// controller stores it and becomes the fabric CA, so it can later answer
-  /// [enrollFabric] and [signDeviceNoc] for additional phones / devices.
+  /// [enrollFabric] for additional phones.
   Future<$proto.FabricProvisionResult?> provisionFabric({
     required int       fabricId,
     required int       nodeId,
@@ -237,12 +285,12 @@ class FluxCoapService implements MatterPort {
     final req = $proto.FabricProvision()
       ..fabricId  = Int64(fabricId)
       ..nodeId    = Int64(nodeId)
-      ..rootCaDer = rootCaTlv
-      ..nocDer    = nocTlv
+      ..rootCaTlv = rootCaTlv
+      ..nocTlv    = nocTlv
       ..opPrivKey = opPrivKey
       ..ipk       = ipk
       ..vendorId  = vendorId;
-    if (icacTlv != null) req.icacDer = icacTlv;
+    if (icacTlv != null) req.icacTlv = icacTlv;
     if (rcacPrivKey != null) req.rcacPrivKey = rcacPrivKey;
     final body = await _post('/fabric/provision', req.writeToBuffer(),
         timeout: const Duration(seconds: 30));
@@ -254,76 +302,53 @@ class FluxCoapService implements MatterPort {
     }
   }
 
-  // ── Fabric enrollment — POST /fabric/enroll ──────────────────────────────
+  // ── Commission-then-handoff — POST /commission ───────────────────────────
 
-  /// Enrolls this phone onto the controller's fabric.  Sends a DER PKCS#10
-  /// [csr]; the controller (acting as CA) signs it and returns the full
-  /// credential set the phone needs to import as its operational identity.
-  /// [nodeId] of 0 lets the controller assign one.
-  Future<$proto.FabricEnrollResponse?> enrollFabric({
-    required Uint8List csr,
-    int                nodeId = 0,
+  /// Hands a device the phone has just BLE-commissioned (onto its throwaway
+  /// fabric) over to the controller.  The phone opened an ECM window and passes
+  /// the window's [passcode] + [discriminator]; the controller rediscovers the
+  /// device over Thread, performs PASE, and commissions it onto its OWN fabric
+  /// with its own CA — so no device CSR ever leaves the controller.  On success
+  /// the controller registers + subscribes the device itself.
+  ///
+  /// [CommissionResult.fabricId] is the RAW (uncompressed) controller fabric id;
+  /// the caller matches it against the device's Fabrics attribute before
+  /// removing its throwaway fabric.  [nodeId] of 0 lets the controller assign one.
+  Future<$proto.CommissionResult?> commission({
+    required int passcode,
+    required int discriminator,
+    int          nodeId        = 0,
+    String       name          = '',
+    int          vendorId      = 0,
+    int          productId     = 0,
+    int          deviceType    = 0,
+    String       deviceAddress = '',
+    int          devicePort    = 0,
   }) async {
-    final req = $proto.FabricEnrollRequest()
-      ..csr    = csr
-      ..nodeId = Int64(nodeId);
-    final body = await _post('/fabric/enroll', req.writeToBuffer(),
-        timeout: const Duration(seconds: 30));
+    final req = $proto.CommissionRequest()
+      ..passcode      = passcode
+      ..discriminator = discriminator
+      ..nodeId        = Int64(nodeId)
+      ..name          = name
+      ..vendorId      = vendorId
+      ..productId     = productId
+      ..deviceType    = deviceType
+      ..deviceAddress = deviceAddress
+      ..devicePort    = devicePort;
+    // /commission is non-idempotent and long-running (the controller blocks up
+    // to ~120s). Keep it confirmable so the CoAP client reliably awaits the
+    // reply; do NOT auto-retry on a connection error (a resend would be a second
+    // commission). Duplicate requests from CoAP retransmits are made harmless on
+    // the controller by its idempotency cache (replays the cached result for the
+    // same device within a short window) + in-flight guard.
+    final body = await _post('/commission', req.writeToBuffer(),
+        timeout: const Duration(seconds: 150), retryOnConnError: false);
     if (body == null) return null;
-    try { return $proto.FabricEnrollResponse.fromBuffer(body); }
+    try { return $proto.CommissionResult.fromBuffer(body); }
     on Exception catch (e) {
-      debugPrint('FluxCoapService.enrollFabric: $e');
+      debugPrint('FluxCoapService.commission: $e');
       return null;
     }
-  }
-
-  // ── Delegated device-NOC signing — POST /fabric/sign-noc ─────────────────
-
-  /// Forwards a device's [csr] (captured mid-commissioning) to the controller
-  /// for signing, so the fabric root key never leaves the controller.  Returns
-  /// the signed device NOC chain.  [nodeId] of 0 lets the controller assign one.
-  Future<$proto.FabricSignNocResponse?> signDeviceNoc({
-    required Uint8List csr,
-    int                nodeId = 0,
-  }) async {
-    final req = $proto.FabricSignNocRequest()
-      ..csr    = csr
-      ..nodeId = Int64(nodeId);
-    final body = await _post('/fabric/sign-noc', req.writeToBuffer(),
-        timeout: const Duration(seconds: 30));
-    if (body == null) return null;
-    try { return $proto.FabricSignNocResponse.fromBuffer(body); }
-    on Exception catch (e) {
-      debugPrint('FluxCoapService.signDeviceNoc: $e');
-      return null;
-    }
-  }
-
-  // ── Node registration — POST /node/register ───────────────────────────────
-
-  /// Notifies the controller that a device has been commissioned into the shared
-  /// fabric and grants it access (ACL already written by the app via BLE).
-  /// The controller opens a CASE session and subscribes to the device.
-  Future<bool> registerNode({
-    required int nodeId,
-    required String name,
-    int fabricId  = 0, // 0 = skip sanity check on controller side
-    int vendorId  = 0,
-    int productId = 0,
-    int deviceType = 0,
-  }) async {
-    final req = $proto.RegisterNodeRequest()
-      ..fabricId   = Int64(fabricId)
-      ..nodeId     = Int64(nodeId)
-      ..name       = name
-      ..vendorId   = vendorId
-      ..productId  = productId
-      ..deviceType = deviceType;
-    final body = await _post('/node/register', req.writeToBuffer(),
-        timeout: const Duration(seconds: 30));
-    if (body == null) return false;
-    try { return $proto.BoolResult.fromBuffer(body).success; }
-    on Exception catch (_) { return false; }
   }
 
   // ── MatterSubscriptionPort — GET /events?id=<hex> ─────────────────────────
@@ -516,8 +541,11 @@ class FluxCoapService implements MatterPort {
   @override
   Future<void> identify(int nodeId, {int seconds = 15}) async {
     try {
+      // Identify lives on the application endpoint (1), not the root endpoint
+      // (0) — endpoint 0 returns UNSUPPORTED_CLUSTER (0xC3). Matches every other
+      // cluster command, which all target endpoint 1.
       await _sendCmd(nodeId, _clIdentify, 0,
-          [_arg('identifyTime', uintVal: seconds)], endpoint: 0);
+          [_arg('identifyTime', uintVal: seconds)]);
     } on Exception catch (_) {}
   }
 
@@ -707,9 +735,6 @@ class FluxCoapService implements MatterPort {
     return info != null ? info.fabricId.toHexString() : null;
   }
 
-  @override
-  Future<String?> getRawFabricId() async => null; // hub side: use local channel
-
   @override Future<int?> getVendorId() async => null;
   @override Future<bool> downloadAndFlash({
     required int nodeId, required String otaUrl,
@@ -725,19 +750,15 @@ class FluxCoapService implements MatterPort {
   // ── MatterCommissionPort — BLE stays on local MatterChannel ───────────────
 
   @override
-  Future<bool> grantControllerAccess(int nodeId) async => true; // ACL written via MatterChannel
+  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) async =>
+      null; // ECM window opens on the local MatterChannel
 
   @override
-  Future<String> readAcl(int nodeId) async => '[]'; // not applicable on hub side
+  Future<bool> removeFabric(int nodeId, int fabricIndex) async =>
+      false; // RemoveFabric runs on the local MatterChannel
 
   @override
   Future<FabricExportData?> exportFabricForController() async => null; // hub side: use local channel
-
-  @override
-  Future<Uint8List?> generateOperationalCsr() async => null; // hub side: use local channel
-
-  @override
-  Future<bool> importControllerFabric(FabricImportData creds) async => false; // hub side: use local channel
 
   @override
   Future<ParsedPayload?> parsePayload(String payload) async => null;

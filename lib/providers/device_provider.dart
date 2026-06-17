@@ -25,6 +25,8 @@ enum DeviceProviderState { idle, loading, error }
 class DeviceProvider extends ChangeNotifier {
   // ── Constructor ───────────────────────────────────────────────────────────
 
+  /// [channel] is [NullMatterPort] until a controller is found, then becomes
+  /// the live [FluxCoapService] via [adoptHubMode] — see `docs/controller-only-control.md`.
   DeviceProvider(this._store, MatterPort channel, {
     FluxCoapService? controllerService,
     DateTime Function() now = DateTime.now,
@@ -299,10 +301,14 @@ class DeviceProvider extends ChangeNotifier {
     debugPrint('DeviceProvider: purged stale controller device $deviceId');
   }
 
-  // ── Late hub-mode adoption ───────────────────────────────────────────────
+  // ── Hub connection ────────────────────────────────────────────────────────
 
-  /// Switches a provider that started in standalone mode over to hub mode
-  /// once the Flux Controller is discovered after boot.
+  /// Switches this provider from the inert [NullMatterPort] placeholder (or a
+  /// stale controller) over to the live [FluxCoapService] once the Flux
+  /// Controller is discovered/reconnected.  Device control is always
+  /// controller-proxied (`POST /command` / `/write` / `/read` + `GET /events`
+  /// — see `docs/controller-only-control.md`); there is no local-CHIP control
+  /// path to fall back to.
   ///
   /// Stops all subscriptions on the old channel, rewires the event listener
   /// to the CoAP service, restarts subscriptions, and runs reconciliation.
@@ -1033,8 +1039,10 @@ class DeviceProvider extends ChangeNotifier {
     // Always notify the controller — it tracks all registered nodes regardless
     // of who commissioned them.
     await _ctrlService?.removeDevice(device.nodeId);
-    // Unpair from the local CHIP fabric for app-commissioned devices.
-    // Controller-managed devices live only in the controller's fabric.
+    // Non-controller-managed devices (e.g. a failed-handoff orphan still on
+    // the phone's throwaway fabric) get an extra removeDevice call on the
+    // active channel — a no-op once that channel is the controller proxy and
+    // _ctrlService is the same instance, but still correct if it isn't.
     if (device.managedBy != ManagedBy.controller) {
       await _channel.removeDevice(device.nodeId);
     }

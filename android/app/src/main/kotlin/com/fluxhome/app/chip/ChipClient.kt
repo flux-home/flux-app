@@ -41,25 +41,6 @@ object ChipClient {
     var isAvailable: Boolean = false
         private set
 
-    /** A device NOC signed by the controller CA: the NOC plus the ICAC that
-     *  signed it (null only if the CA is single-level — which onNOCChainGeneration
-     *  rejects, so the controller must return a 3-tier chain). All X.509 DER. */
-    data class SignedNoc(val nocDer: ByteArray, val icacDer: ByteArray?)
-
-    /** Signs a device CSR via the controller CA (blocking). */
-    fun interface DeviceNocSigner {
-        /** Returns the signed device NOC (+ICAC), or null on failure. */
-        fun sign(csr: ByteArray, nodeId: Long): SignedNoc?
-    }
-
-    /**
-     * Set by the platform layer to forward device CSRs to the controller during
-     * commissioning on an adopted fabric (the phone holds no CA key).  Backed by
-     * Dart's CoAP client (`POST /fabric/sign-noc`).
-     */
-    @Volatile
-    var deviceNocSigner: DeviceNocSigner? = null
-
     // ── Initialisation ───────────────────────────────────────────────────────
 
     /**
@@ -88,28 +69,11 @@ object ChipClient {
                 ChipMdnsCallbackImpl(),
                 DiagnosticDataProviderImpl(context),
             )
-            // Build onto the adopted (controller-issued) identity when present;
-            // if that fails (e.g. a bad/rejected enrollment), drop it and relaunch
-            // so a failed join can never brick commissioning.  We must NOT rebuild
-            // in-process: the failed construction leaves the native CHIP system
-            // state partly initialised, so a second ChipDeviceController in the
-            // same process aborts (SIGABRT).  Relaunch → next process builds the
-            // local fabric as the only controller.
-            _controller = try {
-                buildController(context)
-            } catch (e: Exception) {
-                if (AppFabricManager.hasAdopted(context)) {
-                    Log.e(TAG, "Controller init failed on adopted fabric — clearing it and relaunching: ${e.message}", e)
-                    AppFabricManager.clearAdopted(context)
-                    com.fluxhome.app.AppRestart.relaunch(context) // exits the process
-                    return
-                }
-                throw e
-            }
-            // Install the custom NOC chain issuer so device NOCs are signed with the
-            // app's root CA — matching the controller's own CASE identity.  Without
-            // this, the SDK falls back to its internal test CA for AddTrustedRootCert,
-            // which differs from id.rootCaTlv and causes CASE to fail (0x32).
+            _controller = buildController(context)
+            // Install the NOC chain issuer so device NOCs on the phone's throwaway
+            // commissioning fabric are signed with the app's own root CA (so CASE
+            // works for the brief window the phone controls the device before
+            // handing it to the controller).  See [AppNOCIssuer].
             _nocIssuer = AppNOCIssuer(context, _controller)
             _controller.setNOCChainIssuer(_nocIssuer)
 
@@ -146,14 +110,6 @@ object ChipClient {
                 .build(),
         )
 
-    // NOTE: there is deliberately no live `adoptFabric()` that rebuilds the
-    // controller.  This CHIP build aborts (SIGABRT) when a second
-    // ChipDeviceController is constructed in-process after the first
-    // (`newDeviceController()` on a shared, still-initialised system state).
-    // Fabric adoption is therefore applied at the next [init]: the adopted
-    // identity is persisted by AppFabricManager and [operationalKeyConfig]
-    // prefers it, so the controller comes up on the joined fabric after a
-    // process relaunch (see DeviceInfoBridge.importControllerFabric).
 
     // ── Accessors ────────────────────────────────────────────────────────────
 

@@ -69,6 +69,12 @@ class DeviceInfoBridge(private val core: BridgeCore) {
             }
         }
 
+    fun removeFabric(nodeId: Long, fabricIndex: Int, result: MethodChannel.Result) =
+        core.requireChip(result) {
+            OperationalCredentialsCluster.removeFabric(core.context, nodeId, fabricIndex)
+            core.main.post { result.success(true) }
+        }
+
     fun identify(nodeId: Long, seconds: Int, result: MethodChannel.Result) =
         core.requireChip(result) {
             IdentifyCluster.sendIdentify(core.context, nodeId, seconds)
@@ -78,13 +84,6 @@ class DeviceInfoBridge(private val core: BridgeCore) {
     fun getFabricId(result: MethodChannel.Result) {
         if (!ChipClient.isAvailable) { result.success("N/A"); return }
         val id = ChipClient.fabricId
-        result.success("0x${id.toULong().toString(16).padStart(16, '0').uppercase()}")
-    }
-
-    /** The app's operational RAW fabric id — matches the controller's /info.fabric_id. */
-    fun getRawFabricId(result: MethodChannel.Result) {
-        if (!ChipClient.isAvailable) { result.success(null); return }
-        val id = AppFabricManager.operationalRawFabricId(core.context)
         result.success("0x${id.toULong().toString(16).padStart(16, '0').uppercase()}")
     }
 
@@ -121,50 +120,6 @@ class DeviceInfoBridge(private val core: BridgeCore) {
                 ))
             }
         }
-
-    /**
-     * Generates an operational keypair + PKCS#10 CSR for enrolling this phone on
-     * the controller's fabric (Dart sends the CSR to POST /fabric/enroll).
-     */
-    fun generateOperationalCsr(result: MethodChannel.Result) =
-        core.requireChip(result) {
-            val csr = AppFabricManager.generateOperationalCsr(core.context)
-            core.main.post { result.success(csr) }
-        }
-
-    /**
-     * Installs the controller-issued credentials as the app's operational
-     * identity, then relaunches the app so the CHIP controller comes up on the
-     * adopted fabric.
-     *
-     * We intentionally do NOT swap the fabric on the live controller — this CHIP
-     * build aborts when a second ChipDeviceController is constructed in-process.
-     * The adopted identity is persisted and [AppFabricManager.operationalKeyConfig]
-     * prefers it, so a fresh process start joins the fabric cleanly.
-     */
-    fun importControllerFabric(
-        rootCaTlv: ByteArray?,
-        icacTlv:   ByteArray?,
-        nocTlv:    ByteArray?,
-        ipk:       ByteArray?,
-        fabricId:  Long,
-        nodeId:    Long,
-        result:    MethodChannel.Result,
-    ) = core.requireChip(result) {
-        if (rootCaTlv == null || nocTlv == null || ipk == null) {
-            core.main.post { result.success(false) }
-            return@requireChip
-        }
-        val ok = AppFabricManager.importAdoptedIdentity(
-            core.context, rootCaTlv, icacTlv, nocTlv, ipk, fabricId, nodeId,
-        )
-        core.main.post {
-            result.success(ok)
-            // Relaunch shortly after so the success reaches Dart (snackbar) first.
-            // CHIP re-inits onto the adopted fabric on the fresh process.
-            if (ok) core.main.postDelayed({ com.fluxhome.app.AppRestart.relaunch(core.context) }, 1500)
-        }
-    }
 
     fun discoverCommissionableNodes(result: MethodChannel.Result, scanMs: Long = 5_000L) =
         core.requireChip(result) {

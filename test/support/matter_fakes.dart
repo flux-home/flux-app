@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter_home/models/basic_info.dart';
@@ -149,10 +148,10 @@ class FakeMatterPort implements MatterPort {
       {String? ssid, String? password, String? threadDatasetHex}) async {}
 
   @override
-  Future<bool> grantControllerAccess(int nodeId) async => true;
+  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) async => null;
 
   @override
-  Future<String> readAcl(int nodeId) async => '';
+  Future<bool> removeFabric(int nodeId, int fabricIndex) async => false;
 
   // ── MatterFabricPort ──────────────────────────────────────────────────────
 
@@ -163,12 +162,6 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<FabricExportData?> exportFabricForController() async => null;
-
-  @override
-  Future<Uint8List?> generateOperationalCsr() async => null;
-
-  @override
-  Future<bool> importControllerFabric(FabricImportData creds) async => false;
 
   @override
   Future<bool> downloadAndFlash({
@@ -186,9 +179,6 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<String?> getFabricId() async => null;
-
-  @override
-  Future<String?> getRawFabricId() async => null;
 
   @override
   Future<int?> getVendorId() async => null;

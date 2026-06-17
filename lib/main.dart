@@ -7,12 +7,12 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/router.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/device_store.dart';
-import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:matter_home/services/flux_controller_discovery.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/null_matter_port.dart';
 import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/services/wifi_scan_service.dart';
 import 'package:matter_home/ui/theme.dart';
@@ -47,70 +47,43 @@ Future<void> main() async {
     }
   }
 
-  // ── Boot immediately in standalone mode ──────────────────────────────────
+  // ── Boot with no controller yet ──────────────────────────────────────────
   // Never block runApp() on network I/O — controller discovery (mDNS + DTLS
   // handshake) can take up to 20 s, which would hold the native splash screen.
-  // The app starts on the local MatterChannel; background discovery below
-  // switches DeviceProvider to hub mode once a controller is found.
-  final hubConn  = HubConnection(null);
-  final provider = DeviceProvider(store, localChannel);
+  // Device control is controller-proxied only (docs/controller-only-control.md)
+  // — there is no local-CHIP control fallback — so DeviceProvider starts on
+  // the inert NullMatterPort and background discovery below swaps it onto the
+  // real FluxCoapService once a controller is found.
+  final hubConn      = HubConnection(null);
+  final nullChannel  = NullMatterPort();
+  final provider     = DeviceProvider(store, nullChannel);
   // React to any controller service swap (background discovery, Flux Hub "↺",
   // re-adding a controller) without an app restart.
   provider.attachHubConnection(hubConn);
 
-  // On an adopted (controller-owned) fabric the phone holds no CA key, so the
-  // native commissioning flow forwards each device CSR here to be signed by the
-  // controller via POST /fabric/sign-noc.
-  //
-  // DEPRECATED — slated for removal once the commission-then-handoff flow lands
-  // (see flux-proto/docs/flows.md "commission-then-handoff"). The controller
-  // will commission devices onto its own fabric directly, so this CSR-forwarding
-  // path (and /fabric/sign-noc) goes away.
-  localChannel.deviceNocSigner = (csr, nodeId) async {
-    final svc = hubConn.service;
-    if (svc == null) {
-      debugPrint('deviceNocSigner: NOT connected to a hub — cannot sign device NOC');
-      return null;
-    }
-    final res = await svc.signDeviceNoc(csr: csr, nodeId: nodeId);
-    if (res == null) {
-      debugPrint('deviceNocSigner: hub /fabric/sign-noc returned no response');
-      return null;
-    }
-    if (!res.success) {
-      debugPrint('deviceNocSigner: hub refused to sign — ${res.error}');
-      return null;
-    }
-    return (
-      noc:  Uint8List.fromList(res.nocDer),
-      icac: res.icacDer.isEmpty ? null : Uint8List.fromList(res.icacDer),
-    );
-  };
-
-  debugPrint('main: starting in standalone mode, discovering controller in background…');
+  debugPrint('main: starting with no controller, discovering in background…');
 
   runApp(
     MultiProvider(
       providers: [
         // Raw MatterChannel always available for BLE commissioning steps.
         Provider<MatterChannel>.value(value: localChannel),
-        // Sub-interface providers keep the localChannel reference.
-        // Hub-mode device operations go through DeviceProvider._channel
-        // (swapped by adoptHubMode). Commission flows route hub vs. local
-        // via CommissioningController.controllerService.
+        // Sub-interface providers keep the localChannel reference — BLE
+        // commissioning runs on local CHIP regardless of hub connection.
         Provider<MatterSubscriptionPort>.value(value: localChannel),
         Provider<MatterCommissionPort>.value(value: localChannel),
         // HubConnection must come before the ProxyProviders below that depend
         // on it — MultiProvider nests in order (first = outermost ancestor).
         ChangeNotifierProvider<HubConnection>.value(value: hubConn),
-        // In hub mode, cluster reads and fabric ops must go through the hub so
-        // that controller-managed node IDs resolve correctly.  When no hub is
-        // connected, fall back to the local channel.
+        // Device control/reads are controller-proxied only — when no hub is
+        // connected, these resolve to the inert NullMatterPort, never local
+        // CHIP, so cluster screens simply show "no control" instead of
+        // silently operating on the wrong fabric.
         ProxyProvider<HubConnection, MatterClusterPort>(
-          update: (_, hub, __) => hub.service ?? localChannel,
+          update: (_, hub, __) => hub.service ?? nullChannel,
         ),
         ProxyProvider<HubConnection, MatterFabricPort>(
-          update: (_, hub, __) => hub.service ?? localChannel,
+          update: (_, hub, __) => hub.service ?? nullChannel,
         ),
         Provider<WifiScanService>(
           create: (ctx) => WifiScanService(ctx.read<MatterCommissionPort>()),
@@ -126,20 +99,11 @@ Future<void> main() async {
   // HubConnection are both updated so the UI sees hub mode seamlessly.
   unawaited(FluxControllerDiscovery.discover().then((ep) async {
     if (ep == null) {
-      debugPrint('main: no controller found — staying in standalone mode');
+      debugPrint('main: no controller found — no device control until one connects');
       return;
     }
     debugPrint('main: controller found at $ep — switching to hub mode');
     final svc = FluxCoapService(ep);
-
-    // Fabric: the controller owns it and the app *enrolls* to join.  Enrollment
-    // has side effects (imports an identity + relaunches the process), so it is
-    // NEVER auto-run on boot — that would loop if a join can't complete.  It is
-    // user-initiated only (Settings → Flux Hub → Join hub).  Here we just log
-    // the current state.  See docs/multi-phone-fabric.md.
-    final state = await FabricSyncService(localFabric: localChannel, controller: svc)
-        .readState();
-    debugPrint('main: fabric state — ${state.name}');
 
     // Put both on one Thread network, controller as source of truth: adopt the
     // controller's network if it has one, otherwise seed it with the app's.

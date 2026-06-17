@@ -43,8 +43,8 @@ class ThreadSyncResult {
 ///    (so every phone's commissioned devices join the controller's mesh);
 ///  - controller has none → the app pushes its own active dataset to seed it.
 ///
-/// This mirrors [FabricSyncService] for the Thread layer.  All operations use
-/// the existing CoAP endpoints, so this is purely app-side logic.
+/// All operations use the existing CoAP endpoints, so this is purely
+/// app-side logic.
 class ThreadSyncService {
   ThreadSyncService(this.controller);
 

@@ -312,7 +312,9 @@ ClusterReading? _renderPm25(dynamic v) {
 }
 
 ClusterReading? _renderCo2(dynamic v) {
-  final ppm = v as int;
+  // Controller sends concentration floats as int ×10 (1 decimal); undo it,
+  // like _renderPm25 / _renderCo. Without this CO₂ reads 10× high.
+  final ppm = (v as int) / 10.0;
   final q   = ppm < 800  ? ClusterQuality.good
               : ppm < 1500 ? ClusterQuality.moderate
               : ppm < 2500 ? ClusterQuality.poor
@@ -321,7 +323,7 @@ ClusterReading? _renderCo2(dynamic v) {
     icon:         Icons.co2_outlined,
     iconColor:    qualityColor(q),
     label:        'CO₂',
-    displayValue: '$ppm',
+    displayValue: ppm.toStringAsFixed(0),
     unit:         'ppm',
     quality:      q,
     subtitle:     switch (q) {

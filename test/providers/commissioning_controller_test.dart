@@ -1,13 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/services/device_store.dart';
-import 'package:matter_home/services/fabric_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/commissioning_fakes.dart';
+
+/// Builds a FabricDescriptor with the given index + raw fabric-id hex.
+FabricDescriptor _fab(int index, String fabricIdHex) => FabricDescriptor(
+      fabricIndex: index,
+      fabricId: fabricIdHex,
+      nodeId: '0x0000000000000000',
+      vendorId: '0xFFF1',
+      label: '',
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,11 +32,11 @@ void main() {
 
   /// Builds a controller wired to [port] / [provider].
   ///
-  /// [creds] is returned by onNeedsCredentials; [blePermitted] is returned by
+  /// [controllerService] is the connected hub (null = no hub).  [creds] is
+  /// returned by onNeedsCredentials; [blePermitted] is returned by
   /// requestBlePermissions; [threadDataset] seeds the local dataset getter.
   CommissioningController build({
     FakeFluxCoapService? controllerService,
-    FabricSyncService? fabricSync,
     CommissionCredentials? creds,
     bool blePermitted = true,
     String threadDataset = '',
@@ -39,7 +48,6 @@ void main() {
       onNeedsCredentials: (_) async => creds,
       threadDataset: () => threadDataset,
       controllerService: controllerService,
-      fabricSync: fabricSync,
     );
   }
 
@@ -79,55 +87,169 @@ void main() {
     });
   });
 
-  // ── BLE happy paths ───────────────────────────────────────────────────────────
+  // ── No hub → no commissioning ─────────────────────────────────────────────────
 
-  group('start (BLE)', () {
-    test('Wi-Fi happy path (phone mode) commissions and registers', () async {
-      final c = build();
+  test('no hub connected → fails fast without commissioning', () async {
+    final c = build(); // controllerService == null
+    await setParsed(c);
+
+    await c.start(const CommissionConfig(
+      method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+    expect(port.commissionDeviceCalls, 0);
+    expect(c.phase, CommissionPhase.failed);
+    expect(c.error, isNotNull);
+  });
+
+  // ── Commission-then-handoff happy path + gate ─────────────────────────────────
+
+  group('start (BLE handoff)', () {
+    test('happy path: commission, handoff, gate passes, removes phone fabric', () async {
+      final svc = FakeFluxCoapService()..commissionFabricId = 0xCAFE;
+      // Device ends with two fabrics: controller (0xCAFE @ idx 2) + phone (0x1 @ idx 1).
+      port.fabricsResult = [_fab(2, '0xCAFE'), _fab(1, '0x0000000000000001')];
+      final c = build(controllerService: svc);
       await setParsed(c);
 
       await c.start(const CommissionConfig(
-        method: CommissionMethod.ble,
-        netType: 1,
-        wifiSsid: 'home',
-        wifiPassword: 'secret',
-      ));
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'home', wifiPassword: 'pw'));
 
+      // BLE commission onto the throwaway fabric.
       expect(port.commissionDeviceCalls, 1);
-      expect(port.lastWifiSsid, 'home');
-      expect(port.lastWifiPassword, 'secret');
-      expect(provider.beganCommissioning, isTrue);
-      expect(provider.registerCalls, 1);
-      expect(provider.registeredNetworkType, NetworkType.wifi);
-      expect(provider.registeredManagedBy, ManagedBy.phone);
+      // ECM window opened, passcode/discriminator forwarded to the hub.
+      expect(port.openWindowCalls, 1);
+      expect(svc.commissionCalls, 1);
+      expect(svc.commissionedPasscode, 0x4D2);
+      expect(svc.commissionedDiscriminator, 0x2A);
+      expect(svc.commissionedNodeId, 0x1234);
+      // Safety gate read the fabrics, then removed the phone's own fabric (idx 1).
+      expect(port.readFabricsCalls, 1);
+      expect(port.removeFabricCalls, [(nodeId: 0x1234, fabricIndex: 1)]);
+      expect(provider.registeredManagedBy, ManagedBy.controller);
       expect(c.phase, CommissionPhase.done);
       expect(c.result, isNotNull);
-      // Saved payload cleared on success.
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('last_matter_qr_payload'), isNull);
     });
 
+    test('window open fails → no handoff, phase failed', () async {
+      final svc = FakeFluxCoapService();
+      port.windowResult = null;
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(port.openWindowCalls, 1);
+      expect(svc.commissionCalls, 0);
+      expect(port.removeFabricCalls, isEmpty);
+      expect(c.phase, CommissionPhase.failed);
+      expect(provider.registerCalls, 0);
+    });
+
+    test('orphan gate: handoff fails → fabric never removed, device kept on phone', () async {
+      final svc = FakeFluxCoapService()
+        ..commissionSuccess = false
+        ..commissionError = 'PASE timeout';
+      port.fabricsResult = [_fab(2, '0xCAFE'), _fab(1, '0x0000000000000001')];
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(svc.commissionCalls, 1);
+      // Never reads fabrics or removes anything when the hub did not commission.
+      expect(port.readFabricsCalls, 0);
+      expect(port.removeFabricCalls, isEmpty);
+      expect(c.phase, CommissionPhase.failed);
+      expect(c.error, contains('PASE timeout'));
+      expect(provider.registerCalls, 0);
+    });
+
+    test('orphan gate: hub returns no result → fabric never removed', () async {
+      final svc = FakeFluxCoapService()..commissionReturnsResult = false;
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(svc.commissionCalls, 1);
+      expect(port.removeFabricCalls, isEmpty);
+      expect(c.phase, CommissionPhase.failed);
+    });
+
+    test('controller fabric not visible → keep phone fabric, still managed by hub', () async {
+      final svc = FakeFluxCoapService()..commissionFabricId = 0xCAFE;
+      // Gate fails safe: only the phone fabric is visible, not the controller's.
+      port.fabricsResult = [_fab(1, '0x0000000000000001')];
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(svc.commissionCalls, 1);
+      expect(port.readFabricsCalls, 1);
+      expect(port.removeFabricCalls, isEmpty); // never remove our only fabric
+      expect(provider.registeredManagedBy, ManagedBy.controller);
+      expect(c.phase, CommissionPhase.done);
+    });
+
+    test('ambiguous phone fabric (multiple candidates) → no removal', () async {
+      final svc = FakeFluxCoapService()..commissionFabricId = 0xCAFE;
+      port.fabricsResult = [
+        _fab(2, '0xCAFE'),
+        _fab(1, '0x0000000000000001'),
+        _fab(3, '0x0000000000000002'),
+      ];
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(port.removeFabricCalls, isEmpty);
+      expect(provider.registeredManagedBy, ManagedBy.controller);
+      expect(c.phase, CommissionPhase.done);
+    });
+
+    test('commission (BLE pass) failure → phase failed, no handoff', () async {
+      final svc = FakeFluxCoapService();
+      port.commissionResult = CommissionResult.err('BLE PASE failed');
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+
+      expect(c.phase, CommissionPhase.failed);
+      expect(c.error, 'BLE PASE failed');
+      expect(port.openWindowCalls, 0);
+      expect(svc.commissionCalls, 0);
+      expect(provider.failCalled, isTrue);
+    });
+  });
+
+  // ── Thread network selection ──────────────────────────────────────────────────
+
+  group('Thread network selection', () {
     test('uses the hub Thread network in hub mode', () async {
       final svc = FakeFluxCoapService()..threadDatasetHexResult = 'AABBCCDD';
       final c = build(controllerService: svc);
       await setParsed(c);
 
-      await c.start(const CommissionConfig(
-        method: CommissionMethod.ble,
-        netType: 0, // Thread
-      ));
+      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
 
       expect(svc.getThreadDatasetCalls, 1);
       expect(port.lastThreadDatasetHex, 'AABBCCDD');
-      expect(port.grantAclCalls, 1);
-      expect(svc.registerNodeCalls, 1);
-      expect(provider.registeredManagedBy, ManagedBy.controller);
       expect(c.phase, CommissionPhase.done);
     });
 
     test('hub Thread network is preferred over the app\'s local dataset', () async {
       final svc = FakeFluxCoapService()..threadDatasetHexResult = 'AABBCCDD';
-      // App has its own local dataset, but the hub owns the network → hub wins.
       final c = build(controllerService: svc, threadDataset: 'DEAD');
       await setParsed(c);
 
@@ -147,85 +269,26 @@ void main() {
       expect(svc.getThreadDatasetCalls, 1);
       expect(port.lastThreadDatasetHex, 'DEAD'); // hub had none → app dataset
     });
-
-    test('grantControllerAccess failure → failed, node not registered', () async {
-      final svc = FakeFluxCoapService();
-      port.aclGrantResult = false;
-      final c = build(controllerService: svc, threadDataset: 'DEAD');
-      await setParsed(c);
-
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
-
-      expect(port.grantAclCalls, 1);
-      expect(svc.registerNodeCalls, 0);
-      expect(provider.registerCalls, 0);
-      expect(provider.failCalled, isTrue);
-      expect(c.phase, CommissionPhase.failed);
-      expect(c.error, isNotNull);
-    });
-
-    test('on the hub fabric → device handed to controller', () async {
-      final svc = FakeFluxCoapService();
-      final sync = FakeFabricSyncService()..stateResult = FabricState.inSync;
-      final c = build(controllerService: svc, fabricSync: sync, threadDataset: 'DEAD');
-      await setParsed(c);
-
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
-
-      expect(sync.calls, 1);
-      expect(port.grantAclCalls, 1);
-      expect(svc.registerNodeCalls, 1);
-      expect(provider.registeredManagedBy, ManagedBy.controller);
-      expect(c.phase, CommissionPhase.done);
-    });
-
-    test('not joined to hub → no handover, device kept on phone (no adopt)', () async {
-      final svc = FakeFluxCoapService();
-      final sync = FakeFabricSyncService()..stateResult = FabricState.needsAdopt;
-      final c = build(controllerService: svc, fabricSync: sync, threadDataset: 'DEAD');
-      await setParsed(c);
-
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 0));
-
-      expect(sync.calls, 1);
-      // Never adopts mid-commission, never hands a device to a hub we're not on.
-      expect(port.grantAclCalls, 0);
-      expect(svc.registerNodeCalls, 0);
-      // Commissioning still succeeds — the device stays usable via the phone.
-      expect(provider.registeredManagedBy, ManagedBy.phone);
-      expect(c.phase, CommissionPhase.done);
-      expect(provider.failCalled, isFalse);
-    });
-
-    test('commission failure → phase failed with error', () async {
-      final c = build();
-      port.commissionResult = CommissionResult.err('PASE timeout');
-      await setParsed(c);
-
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
-
-      expect(c.phase, CommissionPhase.failed);
-      expect(c.error, 'PASE timeout');
-      expect(provider.failCalled, isTrue);
-      expect(provider.registerCalls, 0);
-    });
   });
 
   // ── BLE permission + pre-collection gates ─────────────────────────────────────
 
   group('start gates', () {
     test('denied BLE permission aborts before commissioning', () async {
-      final c = build(blePermitted: false);
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc, blePermitted: false);
       await setParsed(c);
 
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
 
       expect(port.commissionDeviceCalls, 0);
       expect(c.phase, CommissionPhase.parsed); // unchanged
     });
 
     test('Wi-Fi pre-collection cancelled (creds null) → idle, no commission', () async {
-      final c = build(creds: null); // onNeedsCredentials returns null
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc, creds: null);
       await setParsed(c);
 
       // BLE + WiFi (netType 1) with empty ssid triggers pre-collection.
@@ -240,7 +303,8 @@ void main() {
 
   group('CREDENTIALS_NEEDED handshake', () {
     test('THREAD event → provideCredentials with thread dataset', () async {
-      final c = build(creds: const CommissionCredentials.thread('FEED'));
+      final svc = FakeFluxCoapService()..threadDatasetHexResult = 'AABB';
+      final c = build(controllerService: svc, creds: const CommissionCredentials.thread('FEED'));
       await setParsed(c);
       port.onCommission = () async {
         port.emit('CREDENTIALS_NEEDED:THREAD');
@@ -255,7 +319,8 @@ void main() {
     });
 
     test('WIFI event → provideCredentials with ssid/password', () async {
-      final c = build(creds: const CommissionCredentials.wifi('net', 'pw'));
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc, creds: const CommissionCredentials.wifi('net', 'pw'));
       await setParsed(c);
       port.onCommission = () async {
         port.emit('CREDENTIALS_NEEDED:WIFI');
@@ -264,7 +329,8 @@ void main() {
 
       // netType 1 with ssid filled skips pre-collection so the in-flight
       // event is what triggers provideCredentials.
-      await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 1, wifiSsid: 'seed'));
+      await c.start(const CommissionConfig(
+        method: CommissionMethod.ble, netType: 1, wifiSsid: 'seed'));
 
       expect(port.provideCredentialsCalls, 1);
       expect(port.providedSsid, 'net');
@@ -276,7 +342,8 @@ void main() {
 
   group('start (IP)', () {
     test('no IP address → commissionViaCode (DNS-SD discovery)', () async {
-      final c = build();
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc);
       await setParsed(c);
 
       await c.start(const CommissionConfig(method: CommissionMethod.ip));
@@ -288,7 +355,8 @@ void main() {
     });
 
     test('explicit IP → commissionViaIp with discriminator/pin', () async {
-      final c = build();
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc);
       await setParsed(c);
 
       await c.start(const CommissionConfig(
@@ -308,14 +376,16 @@ void main() {
   // ── Session invalidation ──────────────────────────────────────────────────────
 
   test('reset() mid-flight discards a late success', () async {
-    final c = build();
+    final svc = FakeFluxCoapService();
+    final c = build(controllerService: svc);
     await setParsed(c);
     port.onCommission = () async {
       // Cancel the session while the commission is still running.
       c.reset();
     };
 
-    await c.start(const CommissionConfig(method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
+    await c.start(const CommissionConfig(
+      method: CommissionMethod.ble, netType: 1, wifiSsid: 'x'));
 
     // reset() left phase idle; the stale success must not register a device.
     expect(c.phase, CommissionPhase.idle);
@@ -335,7 +405,8 @@ void main() {
           commissionedAt: now,
           lastModified: now,
         );
-    final c = build();
+    final svc = FakeFluxCoapService();
+    final c = build(controllerService: svc);
     await setParsed(c);
     final base = c.parsed!.suggestedName; // vendor-derived suggested name
     provider.seededDevices = [dev(base), dev('$base 2')];

@@ -6,7 +6,6 @@ import com.fluxhome.app.chip.CommissioningException
 import com.fluxhome.app.chip.MatterCommissioner
 import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.SetupPayloadHelper
-import com.fluxhome.app.chip.clusters.AccessControlCluster
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import io.flutter.plugin.common.MethodChannel
 import matter.onboardingpayload.CommissioningFlow
@@ -108,6 +107,7 @@ class CommissioningBridge(private val core: BridgeCore) {
         nodeId: Long,
         vendorId: Int,
         productId: Int,
+        awaitReachable: Boolean,
         result: MethodChannel.Result,
     ) = core.requireChip(result) {
         val rng           = java.security.SecureRandom()
@@ -170,25 +170,33 @@ class CommissioningBridge(private val core: BridgeCore) {
         // built-in discriminator-based discovery (pairing_code) never finds the device.
         // The phone can find it via top-level _matterc._udp browse.  We return the IPv6
         // so the firmware can use PairDevice(IP) and skip CHIP DNS-SD discovery entirely.
+        //
+        // Skipped for the commission-then-handoff path (awaitReachable=false): the
+        // controller rediscovers the device over Thread itself from the discriminator,
+        // so the phone need not block on the (slow) mDNS scan.
         var ipv6Address = ""
-        val scanStart   = System.currentTimeMillis()
-        val scanTimeout = 90_000L
-        Log.i(TAG, "Scanning for CM=2 device disc=$discriminator (up to ${scanTimeout/1000}s)...")
-        while (ipv6Address.isEmpty() && System.currentTimeMillis() - scanStart < scanTimeout) {
-            val devices = MatterCommissionableScanner.scan(core.context)
-            val match   = devices.find {
-                it.discriminator.toInt() == discriminator &&
-                it.commissioningMode == "EnhancedWindowOpen"
+        var ipv6Port    = 0
+        if (awaitReachable) {
+            val scanStart   = System.currentTimeMillis()
+            val scanTimeout = 90_000L
+            Log.i(TAG, "Scanning for CM=2 device disc=$discriminator (up to ${scanTimeout/1000}s)...")
+            while (ipv6Address.isEmpty() && System.currentTimeMillis() - scanStart < scanTimeout) {
+                val devices = MatterCommissionableScanner.scan(core.context)
+                val match   = devices.find {
+                    it.discriminator.toInt() == discriminator &&
+                    it.commissioningMode == "EnhancedWindowOpen"
+                }
+                if (match != null) {
+                    ipv6Address = match.ipAddress
+                    ipv6Port    = match.port
+                    Log.i(TAG, "CM=2 found at $ipv6Address:$ipv6Port after ${System.currentTimeMillis()-scanStart}ms")
+                } else {
+                    Log.d(TAG, "CM=2 not found yet, ${scanTimeout-(System.currentTimeMillis()-scanStart)}ms remaining")
+                }
             }
-            if (match != null) {
-                ipv6Address = match.ipAddress
-                Log.i(TAG, "CM=2 found at $ipv6Address after ${System.currentTimeMillis()-scanStart}ms")
-            } else {
-                Log.d(TAG, "CM=2 not found yet, ${scanTimeout-(System.currentTimeMillis()-scanStart)}ms remaining")
+            if (ipv6Address.isEmpty()) {
+                Log.w(TAG, "CM=2 device not found within ${scanTimeout/1000}s — will fallback to mDNS on controller")
             }
-        }
-        if (ipv6Address.isEmpty()) {
-            Log.w(TAG, "CM=2 device not found within ${scanTimeout/1000}s — will fallback to mDNS on controller")
         }
 
         core.main.post {
@@ -196,6 +204,9 @@ class CommissioningBridge(private val core: BridgeCore) {
                 "manualPairingCode" to manualCode,
                 "qrCodePayload"     to qrCode,
                 "ipv6Address"       to ipv6Address,
+                "port"              to ipv6Port,
+                "passcode"          to pin,
+                "discriminator"     to discriminator,
             ))
         }
     }
@@ -225,20 +236,6 @@ class CommissioningBridge(private val core: BridgeCore) {
             result.error("PARSE_ERROR", e.message, null)
         }
     }
-
-    // ── ACL grant for controller access ──────────────────────────────────────
-
-    fun grantControllerAccess(nodeId: Long, result: MethodChannel.Result) =
-        core.requireChip(result) {
-            AccessControlCluster.grantControllerAccess(core.context, nodeId)
-            core.main.post { result.success(true) }
-        }
-
-    fun readAcl(nodeId: Long, result: MethodChannel.Result) =
-        core.requireChip(result) {
-            val acl = AccessControlCluster.readAcl(core.context, nodeId)
-            core.main.post { result.success(acl) }
-        }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

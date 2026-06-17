@@ -294,17 +294,184 @@ class ThreadDataset extends $pb.GeneratedMessage {
   void clearPartitionId() => $_clearField(8);
 }
 
-/// POST /fabric/provision  (LEGACY — unused now that the controller is its own CA)
-/// App installs an operational Matter identity onto the controller (node 0x0002).
-/// The NOC subject must encode node_id 0x0002 and the fabric_id; the node_id/
-/// fabric_id fields here are advisory only.
+/// POST /thread/epskc
+/// Start Thread Credential Sharing (Thread 1.4).  The Border Router generates a
+/// one-time passcode (OTPC) and starts the ephemeral PSKc session.  A commissioner
+/// candidate (phone app) can then discover the Border Router via _meshcop-e._udp
+/// DNS-SD, connect over DTLS using the returned OTPC, and retrieve Thread credentials.
+/// DELETE /thread/epskc stops an active session.
+/// GET    /thread/epskc returns the current ephemeral key manager state.
+class ThreadEphemeralKeyRequest extends $pb.GeneratedMessage {
+  factory ThreadEphemeralKeyRequest({
+    $core.int? timeoutSeconds,
+  }) {
+    final result = create();
+    if (timeoutSeconds != null) result.timeoutSeconds = timeoutSeconds;
+    return result;
+  }
+
+  ThreadEphemeralKeyRequest._();
+
+  factory ThreadEphemeralKeyRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadEphemeralKeyRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadEphemeralKeyRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'timeoutSeconds',
+        fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralKeyRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralKeyRequest copyWith(
+          void Function(ThreadEphemeralKeyRequest) updates) =>
+      super.copyWith((message) => updates(message as ThreadEphemeralKeyRequest))
+          as ThreadEphemeralKeyRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralKeyRequest create() => ThreadEphemeralKeyRequest._();
+  @$core.override
+  ThreadEphemeralKeyRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralKeyRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadEphemeralKeyRequest>(create);
+  static ThreadEphemeralKeyRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get timeoutSeconds => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set timeoutSeconds($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasTimeoutSeconds() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTimeoutSeconds() => $_clearField(1);
+}
+
+class ThreadEphemeralKeyResult extends $pb.GeneratedMessage {
+  factory ThreadEphemeralKeyResult({
+    $core.bool? success,
+    $core.String? otpc,
+    $core.int? udpPort,
+    $core.String? state,
+    $core.String? error,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    if (otpc != null) result.otpc = otpc;
+    if (udpPort != null) result.udpPort = udpPort;
+    if (state != null) result.state = state;
+    if (error != null) result.error = error;
+    return result;
+  }
+
+  ThreadEphemeralKeyResult._();
+
+  factory ThreadEphemeralKeyResult.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadEphemeralKeyResult.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadEphemeralKeyResult',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..aOS(2, _omitFieldNames ? '' : 'otpc')
+    ..aI(3, _omitFieldNames ? '' : 'udpPort', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(4, _omitFieldNames ? '' : 'state')
+    ..aOS(5, _omitFieldNames ? '' : 'error')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralKeyResult clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralKeyResult copyWith(
+          void Function(ThreadEphemeralKeyResult) updates) =>
+      super.copyWith((message) => updates(message as ThreadEphemeralKeyResult))
+          as ThreadEphemeralKeyResult;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralKeyResult create() => ThreadEphemeralKeyResult._();
+  @$core.override
+  ThreadEphemeralKeyResult createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralKeyResult getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadEphemeralKeyResult>(create);
+  static ThreadEphemeralKeyResult? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get otpc => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set otpc($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasOtpc() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearOtpc() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get udpPort => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set udpPort($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasUdpPort() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearUdpPort() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get state => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set state($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasState() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearState() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get error => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set error($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasError() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearError() => $_clearField(5);
+}
+
+/// POST /fabric/provision
+/// App installs the controller's operational Matter identity.
+/// All certs must be X.509 DER encoded; the CHIP stack converts them to Matter TLV
+/// internally.  The NOC subject must encode node_id 0x0002 and the fabric_id;
+/// node_id/fabric_id fields here are advisory only.
 class FabricProvision extends $pb.GeneratedMessage {
   factory FabricProvision({
     $fixnum.Int64? fabricId,
     $fixnum.Int64? nodeId,
-    $core.List<$core.int>? rootCaDer,
-    $core.List<$core.int>? icacDer,
-    $core.List<$core.int>? nocDer,
+    $core.List<$core.int>? rootCaTlv,
+    $core.List<$core.int>? icacTlv,
+    $core.List<$core.int>? nocTlv,
     $core.List<$core.int>? opPrivKey,
     $core.List<$core.int>? ipk,
     $core.int? vendorId,
@@ -313,9 +480,9 @@ class FabricProvision extends $pb.GeneratedMessage {
     final result = create();
     if (fabricId != null) result.fabricId = fabricId;
     if (nodeId != null) result.nodeId = nodeId;
-    if (rootCaDer != null) result.rootCaDer = rootCaDer;
-    if (icacDer != null) result.icacDer = icacDer;
-    if (nocDer != null) result.nocDer = nocDer;
+    if (rootCaTlv != null) result.rootCaTlv = rootCaTlv;
+    if (icacTlv != null) result.icacTlv = icacTlv;
+    if (nocTlv != null) result.nocTlv = nocTlv;
     if (opPrivKey != null) result.opPrivKey = opPrivKey;
     if (ipk != null) result.ipk = ipk;
     if (vendorId != null) result.vendorId = vendorId;
@@ -342,11 +509,11 @@ class FabricProvision extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$core.List<$core.int>>(
-        3, _omitFieldNames ? '' : 'rootCaDer', $pb.PbFieldType.OY)
+        3, _omitFieldNames ? '' : 'rootCaTlv', $pb.PbFieldType.OY)
     ..a<$core.List<$core.int>>(
-        4, _omitFieldNames ? '' : 'icacDer', $pb.PbFieldType.OY)
+        4, _omitFieldNames ? '' : 'icacTlv', $pb.PbFieldType.OY)
     ..a<$core.List<$core.int>>(
-        5, _omitFieldNames ? '' : 'nocDer', $pb.PbFieldType.OY)
+        5, _omitFieldNames ? '' : 'nocTlv', $pb.PbFieldType.OY)
     ..a<$core.List<$core.int>>(
         6, _omitFieldNames ? '' : 'opPrivKey', $pb.PbFieldType.OY)
     ..a<$core.List<$core.int>>(
@@ -394,31 +561,31 @@ class FabricProvision extends $pb.GeneratedMessage {
   void clearNodeId() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $core.List<$core.int> get rootCaDer => $_getN(2);
+  $core.List<$core.int> get rootCaTlv => $_getN(2);
   @$pb.TagNumber(3)
-  set rootCaDer($core.List<$core.int> value) => $_setBytes(2, value);
+  set rootCaTlv($core.List<$core.int> value) => $_setBytes(2, value);
   @$pb.TagNumber(3)
-  $core.bool hasRootCaDer() => $_has(2);
+  $core.bool hasRootCaTlv() => $_has(2);
   @$pb.TagNumber(3)
-  void clearRootCaDer() => $_clearField(3);
+  void clearRootCaTlv() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $core.List<$core.int> get icacDer => $_getN(3);
+  $core.List<$core.int> get icacTlv => $_getN(3);
   @$pb.TagNumber(4)
-  set icacDer($core.List<$core.int> value) => $_setBytes(3, value);
+  set icacTlv($core.List<$core.int> value) => $_setBytes(3, value);
   @$pb.TagNumber(4)
-  $core.bool hasIcacDer() => $_has(3);
+  $core.bool hasIcacTlv() => $_has(3);
   @$pb.TagNumber(4)
-  void clearIcacDer() => $_clearField(4);
+  void clearIcacTlv() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $core.List<$core.int> get nocDer => $_getN(4);
+  $core.List<$core.int> get nocTlv => $_getN(4);
   @$pb.TagNumber(5)
-  set nocDer($core.List<$core.int> value) => $_setBytes(4, value);
+  set nocTlv($core.List<$core.int> value) => $_setBytes(4, value);
   @$pb.TagNumber(5)
-  $core.bool hasNocDer() => $_has(4);
+  $core.bool hasNocTlv() => $_has(4);
   @$pb.TagNumber(5)
-  void clearNocDer() => $_clearField(5);
+  void clearNocTlv() => $_clearField(5);
 
   @$pb.TagNumber(6)
   $core.List<$core.int> get opPrivKey => $_getN(5);
@@ -560,10 +727,14 @@ class MfgProvision extends $pb.GeneratedMessage {
   factory MfgProvision({
     $core.List<$core.int>? rcacPrivKey,
     $core.String? serialNumber,
+    $core.List<$core.int>? rcacCertDer,
+    $core.List<$core.int>? psk,
   }) {
     final result = create();
     if (rcacPrivKey != null) result.rcacPrivKey = rcacPrivKey;
     if (serialNumber != null) result.serialNumber = serialNumber;
+    if (rcacCertDer != null) result.rcacCertDer = rcacCertDer;
+    if (psk != null) result.psk = psk;
     return result;
   }
 
@@ -583,6 +754,10 @@ class MfgProvision extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         1, _omitFieldNames ? '' : 'rcacPrivKey', $pb.PbFieldType.OY)
     ..aOS(2, _omitFieldNames ? '' : 'serialNumber')
+    ..a<$core.List<$core.int>>(
+        3, _omitFieldNames ? '' : 'rcacCertDer', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        4, _omitFieldNames ? '' : 'psk', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -621,6 +796,27 @@ class MfgProvision extends $pb.GeneratedMessage {
   $core.bool hasSerialNumber() => $_has(1);
   @$pb.TagNumber(2)
   void clearSerialNumber() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get rcacCertDer => $_getN(2);
+  @$pb.TagNumber(3)
+  set rcacCertDer($core.List<$core.int> value) => $_setBytes(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRcacCertDer() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRcacCertDer() => $_clearField(3);
+
+  /// matter-rcac-id).  When present the controller uses this cert
+  /// verbatim in the FabricTable instead of generating one via
+  /// NewRootX509Cert (which encodes matter-rcac-id non-standardly).
+  @$pb.TagNumber(4)
+  $core.List<$core.int> get psk => $_getN(3);
+  @$pb.TagNumber(4)
+  set psk($core.List<$core.int> value) => $_setBytes(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasPsk() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearPsk() => $_clearField(4);
 }
 
 class MfgProvisionResult extends $pb.GeneratedMessage {
@@ -689,229 +885,12 @@ class MfgProvisionResult extends $pb.GeneratedMessage {
   void clearError() => $_clearField(2);
 }
 
-/// POST /fabric/enroll
-/// A phone sends its CSR; the controller (CA) issues it a NOC on the shared fabric
-/// and returns the credential set the phone installs as its operational identity.
-/// ⚠ All certs in the response are X.509 DER — see the CERTIFICATE FORMAT banner.
-class FabricEnrollRequest extends $pb.GeneratedMessage {
-  factory FabricEnrollRequest({
-    $core.List<$core.int>? csr,
-    $fixnum.Int64? nodeId,
-  }) {
-    final result = create();
-    if (csr != null) result.csr = csr;
-    if (nodeId != null) result.nodeId = nodeId;
-    return result;
-  }
-
-  FabricEnrollRequest._();
-
-  factory FabricEnrollRequest.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory FabricEnrollRequest.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'FabricEnrollRequest',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
-      createEmptyInstance: create)
-    ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'csr', $pb.PbFieldType.OY)
-    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  FabricEnrollRequest clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  FabricEnrollRequest copyWith(void Function(FabricEnrollRequest) updates) =>
-      super.copyWith((message) => updates(message as FabricEnrollRequest))
-          as FabricEnrollRequest;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static FabricEnrollRequest create() => FabricEnrollRequest._();
-  @$core.override
-  FabricEnrollRequest createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static FabricEnrollRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<FabricEnrollRequest>(create);
-  static FabricEnrollRequest? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.List<$core.int> get csr => $_getN(0);
-  @$pb.TagNumber(1)
-  set csr($core.List<$core.int> value) => $_setBytes(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasCsr() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearCsr() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $fixnum.Int64 get nodeId => $_getI64(1);
-  @$pb.TagNumber(2)
-  set nodeId($fixnum.Int64 value) => $_setInt64(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasNodeId() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearNodeId() => $_clearField(2);
-}
-
-class FabricEnrollResponse extends $pb.GeneratedMessage {
-  factory FabricEnrollResponse({
-    $core.bool? success,
-    $core.List<$core.int>? nocDer,
-    $core.List<$core.int>? icacDer,
-    $core.List<$core.int>? rootCaDer,
-    $core.List<$core.int>? ipk,
-    $fixnum.Int64? fabricId,
-    $fixnum.Int64? nodeId,
-    $core.String? error,
-  }) {
-    final result = create();
-    if (success != null) result.success = success;
-    if (nocDer != null) result.nocDer = nocDer;
-    if (icacDer != null) result.icacDer = icacDer;
-    if (rootCaDer != null) result.rootCaDer = rootCaDer;
-    if (ipk != null) result.ipk = ipk;
-    if (fabricId != null) result.fabricId = fabricId;
-    if (nodeId != null) result.nodeId = nodeId;
-    if (error != null) result.error = error;
-    return result;
-  }
-
-  FabricEnrollResponse._();
-
-  factory FabricEnrollResponse.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory FabricEnrollResponse.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'FabricEnrollResponse',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
-      createEmptyInstance: create)
-    ..aOB(1, _omitFieldNames ? '' : 'success')
-    ..a<$core.List<$core.int>>(
-        2, _omitFieldNames ? '' : 'nocDer', $pb.PbFieldType.OY)
-    ..a<$core.List<$core.int>>(
-        3, _omitFieldNames ? '' : 'icacDer', $pb.PbFieldType.OY)
-    ..a<$core.List<$core.int>>(
-        4, _omitFieldNames ? '' : 'rootCaDer', $pb.PbFieldType.OY)
-    ..a<$core.List<$core.int>>(
-        5, _omitFieldNames ? '' : 'ipk', $pb.PbFieldType.OY)
-    ..a<$fixnum.Int64>(
-        6, _omitFieldNames ? '' : 'fabricId', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(7, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOS(8, _omitFieldNames ? '' : 'error')
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  FabricEnrollResponse clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  FabricEnrollResponse copyWith(void Function(FabricEnrollResponse) updates) =>
-      super.copyWith((message) => updates(message as FabricEnrollResponse))
-          as FabricEnrollResponse;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static FabricEnrollResponse create() => FabricEnrollResponse._();
-  @$core.override
-  FabricEnrollResponse createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static FabricEnrollResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<FabricEnrollResponse>(create);
-  static FabricEnrollResponse? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.bool get success => $_getBF(0);
-  @$pb.TagNumber(1)
-  set success($core.bool value) => $_setBool(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasSuccess() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearSuccess() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $core.List<$core.int> get nocDer => $_getN(1);
-  @$pb.TagNumber(2)
-  set nocDer($core.List<$core.int> value) => $_setBytes(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasNocDer() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearNocDer() => $_clearField(2);
-
-  @$pb.TagNumber(3)
-  $core.List<$core.int> get icacDer => $_getN(2);
-  @$pb.TagNumber(3)
-  set icacDer($core.List<$core.int> value) => $_setBytes(2, value);
-  @$pb.TagNumber(3)
-  $core.bool hasIcacDer() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearIcacDer() => $_clearField(3);
-
-  @$pb.TagNumber(4)
-  $core.List<$core.int> get rootCaDer => $_getN(3);
-  @$pb.TagNumber(4)
-  set rootCaDer($core.List<$core.int> value) => $_setBytes(3, value);
-  @$pb.TagNumber(4)
-  $core.bool hasRootCaDer() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearRootCaDer() => $_clearField(4);
-
-  @$pb.TagNumber(5)
-  $core.List<$core.int> get ipk => $_getN(4);
-  @$pb.TagNumber(5)
-  set ipk($core.List<$core.int> value) => $_setBytes(4, value);
-  @$pb.TagNumber(5)
-  $core.bool hasIpk() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearIpk() => $_clearField(5);
-
-  @$pb.TagNumber(6)
-  $fixnum.Int64 get fabricId => $_getI64(5);
-  @$pb.TagNumber(6)
-  set fabricId($fixnum.Int64 value) => $_setInt64(5, value);
-  @$pb.TagNumber(6)
-  $core.bool hasFabricId() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearFabricId() => $_clearField(6);
-
-  @$pb.TagNumber(7)
-  $fixnum.Int64 get nodeId => $_getI64(6);
-  @$pb.TagNumber(7)
-  set nodeId($fixnum.Int64 value) => $_setInt64(6, value);
-  @$pb.TagNumber(7)
-  $core.bool hasNodeId() => $_has(6);
-  @$pb.TagNumber(7)
-  void clearNodeId() => $_clearField(7);
-
-  @$pb.TagNumber(8)
-  $core.String get error => $_getSZ(7);
-  @$pb.TagNumber(8)
-  set error($core.String value) => $_setString(7, value);
-  @$pb.TagNumber(8)
-  $core.bool hasError() => $_has(7);
-  @$pb.TagNumber(8)
-  void clearError() => $_clearField(8);
-}
-
 /// POST /fabric/sign-noc
+/// DEPRECATED — superseded by POST /commission (commission-then-handoff).
+/// Kept wire-compatible until the handoff flow is verified on-device, then
+/// removed (see docs/flows.md "commission-then-handoff" and the Phase 4 cutover).
 /// During BLE commissioning the phone forwards the device CSR here instead of
 /// signing it locally, keeping the root key on the controller.
-/// ⚠ noc_der/icac_der are X.509 DER — see the CERTIFICATE FORMAT banner.  If the
-/// phone's CHIP SDK rejects a single-level chain (it has historically required a
-/// non-null ICAC), return a 3-tier chain: set icac_der and sign the NOC with it.
 class FabricSignNocRequest extends $pb.GeneratedMessage {
   factory FabricSignNocRequest({
     $core.List<$core.int>? csr,
@@ -1084,6 +1063,271 @@ class FabricSignNocResponse extends $pb.GeneratedMessage {
   $core.bool hasError() => $_has(4);
   @$pb.TagNumber(5)
   void clearError() => $_clearField(5);
+}
+
+/// POST /commission
+/// Commission-then-handoff (standard Matter multi-admin).  The phone has already
+/// BLE-commissioned the device onto a throwaway phone fabric and pushed the hub's
+/// Thread credentials, then opened an Enhanced Commissioning Method (ECM) window
+/// on the device.  It hands the controller the window's passcode + discriminator;
+/// the controller discovers the device over Thread (commissionable DNS-SD),
+/// performs PASE, and commissions it onto the controller's *own* fabric with its
+/// own CA — so no device CSR ever leaves the controller and /fabric/sign-noc is
+/// not needed.  On success the controller has an operational session and registers
+/// + subscribes the device itself (no separate /node/register call required).
+///
+/// The phone then verifies the device's Fabrics attribute shows fabric_id before
+/// removing its throwaway fabric (RemoveFabric).  See docs/flows.md.
+class CommissionRequest extends $pb.GeneratedMessage {
+  factory CommissionRequest({
+    $core.int? passcode,
+    $core.int? discriminator,
+    $fixnum.Int64? nodeId,
+    $core.String? name,
+    $core.int? vendorId,
+    $core.int? productId,
+    $core.int? deviceType,
+    $core.String? deviceAddress,
+    $core.int? devicePort,
+  }) {
+    final result = create();
+    if (passcode != null) result.passcode = passcode;
+    if (discriminator != null) result.discriminator = discriminator;
+    if (nodeId != null) result.nodeId = nodeId;
+    if (name != null) result.name = name;
+    if (vendorId != null) result.vendorId = vendorId;
+    if (productId != null) result.productId = productId;
+    if (deviceType != null) result.deviceType = deviceType;
+    if (deviceAddress != null) result.deviceAddress = deviceAddress;
+    if (devicePort != null) result.devicePort = devicePort;
+    return result;
+  }
+
+  CommissionRequest._();
+
+  factory CommissionRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CommissionRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CommissionRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'passcode', fieldType: $pb.PbFieldType.OU3)
+    ..aI(2, _omitFieldNames ? '' : 'discriminator',
+        fieldType: $pb.PbFieldType.OU3)
+    ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOS(4, _omitFieldNames ? '' : 'name')
+    ..aI(5, _omitFieldNames ? '' : 'vendorId', fieldType: $pb.PbFieldType.OU3)
+    ..aI(6, _omitFieldNames ? '' : 'productId', fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'deviceType', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(8, _omitFieldNames ? '' : 'deviceAddress')
+    ..aI(9, _omitFieldNames ? '' : 'devicePort', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionRequest copyWith(void Function(CommissionRequest) updates) =>
+      super.copyWith((message) => updates(message as CommissionRequest))
+          as CommissionRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CommissionRequest create() => CommissionRequest._();
+  @$core.override
+  CommissionRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CommissionRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CommissionRequest>(create);
+  static CommissionRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get passcode => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set passcode($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasPasscode() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPasscode() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get discriminator => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set discriminator($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasDiscriminator() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearDiscriminator() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get nodeId => $_getI64(2);
+  @$pb.TagNumber(3)
+  set nodeId($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasNodeId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearNodeId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get name => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set name($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearName() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get vendorId => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set vendorId($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasVendorId() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearVendorId() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get productId => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set productId($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasProductId() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearProductId() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get deviceType => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set deviceType($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasDeviceType() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearDeviceType() => $_clearField(7);
+
+  /// The device's commissionable IPv6 + port, as the phone resolved them from
+  /// its own mDNS scan of the open ECM window. When set, the controller PASEs
+  /// this address directly and skips DNS-SD discovery — the OTBR's SRP->mDNS
+  /// proxy strips the discriminator/CM TXT on the controller's local query, so
+  /// controller-side discovery cannot identify the device. Empty = discover.
+  @$pb.TagNumber(8)
+  $core.String get deviceAddress => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set deviceAddress($core.String value) => $_setString(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasDeviceAddress() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearDeviceAddress() => $_clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.int get devicePort => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set devicePort($core.int value) => $_setUnsignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasDevicePort() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearDevicePort() => $_clearField(9);
+}
+
+class CommissionResult extends $pb.GeneratedMessage {
+  factory CommissionResult({
+    $core.bool? success,
+    $fixnum.Int64? nodeId,
+    $fixnum.Int64? fabricId,
+    $core.String? error,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    if (nodeId != null) result.nodeId = nodeId;
+    if (fabricId != null) result.fabricId = fabricId;
+    if (error != null) result.error = error;
+    return result;
+  }
+
+  CommissionResult._();
+
+  factory CommissionResult.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CommissionResult.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CommissionResult',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(
+        3, _omitFieldNames ? '' : 'fabricId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOS(4, _omitFieldNames ? '' : 'error')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionResult clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionResult copyWith(void Function(CommissionResult) updates) =>
+      super.copyWith((message) => updates(message as CommissionResult))
+          as CommissionResult;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CommissionResult create() => CommissionResult._();
+  @$core.override
+  CommissionResult createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CommissionResult getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CommissionResult>(create);
+  static CommissionResult? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get nodeId => $_getI64(1);
+  @$pb.TagNumber(2)
+  set nodeId($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasNodeId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNodeId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get fabricId => $_getI64(2);
+  @$pb.TagNumber(3)
+  set fabricId($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasFabricId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearFabricId() => $_clearField(3);
+
+  /// the phone matches this against the device's Fabrics attribute
+  /// before calling RemoveFabric on its throwaway fabric
+  @$pb.TagNumber(4)
+  $core.String get error => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set error($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasError() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearError() => $_clearField(4);
 }
 
 class Device extends $pb.GeneratedMessage {
