@@ -3,7 +3,6 @@ import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
-import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
@@ -140,19 +139,10 @@ class NullMatterPort implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin}) async => false;
 
   @override
-  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
-    int nodeId, {
-    int endpoint = 1,
-  }) async => (importedMwh: null, exportedMwh: null);
-
-  @override
   Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0}) async => null;
 
   @override
   Future<bool> removeDevice(int nodeId) async => false;
-
-  @override
-  Future<FabricExportData?> exportFabricForController() async => null;
 
   @override
   Future<bool> downloadAndFlash({
@@ -171,9 +161,6 @@ class NullMatterPort implements MatterPort {
   Future<String?> getFabricId() async => null;
 
   @override
-  Future<int?> getVendorId() async => null;
-
-  @override
   Future<List<CommissionableDevice>> discoverCommissionableNodes() async => const [];
 
   @override
@@ -184,7 +171,4 @@ class NullMatterPort implements MatterPort {
 
   @override
   Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) async => null;
-
-  @override
-  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() async => null;
 }

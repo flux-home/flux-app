@@ -132,16 +132,6 @@ int dotMatrixCharCols(String ch) => switch (ch) {
   _ => 5,
 };
 
-/// Strips all non-ASCII-printable characters from [text] (including emoji
-/// and Unicode) so it can be safely fed to [paintDotMatrix].
-/// Characters missing from the glyph table fall back to '-' inside the painter.
-String dotMatrixNormalize(String text) => text.codeUnits
-    .where((c) => c >= 0x20 && c <= 0x7E)
-    .map(String.fromCharCode)
-    .join()
-    .trim()
-    .toUpperCase();
-
 // ─────────────────────────────────────────────────────────────────────────────
 // paintDotMatrix — free function, reused by the widget and other painters
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,7 +8,6 @@ import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
-import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
@@ -161,9 +160,6 @@ class FakeMatterPort implements MatterPort {
       null;
 
   @override
-  Future<FabricExportData?> exportFabricForController() async => null;
-
-  @override
   Future<bool> downloadAndFlash({
     required int nodeId,
     required String otaUrl,
@@ -181,9 +177,6 @@ class FakeMatterPort implements MatterPort {
   Future<String?> getFabricId() async => null;
 
   @override
-  Future<int?> getVendorId() async => null;
-
-  @override
   Future<List<CommissionableDevice>> discoverCommissionableNodes() async => const [];
 
   @override
@@ -194,9 +187,6 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) async => null;
-
-  @override
-  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() async => null;
 
   @override
   Future<BasicInfo?> readBasicInfo(int nodeId) async => null;
@@ -248,13 +238,6 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<bool> unlockDoor(int nodeId, {String? pin}) async => defaultCommandResult;
-
-  @override
-  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
-    int nodeId, {
-    int endpoint = 1,
-  }) async =>
-      (importedMwh: null, exportedMwh: null);
 
   @override
   Future<void> identify(int nodeId, {int seconds = 15}) async {}

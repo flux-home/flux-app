@@ -82,22 +82,10 @@
             </intent-filter>
         </activity>
 
-        <!--
-            AppCommissioningService is called back by the Google Home app
-            when it wants us to add a device to our local fabric.
-
-            To enable real commissioning: extend CommissioningService (from
-            play-services-home) and uncomment the intent-filter below.
-        -->
         <service
             android:name=".MatterForegroundService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
-
-        <service
-            android:name=".AppCommissioningService"
-            android:exported="true">
-        </service>
 
     </application>
 </manifest>

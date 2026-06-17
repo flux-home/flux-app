@@ -26,14 +26,6 @@ class ThreadSyncResult {
   const ThreadSyncResult(this.status, {this.message});
   final ThreadSyncStatus status;
   final String?          message;
-
-  /// True when the app and controller end up on the same Thread network
-  /// (or there was simply nothing to reconcile).
-  bool get ok =>
-      status == ThreadSyncStatus.inSync ||
-      status == ThreadSyncStatus.adopted ||
-      status == ThreadSyncStatus.pushed ||
-      status == ThreadSyncStatus.nothingToDo;
 }
 
 /// Keeps the app and the Flux controller on a single Thread network, with the

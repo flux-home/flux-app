@@ -100,12 +100,9 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Public device list ────────────────────────────────────────────────────
 
-  /// Raw commissioning records.  Most screens should use [deviceViews] or
+  /// Raw commissioning records.  Most screens should use [deviceViewsByRoom] or
   /// [viewFor] instead — those carry merged live state.
   List<MatterDevice> get devices => List.unmodifiable(_devices);
-
-  /// All devices as merged [DeviceView] objects (commissioning record + live).
-  List<DeviceView> get deviceViews => _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
 
   /// Rooms in creation order ("No Room" is always first).
   List<Room> get rooms => List.unmodifiable(_rooms);

@@ -43,7 +43,6 @@ class _VirtualSwitch {
   final Set<int> pressEps = {};
   final Set<int> cwEps    = {};
   final Set<int> ccwEps   = {};
-  Set<int> get allEps => {...pressEps, ...cwEps, ...ccwEps};
 }
 
 class _SwitchCard extends StatelessWidget {

@@ -138,20 +138,15 @@ class DeviceLiveData {
   int? get absMinCoolSetptCenti => attrs['absMinCoolSetptCenti'] as int?;
   int? get absMaxCoolSetptCenti => attrs['absMaxCoolSetptCenti'] as int?;
 
-  int? get humidityCenti => attrs['humidityCenti'] as int?;
-  int? get tempMeasureCenti => attrs['tempMeasureCenti'] as int?;
   int? get batPercentRaw => attrs['batPercentRaw'] as int?;
   int? get batChargeLevel => attrs['batChargeLevel'] as int?;
-  int? get occupancy => attrs['occupancy'] as int?;
   bool? get contactState => attrs['contactState'] as bool?;
-  int? get airQuality => attrs['airQuality'] as int?;
   int? get liftPercent100ths => attrs['liftPercent100ths'] as int?;
   int? get fanMode => attrs['fanMode'] as int?;
   int? get fanPercent => attrs['fanPercent'] as int?;
   int? get colorTempMireds => attrs['colorTempMireds'] as int?;
   int? get smokeState => attrs['smokeState'] as int?;
   int? get coState => attrs['coState'] as int?;
-  int? get switchCurrentPosition => attrs['switchCurrentPosition'] as int?;
   int? get switchCurrentEndpoint => attrs['switchCurrentEndpoint'] as int?;
   int? get switchLastPosition     => attrs['switchLastPosition'] as int?;
   int? get switchLastEndpoint     => attrs['switchLastEndpoint'] as int?;
@@ -168,8 +163,6 @@ class DeviceLiveData {
   // Wh getters are computed for backward-compat (gate checks, chart section).
   int? get cumulativeEnergyMwh         => attrs['cumulativeEnergyMwh']         as int?;
   int? get cumulativeEnergyExportedMwh => attrs['cumulativeEnergyExportedMwh'] as int?;
-  int? get cumulativeEnergyWh          => cumulativeEnergyMwh         != null ? cumulativeEnergyMwh!         ~/ 1000 : null;
-  int? get cumulativeEnergyExportedWh  => cumulativeEnergyExportedMwh != null ? cumulativeEnergyExportedMwh! ~/ 1000 : null;
 
   // ── BasicInfo delegation (unchanged public API) ───────────────────────────
 

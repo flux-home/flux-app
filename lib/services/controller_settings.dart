@@ -17,7 +17,6 @@ class ControllerSettings {
   static const _kPort        = 'ctrl_port';
   static const _kPsk         = 'ctrl_psk';          // hex32 keyed by controller ID
   static const _kDtlsId      = 'ctrl_dtls_id';      // DTLS identity — same as controller ID
-  static const _kProvisioned = 'ctrl_provisioned';  // keyed by controller hostname
 
   static Future<ControllerSettings?> loadManualOverride() async {
     final prefs = await SharedPreferences.getInstance();
@@ -48,26 +47,6 @@ class ControllerSettings {
     if (dtlsIdentity != null) {
       await prefs.setString('${_kDtlsId}_$hostname', dtlsIdentity);
     }
-  }
-
-  /// Returns the stored DTLS identity for [hostname], or null.
-  static Future<String?> loadDtlsIdentity(String hostname) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('${_kDtlsId}_$hostname');
-  }
-
-  /// Returns true if the controller identified by [hostname] has been provisioned
-  /// with the app's fabric identity (i.e. [saveProvisionedFlag] was called).
-  static Future<bool> isProvisioned(String hostname) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('${_kProvisioned}_$hostname') ?? false;
-  }
-
-  /// Marks the controller identified by [hostname] as provisioned so subsequent
-  /// launches skip the provisioning flow.
-  static Future<void> saveProvisionedFlag(String hostname) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('${_kProvisioned}_$hostname', true);
   }
 
   /// Removes the stored PSK for [hostname] (reverts to plain CoAP).

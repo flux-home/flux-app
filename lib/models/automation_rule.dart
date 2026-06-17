@@ -125,9 +125,6 @@ class DeviceConnection {
   final String             targetDeviceId;
   final String?            switchGroup;
   final List<AutomationRule> rules;
-
-  AutomationRule? ruleFor(TriggerType t) =>
-      rules.where((r) => r.trigger == t).firstOrNull;
 }
 
 // ── Action list per (trigger, target) for the connection detail sheet ─────────
@@ -171,59 +168,3 @@ List<AutomationAction?> actionsFor({
   return out;
 }
 
-// ── Action ordering per trigger (for the edit sheet) ─────────────────────
-
-/// Returns actions ordered by relevance to [trigger].
-/// The first item is the default when creating a new rule.
-List<AutomationAction> suggestedActions(TriggerType trigger) => switch (trigger) {
-  TriggerType.switchPress => [
-    AutomationAction.toggle,
-    AutomationAction.turnOn,
-    AutomationAction.turnOff,
-    AutomationAction.thermostatOff,
-    AutomationAction.brightnessStepUp,
-    AutomationAction.brightnessStepDown,
-    AutomationAction.thermostatSetpointUp,
-    AutomationAction.thermostatSetpointDown,
-  ],
-  TriggerType.switchCw => [
-    AutomationAction.brightnessStepUp,
-    AutomationAction.thermostatSetpointUp,
-    AutomationAction.toggle,
-    AutomationAction.turnOn,
-    AutomationAction.turnOff,
-    AutomationAction.thermostatOff,
-    AutomationAction.brightnessStepDown,
-    AutomationAction.thermostatSetpointDown,
-  ],
-  TriggerType.switchCcw => [
-    AutomationAction.brightnessStepDown,
-    AutomationAction.thermostatSetpointDown,
-    AutomationAction.toggle,
-    AutomationAction.turnOn,
-    AutomationAction.turnOff,
-    AutomationAction.thermostatOff,
-    AutomationAction.brightnessStepUp,
-    AutomationAction.thermostatSetpointUp,
-  ],
-  TriggerType.contactOpen => [
-    AutomationAction.thermostatOff,
-    AutomationAction.turnOff,
-    AutomationAction.toggle,
-    AutomationAction.turnOn,
-    AutomationAction.brightnessStepDown,
-    AutomationAction.thermostatSetpointDown,
-    AutomationAction.brightnessStepUp,
-    AutomationAction.thermostatSetpointUp,
-  ],
-  TriggerType.contactClose => [
-    AutomationAction.turnOn,
-    AutomationAction.toggle,
-    AutomationAction.turnOff,
-    AutomationAction.thermostatOff,
-    AutomationAction.brightnessStepUp,
-    AutomationAction.thermostatSetpointUp,
-    AutomationAction.brightnessStepDown,
-    AutomationAction.thermostatSetpointDown,
-  ],
-};

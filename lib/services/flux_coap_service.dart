@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:coap/coap.dart';
 import 'package:fixnum/fixnum.dart';
@@ -10,7 +9,6 @@ import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
-import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
@@ -68,8 +66,6 @@ class FluxControllerEndpoint {
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// DEL  /devices?id=<hex>             → StatusResponse
-/// POST /fabric/provision             ← FabricProvision → FabricProvisionResult
-/// POST /fabric/enroll                ← FabricEnrollRequest → FabricEnrollResponse
 /// POST /commission                   ← CommissionRequest → CommissionResult
 /// GET  /events?id=<hex>    Observe   → DeviceStateEvent
 /// POST /command                      ← DeviceCommand → BoolResult
@@ -261,45 +257,6 @@ class FluxCoapService implements MatterPort {
     if (b == null) return null;
     try { return $proto.DeviceList.fromBuffer(b).devices; }
     on Exception catch (e) { debugPrint('FluxCoapService getDeviceList: $e'); return null; }
-  }
-
-  // ── Fabric provisioning — POST /fabric/provision ─────────────────────────
-
-  /// Installs the app's fabric identity on the controller (Node 0x0002).
-  /// Call once when [getInfo] returns `fabricId == 0` (controller unprovisioned).
-  ///
-  /// When [rcacPrivKey] (the raw 32-byte RCAC private scalar) is supplied the
-  /// controller stores it and becomes the fabric CA, so it can later answer
-  /// [enrollFabric] for additional phones.
-  Future<$proto.FabricProvisionResult?> provisionFabric({
-    required int       fabricId,
-    required int       nodeId,
-    required Uint8List rootCaTlv,
-    required Uint8List nocTlv,
-    required Uint8List opPrivKey,
-    required Uint8List ipk,
-    Uint8List?         icacTlv,
-    Uint8List?         rcacPrivKey,
-    int                vendorId = 0,
-  }) async {
-    final req = $proto.FabricProvision()
-      ..fabricId  = Int64(fabricId)
-      ..nodeId    = Int64(nodeId)
-      ..rootCaTlv = rootCaTlv
-      ..nocTlv    = nocTlv
-      ..opPrivKey = opPrivKey
-      ..ipk       = ipk
-      ..vendorId  = vendorId;
-    if (icacTlv != null) req.icacTlv = icacTlv;
-    if (rcacPrivKey != null) req.rcacPrivKey = rcacPrivKey;
-    final body = await _post('/fabric/provision', req.writeToBuffer(),
-        timeout: const Duration(seconds: 30));
-    if (body == null) return null;
-    try { return $proto.FabricProvisionResult.fromBuffer(body); }
-    on Exception catch (e) {
-      debugPrint('FluxCoapService.provisionFabric: $e');
-      return null;
-    }
   }
 
   // ── Commission-then-handoff — POST /commission ───────────────────────────
@@ -711,9 +668,6 @@ class FluxCoapService implements MatterPort {
   @override Future<List<int>> readServerClusterList(int n, {int endpoint = 0}) async => const [];
   @override Future<List<int>> readPartsList(int n) async => const [];
   @override Future<String?>  readClusters(int n)  async => null;
-  @override
-  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
-    int n, {int endpoint = 1}) async => (importedMwh: null, exportedMwh: null);
 
   // ── MatterFabricPort ───────────────────────────────────────────────────────
 
@@ -735,7 +689,6 @@ class FluxCoapService implements MatterPort {
     return info != null ? info.fabricId.toHexString() : null;
   }
 
-  @override Future<int?> getVendorId() async => null;
   @override Future<bool> downloadAndFlash({
     required int nodeId, required String otaUrl,
     required int targetVersion, required String targetVersionString,
@@ -745,7 +698,6 @@ class FluxCoapService implements MatterPort {
   @override Future<List<ThreadBorderRouter>> discoverThreadNetworks() async => const [];
   @override Future<String?> readSystemThreadCredentials() async => null;
   @override Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int n) async => null;
-  @override Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() async => null;
 
   // ── MatterCommissionPort — BLE stays on local MatterChannel ───────────────
 
@@ -756,9 +708,6 @@ class FluxCoapService implements MatterPort {
   @override
   Future<bool> removeFabric(int nodeId, int fabricIndex) async =>
       false; // RemoveFabric runs on the local MatterChannel
-
-  @override
-  Future<FabricExportData?> exportFabricForController() async => null; // hub side: use local channel
 
   @override
   Future<ParsedPayload?> parsePayload(String payload) async => null;

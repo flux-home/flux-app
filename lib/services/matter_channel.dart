@@ -8,7 +8,6 @@ import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
-import 'package:matter_home/models/network_diagnostics.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
@@ -384,23 +383,6 @@ class MatterChannel implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin}) =>
       _invoke('unlockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
 
-  @override
-  Future<({int? importedMwh, int? exportedMwh})> readCumulativeEnergy(
-    int nodeId, {
-    int endpoint = 1,
-  }) => _invoke(
-    'readCumulativeEnergy',
-    (importedMwh: null, exportedMwh: null),
-    args: {'nodeId': nodeId, 'endpoint': endpoint},
-    decode: (raw) {
-      final m = Map<String, dynamic>.from(raw as Map<Object?, Object?>);
-      return (
-        importedMwh: (m['importedMwh'] as num?)?.toInt(),
-        exportedMwh: (m['exportedMwh'] as num?)?.toInt(),
-      );
-    },
-  );
-
   Future<DeviceStateResult> readDeviceState(int nodeId) => _invoke(
     'readDeviceState',
     const DeviceStateResult(isOnline: false),
@@ -454,21 +436,6 @@ class MatterChannel implements MatterPort {
     decode: (raw) =>
         (raw as List<dynamic>?)?.map((e) => WifiNetwork.fromMap(e as Map<Object?, Object?>)).toList() ?? [],
   );
-
-  @override
-  Future<FabricExportData?> exportFabricForController() async {
-    final raw = await _invoke<Map<Object?, Object?>?>('exportFabricForController', null);
-    if (raw == null) return null;
-    final rcac = raw['rcacPrivKey'] as List?;
-    return FabricExportData(
-      rootCaTlv: Uint8List.fromList((raw['rootCaTlv'] as List).cast<int>()),
-      nocTlv:    Uint8List.fromList((raw['nocTlv']    as List).cast<int>()),
-      opPrivKey: Uint8List.fromList((raw['opPrivKey'] as List).cast<int>()),
-      ipk:       Uint8List.fromList((raw['ipk']       as List).cast<int>()),
-      fabricId:  raw['fabricId'] as int,
-      rcacPrivKey: rcac == null ? null : Uint8List.fromList(rcac.cast<int>()),
-    );
-  }
 
   @override
   Future<void> provideCredentials({String? ssid, String? password, String? threadDatasetHex}) => _invoke<void>(
@@ -531,20 +498,7 @@ class MatterChannel implements MatterPort {
   Future<bool> removeDevice(int nodeId) => _invoke('removeDevice', false, args: {'nodeId': nodeId});
 
   @override
-  Future<NetworkDiagnosticsReport?> runNetworkDiagnostics() => _invoke<NetworkDiagnosticsReport?>(
-    'runNetworkDiagnostics',
-    null,
-    decode: (raw) {
-      if (raw == null) return null;
-      return NetworkDiagnosticsReport.fromJson(json.decode(raw as String) as Map<String, dynamic>);
-    },
-  );
-
-  @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
-
-  @override
-  Future<int?> getVendorId() => _invoke<int?>('getVendorId', null);
 
   @override
   Future<List<CommissionableDevice>> discoverCommissionableNodes() =>

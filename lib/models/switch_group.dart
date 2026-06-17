@@ -12,7 +12,4 @@ class SwitchGroup {
   final List<int> pressEndpoints;
   final List<int> cwEndpoints;
   final List<int> ccwEndpoints;
-
-  List<int> get allEndpoints =>
-      [...pressEndpoints, ...cwEndpoints, ...ccwEndpoints];
 }

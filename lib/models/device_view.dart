@@ -30,10 +30,6 @@ class DeviceView {
   String      get name                 => _device.name;
   DeviceType  get deviceType           => _device.deviceType;
   int         get nodeId               => _device.nodeId;
-  ManagedBy   get managedBy            => _device.managedBy;
-  DateTime    get commissionedAt       => _device.commissionedAt;
-  NetworkType get networkType          => _device.networkType;
-  bool        get sharedWithGoogleHome => _device.sharedWithGoogleHome;
 
   /// The underlying commissioning record.
   /// Pass this to screens that need a stable identity handle for navigation
@@ -57,7 +53,6 @@ class DeviceView {
   double get brightness => _live?.levelRaw != null
       ? _live!.levelRaw! / 254.0
       : 1.0;
-  int?   get localTempCenti => _live?.localTempCenti;
 
   // ── BasicInfo ──────────────────────────────────────────────────────────────
 
@@ -85,9 +80,7 @@ class DeviceView {
   // ── Sensors / thermostat ──────────────────────────────────────────────────
 
   ThermostatState? get thermoState    => _live?.thermoState;
-  int?             get humidityCenti  => _live?.humidityCenti;
   BatteryInfo?     get batteryInfo    => _live?.batteryInfo;
-  bool?            get contactState   => _live?.contactState;
 
   // ── New controllable clusters ─────────────────────────────────────────────
   int? get liftPercent100ths => _live?.liftPercent100ths;
@@ -96,7 +89,6 @@ class DeviceView {
   int? get colorTempMireds   => _live?.colorTempMireds;
   int? get smokeState        => _live?.smokeState;
   int? get coState           => _live?.coState;
-  int? get switchCurrentPosition => _live?.switchCurrentPosition;
   int? get switchCurrentEndpoint => _live?.switchCurrentEndpoint;
   int? get switchLastPosition     => _live?.switchLastPosition;
   int? get switchLastEndpoint     => _live?.switchLastEndpoint;
