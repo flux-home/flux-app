@@ -44,7 +44,7 @@ A few operations are inherently local to the phone and stay wired to
 
 - BLE commissioning Pass 1 (throwaway local fabric) and the ECM handoff
   (`openCommissioningWindow` / `readFabrics` / `removeFabric`) — see
-  `flux-proto/docs/multiadmin-rework.md`.
+  `flux-proto/docs/flows.md`.
 - OTA download/flash (`downloadAndFlash` / `cancelOta`) — the phone pushes
   firmware straight to the device.
 - Local radio operations (`scanWifiNetworks`, `discoverThreadNetworks`,
