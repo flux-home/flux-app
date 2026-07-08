@@ -12,7 +12,7 @@ import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:provider/provider.dart';
 
-enum _HubAction { refresh, details, syncThread, remove }
+enum _HubAction { refresh, syncThread, remove }
 
 class ControllerSettingsScreen extends StatefulWidget {
   const ControllerSettingsScreen({super.key});
@@ -178,60 +178,54 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   void _onHubAction(_HubAction action) {
     switch (action) {
       case _HubAction.refresh:    _rediscover();
-      case _HubAction.details:    _showDetails();
       case _HubAction.syncThread: _syncThread();
       case _HubAction.remove:     _clearPsk();
     }
   }
 
-  // ── Details sheet ─────────────────────────────────────────────────────────
+  // ── Details ───────────────────────────────────────────────────────────────
 
-  void _showDetails() {
+  /// Hub details shown inline beneath the hub card. Rows that need live data
+  /// (host, firmware, uptime) only appear once a `/info` read has succeeded;
+  /// the stored pairing key, fabric and Thread network are always shown.
+  Widget _detailsCard(ColorScheme cs) {
     final fabricProvisioned = (_info?.fabricId.toInt() ?? 0) != 0;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(child: Container(
-                width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                    color: Theme.of(sheetContext).colorScheme.onSurface.withAlpha(40),
-                    borderRadius: BorderRadius.circular(2)),
-              )),
-              Text(_hubName(),
-                  style: Theme.of(sheetContext).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              if (_info != null) ...[
-                _detailRow('Host', _info!.hostname),
-                if (_info!.ethernetIp.isNotEmpty)
-                  _detailRow('IP address', _info!.ethernetIp),
-                if (_info!.firmwareVersion.isNotEmpty)
-                  _detailRow('Firmware', _info!.firmwareVersion),
-                if (_info!.uptimeSeconds > 0)
-                  _detailRow('Uptime', _formatUptime(_info!.uptimeSeconds)),
-              ],
-              if (_storedPsk != null)
-                _detailRow('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
-              _detailRow(
-                'Fabric',
-                fabricProvisioned ? '0x${_info!.fabricId.toHexString()}' : 'none',
-              ),
-              _detailRow(
-                'Thread network',
-                _activeDataset != null && !_activeDataset!.isEmpty
-                    ? _activeDataset!.label
-                    : 'none',
-              ),
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('DETAILS',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: cs.onSurfaceVariant)),
+            const SizedBox(height: 4),
+            if (_info != null) ...[
+              _detailRow('Host', _info!.hostname),
+              if (_info!.ethernetIp.isNotEmpty)
+                _detailRow('IP address', _info!.ethernetIp),
+              if (_info!.firmwareVersion.isNotEmpty)
+                _detailRow('Firmware', _info!.firmwareVersion),
+              if (_info!.uptimeSeconds > 0)
+                _detailRow('Uptime', _formatUptime(_info!.uptimeSeconds)),
             ],
-          ),
+            if (_storedPsk != null)
+              _detailRow('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
+            _detailRow(
+              'Fabric',
+              fabricProvisioned ? '0x${_info!.fabricId.toHexString()}' : 'none',
+            ),
+            _detailRow(
+              'Thread network',
+              _activeDataset != null && !_activeDataset!.isEmpty
+                  ? _activeDataset!.label
+                  : 'none',
+            ),
+          ],
         ),
       ),
     );
@@ -285,13 +279,18 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<HubConnection>(); // rebuild when the service is swapped
-    final hasPsk = _pskLoaded && _storedPsk != null;
-    final cs     = Theme.of(context).colorScheme;
+    final hub = context.watch<HubConnection>(); // rebuild when the service is swapped
+    // A hub is "configured" the moment a PSK is stored, even if the controller
+    // can't be reached right now — so we must never fall back to "NO HUB YET"
+    // in that case. HubConnection.hasConfiguredHub is the source of truth;
+    // _storedPsk only loads once the controller ID can be resolved (i.e. the
+    // box was discovered), which never happens for an offline PSK-added hub.
+    final configured = hub.hasConfiguredHub || (_pskLoaded && _storedPsk != null);
+    final cs         = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Flux Hub')),
-      floatingActionButton: hasPsk
+      floatingActionButton: configured
           ? null
           : FloatingActionButton(
               onPressed: _loading ? null : _addController,
@@ -300,9 +299,9 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
               tooltip: 'Add hub',
               child: const Icon(Icons.add, size: 28),
             ),
-      body: !_pskLoaded
+      body: !_pskLoaded && !configured
           ? const SizedBox.shrink()
-          : !hasPsk
+          : !configured
               ? const DotMatrixEmptyHint(headline: 'NO HUB YET', subline: 'TAP + TO ADD')
               : ListView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -326,7 +325,6 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                             Text(_hubSubtitle()),
                           ],
                         ),
-                        onTap: _showDetails,
                         trailing: PopupMenuButton<_HubAction>(
                           onSelected: _onHubAction,
                           itemBuilder: (ctx) => [
@@ -334,10 +332,6 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                               value: _HubAction.refresh,
                               enabled: !_loading,
                               child: const Text('Refresh'),
-                            ),
-                            const PopupMenuItem(
-                              value: _HubAction.details,
-                              child: Text('Details'),
                             ),
                             PopupMenuItem(
                               value: _HubAction.syncThread,
@@ -353,6 +347,7 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                         ),
                       ),
                     ),
+                    _detailsCard(cs),
                   ],
                 ),
     );
