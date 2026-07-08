@@ -8,6 +8,7 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
+import 'package:matter_home/ui/widgets/category_bar.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
@@ -103,6 +104,8 @@ class HomeScreen extends StatelessWidget {
     return CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+              // ── Category buttons (Energy / Lighting / Climate) ───────────
+              const SliverToBoxAdapter(child: CategoryBar()),
               for (final (room, views) in groups)
                 if (room.isNoRoom && views.isEmpty) ...[] else ...[
                 // ── Room header ─────────────────────────────────────────────

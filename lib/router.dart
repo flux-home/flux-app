@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:matter_home/models/home_category.dart';
+import 'package:matter_home/ui/screens/category/category_screen.dart';
 import 'package:matter_home/ui/screens/commission_screen.dart';
 import 'package:matter_home/ui/screens/device_detail_screen.dart';
 import 'package:matter_home/ui/screens/home_screen.dart';
@@ -31,6 +33,13 @@ final appRouter = GoRouter(
       path: '/room-picker/:id',
       pageBuilder: (_, state) =>
           _slide(state, RoomPickerScreen(deviceId: state.pathParameters['id']!)),
+    ),
+    GoRoute(
+      path: '/category/:cat',
+      pageBuilder: (_, state) {
+        final cat = HomeCategory.values.byName(state.pathParameters['cat']!);
+        return _slide(state, CategoryScreen(category: cat));
+      },
     ),
     GoRoute(
       path: '/settings',
