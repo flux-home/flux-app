@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/home_category.dart';
 import 'package:matter_home/providers/device_provider.dart';
-import 'package:matter_home/ui/screens/home/energy_flow_view.dart';
+import 'package:matter_home/ui/screens/home/house_energy_scene.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:provider/provider.dart';
 
 /// A single top-level category surface (Energy / Lighting / Climate).
 ///
-/// Energy leads with the live [HomeEnergyOverview]; every category then lists
-/// its matching devices in a grid. Reached from the home-screen [CategoryBar].
+/// Energy leads with the illustrated [HouseEnergyScene]; every category then
+/// lists its matching devices in a grid. Reached from the home-screen
+/// [CategoryBar].
 class CategoryScreen extends StatelessWidget {
   const CategoryScreen({required this.category, super.key});
 
@@ -22,9 +23,10 @@ class CategoryScreen extends StatelessWidget {
     final devices  = provider.deviceViews.where(category.matches).toList();
     final color    = category.color;
 
-    final showEnergyFlow =
-        category == HomeCategory.energy && provider.energySummary.hasAnyRole;
-    final isEmpty = devices.isEmpty && !showEnergyFlow;
+    // The Energy view always leads with the house scene (all slots shown, the
+    // unconfigured ones dimmed), so it's never "empty".
+    final showScene = category == HomeCategory.energy;
+    final isEmpty = devices.isEmpty && !showScene;
 
     return Scaffold(
       appBar: AppBar(
@@ -34,16 +36,12 @@ class CategoryScreen extends StatelessWidget {
       body: isEmpty
           ? DotMatrixEmptyHint(
               headline: 'NO ${category.label.toUpperCase()}',
-              subline: category == HomeCategory.energy
-                  ? 'ASSIGN ROLES IN DEVICE SETTINGS'
-                  : 'NOTHING HERE YET',
+              subline: 'NOTHING HERE YET',
             )
           : CustomScrollView(
               slivers: [
-                if (showEnergyFlow)
-                  SliverToBoxAdapter(
-                    child: HomeEnergyOverview(summary: provider.energySummary),
-                  ),
+                if (showScene)
+                  const SliverToBoxAdapter(child: HouseEnergyScene()),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                   sliver: SliverGrid(
