@@ -62,7 +62,11 @@ Future<bool> runAddControllerFlow(BuildContext context, {String? knownController
 
   await ControllerSettings.savePsk(controllerId, psk, dtlsIdentity: controllerId);
 
-  final found = await context.read<HubConnection>().reconnect();
+  final hub = context.read<HubConnection>();
+  // Reflect "hub configured" immediately so the UI stops showing "NO HUB YET"
+  // even if the controller can't be reached right now.
+  await hub.refreshConfiguredState();
+  final found = await hub.reconnect();
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(found

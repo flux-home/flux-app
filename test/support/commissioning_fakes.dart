@@ -254,6 +254,8 @@ class FakeFluxCoapService extends FluxCoapService {
     int vendorId = 0,
     int productId = 0,
     int deviceType = 0,
+    String deviceAddress = '',
+    int devicePort = 0,
   }) async {
     commissionCalls++;
     commissionedNodeId = nodeId;

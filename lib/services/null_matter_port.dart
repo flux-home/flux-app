@@ -91,7 +91,7 @@ class NullMatterPort implements MatterPort {
   Future<List<int>> readPartsList(int nodeId) async => const [];
 
   @override
-  Future<String?> readClusters(int nodeId) async => null;
+  Future<String?> readClusters(int nodeId, {bool full = false}) async => null;
 
   @override
   Future<bool> toggleDevice(int nodeId, {required bool on}) async => false;

@@ -86,7 +86,10 @@ abstract interface class MatterClusterPort {
   Future<ThermostatState?>   readThermostat(int nodeId);
   Future<List<int>>          readServerClusterList(int nodeId, {int endpoint = 0});
   Future<List<int>>          readPartsList(int nodeId);
-  Future<String?>            readClusters(int nodeId);
+  /// [full] true = whole tree (Cluster Inspector); false = static metadata only
+  /// (BasicInfo + Descriptor + OnOff), with live readings coming via the
+  /// subscription. See [FluxCoapService.readClusters].
+  Future<String?>            readClusters(int nodeId, {bool full});
 
   Future<bool> toggleDevice(int nodeId, {required bool on});
   Future<bool> setLevel(int nodeId, int level);

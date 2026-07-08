@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:coap/coap.dart';
 import 'package:fixnum/fixnum.dart';
@@ -13,6 +14,7 @@ import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
+import 'package:matter_home/services/cluster_parser.dart' show parseBasicInfo;
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
@@ -166,6 +168,7 @@ class FluxCoapService implements MatterPort {
   static const _timeout5   = Duration(seconds: 5);
   static const _timeout15  = Duration(seconds: 15); // DTLS handshake can take ~10s
   static const _timeout30  = Duration(seconds: 30);
+  static const _timeout45  = Duration(seconds: 45); // full cluster dump (whole tree)
 
   Future<Uint8List?> _get(String path, {
     Map<String, String>? query,
@@ -622,12 +625,10 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<BasicInfo?> readBasicInfo(int nodeId) async {
-    // BasicInformation cluster attributes are string-valued (vendor name,
-    // product name, serial, etc.).  The Attr proto only carries bool/int/long
-    // — no string field.  Any read response would arrive with empty keys, and
-    // updating the cache with those empty strings would overwrite a valid
-    // snapshot.  Return null so callers leave the cache unchanged.
-    return null;
+    // Parse the BasicInformation cluster (0x0028) out of the controller's
+    // cluster dump (GET /devices/clusters). The phone is no longer on the
+    // device fabric, so this is the only path to the string-valued attributes.
+    return parseBasicInfo(await readClusters(nodeId));
   }
 
   @override
@@ -667,7 +668,47 @@ class FluxCoapService implements MatterPort {
 
   @override Future<List<int>> readServerClusterList(int n, {int endpoint = 0}) async => const [];
   @override Future<List<int>> readPartsList(int n) async => const [];
-  @override Future<String?>  readClusters(int n)  async => null;
+
+  // Coalesces concurrent cluster-dump fetches for the same (node, full) request.
+  // device-detail kicks off readBasicInfo and readClusters in parallel, so
+  // without this each open fires two reads at once. Keyed by (node, full) so a
+  // targeted detail read and a full inspector read don't accidentally share.
+  final Map<int, Future<String?>> _clusterDumpInflight = {};
+
+  /// Cluster/attribute dump for [n], read by the controller over its CASE
+  /// session and returned as the JSON `parseClusters` expects
+  /// (`[{endpoint, clusterId, attributes:[{id, value}]}]`). The phone is off the
+  /// device fabric post-handoff, so reads must go through the controller.
+  ///
+  /// [full] true reads the whole tree (Cluster Inspector); false (default) reads
+  /// only the static metadata device-detail needs (BasicInfo + Descriptor +
+  /// OnOff) — live readings arrive via the subscription. Single-flighted so
+  /// concurrent callers share one read.
+  @override
+  Future<String?> readClusters(int n, {bool full = false}) {
+    final key = (n << 1) | (full ? 1 : 0);
+    final inflight = _clusterDumpInflight[key];
+    if (inflight != null) return inflight;
+    final f = _fetchClusterDump(n, full);
+    _clusterDumpInflight[key] = f;
+    f.whenComplete(() => _clusterDumpInflight.remove(key));
+    return f;
+  }
+
+  Future<String?> _fetchClusterDump(int n, bool full) async {
+    // The full read traverses the whole tree on the controller (up to ~25s on a
+    // lossy mesh); wait longer than the controller does so we still receive its
+    // reply (even "[]") rather than timing out first.
+    final body = await _get('/devices/clusters',
+        query: {
+          'id': n.toRadixString(16).padLeft(16, '0'),
+          if (full) 'full': '1',
+        },
+        timeout: full ? _timeout45 : _timeout30);
+    if (body == null) return null;
+    final s = utf8.decode(body, allowMalformed: true);
+    return s.isEmpty ? null : s;
+  }
 
   // ── MatterFabricPort ───────────────────────────────────────────────────────
 

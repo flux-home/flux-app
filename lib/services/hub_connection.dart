@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/flux_controller_discovery.dart';
 
@@ -12,12 +15,31 @@ import 'package:matter_home/services/flux_controller_discovery.dart';
 /// [reconnect] can be called later (e.g. from the settings screen) to
 /// re-run discovery and swap in a new [FluxCoapService].
 class HubConnection extends ChangeNotifier {
-  HubConnection(FluxCoapService? initial) : _service = initial;
+  HubConnection(FluxCoapService? initial) : _service = initial {
+    unawaited(refreshConfiguredState());
+  }
 
   FluxCoapService? _service;
+  bool _hasStoredPsk = false;
 
   FluxCoapService? get service => _service;
   bool get isConnected => _service != null;
+
+  /// True when a hub has been configured (a PSK is stored), even if the
+  /// controller is currently unreachable. Lets the UI distinguish "no hub set
+  /// up yet" from "hub set up but offline" — the latter should not be told to
+  /// pair a new hub.
+  bool get hasConfiguredHub => isConnected || _hasStoredPsk;
+
+  /// Re-reads whether any controller PSK is stored and notifies listeners if it
+  /// changed. Call after the add-controller flow saves a PSK.
+  Future<void> refreshConfiguredState() async {
+    final has = await ControllerSettings.hasAnyPsk();
+    if (has != _hasStoredPsk) {
+      _hasStoredPsk = has;
+      notifyListeners();
+    }
+  }
 
   /// Directly installs a freshly-created service (e.g. after background
   /// discovery that completed post-boot) and notifies listeners.

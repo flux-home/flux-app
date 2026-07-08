@@ -148,7 +148,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _maybeLoadBasicInfo(DeviceView view) async {
     if (_basicInfoLoaded) return;
     _basicInfoLoaded = true;
-    final info = await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
+    // Static metadata: prefer the persisted cluster cache — no controller read.
+    // Only the first open of a never-cached device hits the controller; the
+    // coalesced _loadReadings then caches the dump, so later opens and cold
+    // launches are read-free.
+    final cached = _provider.clusterCacheFor(widget.deviceId);
+    final info = cached != null
+        ? parseBasicInfo(cached)
+        : await context.read<MatterClusterPort>().readBasicInfo(view.nodeId);
     if (mounted && info != null) {
       _provider.updateBasicInfo(
         widget.deviceId,

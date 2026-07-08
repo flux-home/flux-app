@@ -116,8 +116,8 @@ const _kClusterNames = <int, String>{
   0x0072: 'Activated Carbon Filter Monitoring',
   0x0080: 'Boolean State Configuration',
   0x0081: 'Valve Configuration and Control',
-  0x0090: 'Electrical Energy Measurement',
-  0x0091: 'Electrical Power Measurement',
+  0x0090: 'Electrical Power Measurement',
+  0x0091: 'Electrical Energy Measurement',
   0x0096: 'Microwave Oven Control',
   0x0101: 'Door Lock',
   0x0102: 'Window Covering',
@@ -402,7 +402,7 @@ class _ClusterInspectorScreenState extends State<ClusterInspectorScreen> {
 
   Future<List<Object>> _load() async {
     final channel = context.read<MatterClusterPort>();
-    final jsonStr = await channel.readClusters(widget.device.nodeId);
+    final jsonStr = await channel.readClusters(widget.device.nodeId, full: true);
     if (jsonStr == null || jsonStr == '[]') return [];
 
     final raw = json.decode(jsonStr) as List<dynamic>;

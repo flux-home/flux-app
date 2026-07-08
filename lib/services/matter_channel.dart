@@ -366,7 +366,8 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<String?> readClusters(int nodeId) => _invoke<String?>('readClusters', null, args: {'nodeId': nodeId});
+  Future<String?> readClusters(int nodeId, {bool full = false}) =>
+      _invoke<String?>('readClusters', null, args: {'nodeId': nodeId, 'full': full});
 
   @override
   Future<int?> readDeviceTypeId(int nodeId) => _invoke<int?>('readDeviceType', null, args: {'nodeId': nodeId});

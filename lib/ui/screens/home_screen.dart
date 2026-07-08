@@ -21,7 +21,9 @@ class HomeScreen extends StatelessWidget {
     // Commissioning requires a hub (see CommissioningController), so the FAB
     // surfaces whichever action is actually possible: pair a hub first, then
     // add devices once one is connected.
-    final hubConnected = context.watch<HubConnection>().isConnected;
+    final hub = context.watch<HubConnection>();
+    final hubConnected  = hub.isConnected;
+    final hubConfigured = hub.hasConfiguredHub;
 
     return Scaffold(
       appBar: AppBar(
@@ -47,9 +49,15 @@ class HomeScreen extends StatelessWidget {
           final totalDevices = groups.fold<int>(0, (sum, g) => sum + g.$2.length);
 
           return RefreshIndicator(
-            // Pull down to re-fetch the controller's device list. No-op when
-            // no hub is connected.
-            onRefresh: () => provider.syncWithController(),
+            // Pull down to re-fetch the controller's device list. When a hub is
+            // configured but currently offline, also retry the connection.
+            onRefresh: () async {
+              final hub = context.read<HubConnection>();
+              if (!hub.isConnected && hub.hasConfiguredHub) {
+                await hub.reconnect();
+              }
+              await provider.syncWithController();
+            },
             child: totalDevices == 0
                 ? CustomScrollView(
                     // AlwaysScrollable so the pull gesture works even when the
@@ -59,8 +67,12 @@ class HomeScreen extends StatelessWidget {
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: DotMatrixEmptyHint(
-                          headline: hubConnected ? 'NO DEVICES' : 'NO HUB YET',
-                          subline:  hubConnected ? 'TAP + TO ADD' : 'TAP + TO PAIR',
+                          headline: hubConnected
+                              ? 'NO DEVICES'
+                              : hubConfigured ? 'HUB OFFLINE' : 'NO HUB YET',
+                          subline: hubConnected
+                              ? 'TAP + TO ADD'
+                              : hubConfigured ? 'PULL TO RECONNECT' : 'TAP + TO PAIR',
                         ),
                       ),
                     ],

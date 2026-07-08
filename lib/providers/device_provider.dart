@@ -164,6 +164,9 @@ class DeviceProvider extends ChangeNotifier {
     for (final device in _devices) {
       final snap = _snapshots[device.id];
       if (snap != null) {
+        // Seed the persisted cluster dump (static metadata) so the device view
+        // can render device-info + readings + controllability without a read.
+        if (snap.clusterJson != null) _clusterCache[device.id] = snap.clusterJson!;
         // Merge the full persisted attribute map (same keys as subscription
         // events) then mark stale so the UI dims until a live update arrives.
         final basicInfo = snap.productName != null
@@ -356,7 +359,10 @@ class DeviceProvider extends ChangeNotifier {
   Future<void> _flushSnapshot(String deviceId) async {
     final live = _liveCache[deviceId];
     if (live == null) return;
-    _snapshots[deviceId] = PersistedSnapshot.capture(deviceId, live);
+    // Preserve the cached cluster dump — it isn't part of live state, so a plain
+    // capture would drop it on every checkpoint.
+    _snapshots[deviceId] = PersistedSnapshot.capture(deviceId, live,
+        clusterJson: _clusterCache[deviceId] ?? _snapshots[deviceId]?.clusterJson);
     await _persist();
   }
 
@@ -438,8 +444,16 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   void cacheClusterJson(String deviceId, String json) {
+    // Never cache an empty/failed dump ("[]") — that would pin the device to no
+    // data and suppress the re-read that would recover it.
+    if (json.isEmpty || json == '[]') return;
     _clusterCache[deviceId] = json;
-    // No notifyListeners needed — detail screen reads this directly.
+    // Persist it (static metadata) so future opens — and cold launches — render
+    // device-info/readings/controllability without re-reading from the
+    // controller. Best-effort; no notifyListeners (detail screen reads directly).
+    final prev = _snapshots[deviceId] ?? PersistedSnapshot(deviceId: deviceId);
+    _snapshots[deviceId] = prev.withClusterJson(json);
+    unawaited(_persist());
   }
 
   /// Applies [transform] to the live cache entry for [deviceId], creating a

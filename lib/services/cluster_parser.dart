@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/switch_group.dart';
@@ -97,6 +98,50 @@ class LiveEndpoint {
 /// Each group has up to three sets of endpoints: press, clockwise, and
 /// counter-clockwise, derived from semantic tags on the Switch cluster.
 
+
+/// Parses the BasicInformation cluster (0x0028) out of a cluster-dump JSON
+/// string into a [BasicInfo]. Returns null when the cluster is absent. Used both
+/// for live reads ([MatterClusterPort.readBasicInfo]) and the persisted cluster
+/// cache, so device-detail can show device info without re-reading.
+BasicInfo? parseBasicInfo(String? jsonStr) {
+  if (jsonStr == null || jsonStr == '[]') return null;
+  Map<int, String>? attrs;
+  try {
+    final list = json.decode(jsonStr) as List<dynamic>;
+    for (final e in list) {
+      final m = e as Map<String, dynamic>;
+      if ((m['clusterId'] as num?)?.toInt() != 0x0028) continue;
+      attrs = {
+        for (final a in (m['attributes'] as List<dynamic>? ?? const []))
+          ((a as Map<String, dynamic>)['id'] as num).toInt():
+              a['value']?.toString() ?? '',
+      };
+      break;
+    }
+  } on Exception {
+    return null;
+  }
+  if (attrs == null) return null;
+  String s(int id) => attrs![id] ?? '';
+  String hexId(int id) {
+    final v = int.tryParse(attrs![id] ?? '');
+    return v == null ? '' : '0x${v.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+  }
+  return BasicInfo(
+    vendorName:         s(0x0001),
+    vendorId:           hexId(0x0002),
+    productName:        s(0x0003),
+    productId:          hexId(0x0004),
+    hwVersion:          s(0x0008),
+    softwareVersionNum: int.tryParse(attrs[0x0009] ?? ''),
+    softwareVersion:    s(0x000A),
+    manufacturingDate:  s(0x000B),
+    partNumber:         s(0x000C),
+    productUrl:         s(0x000D),
+    serialNumber:       s(0x000F),
+    uniqueId:           s(0x0012),
+  );
+}
 
 /// Parses a raw Matter cluster JSON string (from [MatterClusterPort.readClusters])
 /// into a structured list of [LiveEndpoint]s.
@@ -220,6 +265,9 @@ final _kLiveRenderers = <String, ClusterReading? Function(dynamic)>{
   'pm25':          _renderPm25,
   'co2Ppm':        _renderCo2,
   'coPpm':         _renderCo,
+  'illuminance':   _renderIlluminance,
+  'pressure':      _renderPressure,
+  'flow':          _renderFlow,
   // Electrical Power Measurement (0x0090) and Energy Measurement (0x0091).
   // activePower in mW; voltage in mV; activeCurrent in mA; energy in Wh.
   'activePower':        _renderActivePower,
@@ -241,6 +289,48 @@ ClusterReading? _renderContact(dynamic v) {
     label:        'Contact',
     displayValue: closed ? 'Closed' : 'Open',
     unit:         '',
+  );
+}
+
+// Illuminance/Pressure/Flow: mirror the dump-parser cases (0x0400/0x0403/0x0404)
+// so a subscription-pushed value renders identically to one read from the dump.
+ClusterReading? _renderIlluminance(dynamic v) {
+  final raw = v as int?;
+  if (raw == null || raw == 0 || raw == 0xFFFF) return null;
+  final lux = math.pow(10.0, (raw - 1) / 10000.0);
+  final display = lux < 10    ? lux.toStringAsFixed(1)
+                : lux < 1000  ? lux.toStringAsFixed(0)
+                : '${(lux / 1000).toStringAsFixed(1)} k';
+  return ClusterReading(
+    icon: Icons.light_mode_outlined,
+    iconColor: Colors.amber.shade500,
+    label: 'Illuminance',
+    displayValue: display,
+    unit: 'lux',
+  );
+}
+
+ClusterReading? _renderPressure(dynamic v) {
+  final raw = v as int?;
+  if (raw == null || raw == -32768) return null;
+  return ClusterReading(
+    icon: Icons.compress_outlined,
+    iconColor: Colors.teal.shade400,
+    label: 'Pressure',
+    displayValue: raw.toStringAsFixed(0),
+    unit: 'hPa',
+  );
+}
+
+ClusterReading? _renderFlow(dynamic v) {
+  final raw = v as int?;
+  if (raw == null || raw == 0xFFFF) return null;
+  return ClusterReading(
+    icon: Icons.water_outlined,
+    iconColor: Colors.blue.shade400,
+    label: 'Flow',
+    displayValue: (raw / 10.0).toStringAsFixed(1),
+    unit: 'm³/h',
   );
 }
 
@@ -864,12 +954,12 @@ ClusterReading? _readingFromCluster(
       );
 
     // ── Electrical Power Measurement 0x0090 ──────────────────────────────────
-    // ActivePower (0x0006) is a nullable int64 in mW — serialised as a bare
+    // ActivePower (0x0008) is a nullable int64 in mW — serialised as a bare
     // number by the cluster inspector so int.tryParse works directly.
     // Voltage and current are shown via live-subscription renderers; only
     // power is shown in the static grid to keep the cluster-read tile minimal.
     case 0x0090: {
-      final mw = int.tryParse(raw(0x0006) ?? '');
+      final mw = int.tryParse(raw(0x0008) ?? '');
       if (mw == null) return null;
       final w = mw / 1000.0;
       return ClusterReading(

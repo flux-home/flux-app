@@ -37,6 +37,14 @@ class ControllerSettings {
     } on FormatException catch (_) { return null; }
   }
 
+  /// True when at least one controller PSK has been stored — i.e. a hub has
+  /// been set up at some point, even if it is currently unreachable. Lets the
+  /// UI distinguish "no hub configured yet" from "hub configured but offline".
+  static Future<bool> hasAnyPsk() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getKeys().any((k) => k.startsWith('${_kPsk}_'));
+  }
+
   /// Persists a 16-byte [psk] for [hostname].
   static Future<void> savePsk(String hostname, Uint8List psk,
       {String? dtlsIdentity}) async {

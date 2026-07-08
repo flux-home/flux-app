@@ -54,7 +54,28 @@ fun chipErrorDescription(code: Long): String = when (code) {
     100L -> "Network not found (0x64)"
     101L -> "Invalid network ID (0x65)"
     105L -> "Operation already in progress (0x69)"
+    172L -> "Internal error (0xAC) — at a network-enable stage this means the device " +
+            "could not join the network (Wi-Fi association/auth failed, or the SSID was not found)"
     else -> "Unknown error (check CHIP SDK CHIPError.h)"
+}
+
+/**
+ * Actionable hint for a failed network-enable stage. CHIP collapses every
+ * non-success ConnectNetwork status into CHIP_ERROR_INTERNAL (0xAC) before it
+ * reaches the Android callback, so the precise reason (auth failure vs. SSID not
+ * found) is NOT available to us — the device records it in
+ * NetworkCommissioning.LastNetworkingStatus, unreachable once the join fails.
+ * Returns null for non-network stages.
+ */
+fun networkEnableHint(stage: String): String? = when (stage) {
+    "WiFiNetworkEnable" ->
+        "Wi-Fi connection failed — the device could not join the network. Check the " +
+        "password, and that it is a 2.4 GHz WPA2 network (Matter Wi-Fi devices don't " +
+        "support 5 GHz or WPA3-only)."
+    "ThreadNetworkEnable" ->
+        "Thread connection failed — the device could not join the Thread network. " +
+        "Check the dataset and that the border router is reachable."
+    else -> null
 }
 
 /** Formats an error code as "80 (0x50): <description>". */
@@ -375,6 +396,10 @@ object MatterCommissioner {
         onEvent: (String) -> Unit,
     ): Long = suspendCancellableCoroutine { cont ->
         val controller = ChipClient.getController()
+        // Last stage that reported a non-zero error, so onCommissioningComplete
+        // (which only gets an errorCode, not the stage) can give an actionable
+        // message — e.g. a Wi-Fi/Thread network-enable failure vs. a generic 0xAC.
+        var lastFailedStage: String? = null
         val params = CommissionParameters.Builder()
             .setCsrNonce(null)
             .apply { if (network != null) setNetworkCredentials(network) }
@@ -394,7 +419,9 @@ object MatterCommissioner {
                 if (errorCode == 0L) {
                     onEvent("  ✓ $stage")
                 } else {
+                    lastFailedStage = stage
                     onEvent("  ✗ $stage — ${chipErrorLabel(errorCode)}")
+                    networkEnableHint(stage)?.let { onEvent("  ⚠ $it") }
                 }
             }
 
@@ -454,10 +481,13 @@ object MatterCommissioner {
                     cont.resume(returnedNodeId)
                 } else {
                     val label = chipErrorLabel(errorCode)
-                    onEvent("✗ Commissioning failed — $label")
-                    Log.e(TAG, "onCommissioningComplete error: $label")
+                    // Prefer a stage-aware, actionable reason when the failure was a
+                    // network-enable (the common Wi-Fi/Thread join failure → 0xAC).
+                    val msg = lastFailedStage?.let { networkEnableHint(it) } ?: label
+                    onEvent("✗ Commissioning failed — $msg")
+                    Log.e(TAG, "onCommissioningComplete error: $label (stage=$lastFailedStage)")
                     cont.resumeWithException(
-                        CommissioningException(errorCode, "Commission failed: $label")
+                        CommissioningException(errorCode, "Commission failed: $msg")
                     )
                 }
             }
