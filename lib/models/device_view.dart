@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/ui/screens/cluster_inspector_screen.dart' show ClusterInspectorScreen;
@@ -30,6 +31,7 @@ class DeviceView {
   String      get name                 => _device.name;
   DeviceType  get deviceType           => _device.deviceType;
   int         get nodeId               => _device.nodeId;
+  EnergyRole  get energyRole           => _device.energyRole;
 
   /// The underlying commissioning record.
   /// Pass this to screens that need a stable identity handle for navigation
@@ -81,6 +83,21 @@ class DeviceView {
 
   ThermostatState? get thermoState    => _live?.thermoState;
   BatteryInfo?     get batteryInfo    => _live?.batteryInfo;
+
+  // ── Energy (live) ──────────────────────────────────────────────────────────
+
+  /// Signed active power in milliwatts (Matter EPM 0x0090), or null if the
+  /// device hasn't reported one.  Sign carries direction (import/export,
+  /// charge/discharge) — the home overview interprets it per role.
+  int?  get activePowerMw => _live?.activePower;
+
+  /// True once a live active-power reading exists — gates inclusion in the
+  /// energy-flow overview.
+  bool  get hasLivePower  => _live?.activePower != null;
+
+  /// Battery state of charge (0–100), if the device exposes the Power Source
+  /// cluster.  Used for the home-battery node in the overview.
+  int?  get batteryPercent => _live?.batPercent;
 
   // ── New controllable clusters ─────────────────────────────────────────────
   int? get liftPercent100ths => _live?.liftPercent100ths;

@@ -42,7 +42,6 @@ MatterDevice _device({
 Future<(DeviceProvider, FakeMatterPort)> _build({
   List<MatterDevice> devices = const [],
   Map<String, Map<String, dynamic>> snapshots = const {},
-  DateTime Function()? now,
 }) async {
   final prefs = <String, Object>{};
   if (devices.isNotEmpty) {
@@ -56,7 +55,7 @@ Future<(DeviceProvider, FakeMatterPort)> _build({
   SharedPreferences.setMockInitialValues(prefs);
   final store = await DeviceStore.open();
   final fake = FakeMatterPort();
-  final provider = DeviceProvider(store, fake, now: now ?? DateTime.now);
+  final provider = DeviceProvider(store, fake);
   await pumpEventQueue();
   return (provider, fake);
 }
@@ -411,65 +410,6 @@ void main() {
 
       // Odometer = 10000 + 500 = 10500.
       expect(provider.liveDataFor(d.id)!.cumulativeEnergyMwh, 10500);
-    });
-
-    test('15-min bucket seals when clock crosses boundary', () async {
-      var fakeNow = DateTime(2024, 1, 1, 12, 0); // 12:00
-
-      final d = _device();
-      final (provider, fake) = await _build(
-        devices: [d],
-        now: () => fakeNow,
-      );
-
-      // First reading at 12:00 opens a bucket.
-      fake.emit(SubscriptionUpdateEvent(d.nodeId, {'cumulativeEnergyMwh': 1000}));
-      await pumpEventQueue();
-      expect(provider.energyHistoryFor(d.id), isEmpty); // open, not sealed
-
-      // Advance clock to 12:15 → next bucket.
-      fakeNow = DateTime(2024, 1, 1, 12, 15);
-      fake.emit(SubscriptionUpdateEvent(d.nodeId, {'cumulativeEnergyMwh': 2000}));
-      await pumpEventQueue();
-
-      // Previous bucket (1000 mWh = 1 Wh) should now be sealed.
-      final history = provider.energyHistoryFor(d.id);
-      expect(history, hasLength(1));
-      expect(history.first.wh, 1); // (2000-1000)/1000 = 1 Wh
-    });
-
-    test('energy history survives persistence round-trip', () async {
-      // The EnergyHistoryRecorder is created lazily on the first energy event.
-      // Its constructor calls loadEnergyHistory(deviceId), so the sealed bucket
-      // is restored from SharedPreferences when the recorder is first created.
-      var fakeNow = DateTime(2024, 1, 1, 12, 0);
-      final d = _device();
-      final (provider, fake) = await _build(
-        devices: [d],
-        now: () => fakeNow,
-      );
-
-      // Seal a bucket at 12:00.
-      fake.emit(SubscriptionUpdateEvent(d.nodeId, {'cumulativeEnergyMwh': 1000}));
-      await pumpEventQueue();
-      fakeNow = DateTime(2024, 1, 1, 12, 15);
-      fake.emit(SubscriptionUpdateEvent(d.nodeId, {'cumulativeEnergyMwh': 2000}));
-      await pumpEventQueue();
-      expect(provider.energyHistoryFor(d.id), hasLength(1));
-
-      // Open second provider over same store (same SharedPreferences mock).
-      final store2 = await DeviceStore.open();
-      final fake2 = FakeMatterPort();
-      final provider2 = DeviceProvider(store2, fake2, now: () => fakeNow);
-      await pumpEventQueue();
-
-      // Trigger recorder creation — the recorder loads history from the store
-      // in its constructor, then handles the new reading.
-      fake2.emit(SubscriptionUpdateEvent(d.nodeId, {'cumulativeEnergyMwh': 2000}));
-      await pumpEventQueue();
-
-      // Sealed bucket was loaded from disk.
-      expect(provider2.energyHistoryFor(d.id), hasLength(1));
     });
   });
 

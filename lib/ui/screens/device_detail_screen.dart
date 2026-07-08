@@ -6,18 +6,17 @@ import 'package:flutter/services.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
-import 'package:matter_home/models/energy_bucket.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/cluster_parser.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/utils/power_format.dart';
 import 'package:matter_home/ui/screens/device_settings_screen.dart';
 import 'package:matter_home/ui/theme.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:provider/provider.dart';
-import 'package:matter_home/ui/screens/device_detail/energy_history_chart.dart';
 
 part 'device_detail/switch_card.dart';
 part 'device_detail/on_off_card.dart';
@@ -338,12 +337,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             if ((view.deviceType.hasEnergyMeasurement ||
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
-              EnergyCard(
-                live:                    view.live!,
-                history:                 context.read<DeviceProvider>().energyHistoryFor(view.id),
-                currentBucketWh:         context.read<DeviceProvider>().energyCurrentBucketWhFor(view.id),
-                currentExportedBucketWh: context.read<DeviceProvider>().energyCurrentExportedBucketWhFor(view.id),
-              ),
+              EnergyCard(live: view.live!),
               const SizedBox(height: 12),
             ],
             // For switch devices, filter out per-endpoint switch readings

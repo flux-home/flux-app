@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show IconData, Icons;
 import 'package:matter_home/models/device_live_data.dart' show DeviceLiveData;
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart' show DeviceView;
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/room.dart';
 
 // ── Network transport type ────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ class MatterDevice {
     this.networkType = NetworkType.unknown,
     this.managedBy = ManagedBy.phone,
     this.roomId = Room.noRoomId,
+    this.energyRole = EnergyRole.none,
   });
 
   factory MatterDevice.fromJson(Map<String, dynamic> json) {
@@ -96,6 +98,7 @@ class MatterDevice {
         orElse: () => ManagedBy.phone,
       ),
       roomId: json['roomId'] as String? ?? Room.noRoomId,
+      energyRole: EnergyRole.fromName(json['energyRole'] as String?),
     );
   }
   final String id;
@@ -110,6 +113,7 @@ class MatterDevice {
   final NetworkType networkType;
   final ManagedBy   managedBy;
   final String roomId;
+  final EnergyRole energyRole;
 
   MatterDevice copyWith({
     String? id,
@@ -123,6 +127,7 @@ class MatterDevice {
     NetworkType? networkType,
     ManagedBy?   managedBy,
     String? roomId,
+    EnergyRole? energyRole,
   }) => MatterDevice(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -135,6 +140,7 @@ class MatterDevice {
     networkType: networkType ?? this.networkType,
     managedBy: managedBy ?? this.managedBy,
     roomId: roomId ?? this.roomId,
+    energyRole: energyRole ?? this.energyRole,
   );
 
   Map<String, dynamic> toJson() => {
@@ -149,6 +155,7 @@ class MatterDevice {
     'networkType': networkType.name,
     'managedBy':   managedBy.name,
     'roomId': roomId,
+    'energyRole': energyRole.name,
   };
 
   @override

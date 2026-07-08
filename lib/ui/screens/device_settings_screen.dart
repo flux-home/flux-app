@@ -10,6 +10,7 @@ import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/switch_group.dart';
 import 'package:collection/collection.dart';
 import 'package:matter_home/services/cluster_parser.dart';
@@ -192,6 +193,18 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
               const SectionLabel('Room'),
               _RoomTile(device: d),
               const SizedBox(height: 20),
+
+              // ── Energy role ───────────────────────────────────────────────
+              // Shown for anything that measures power/energy — either by device
+              // type or because it's actively reporting active power (some energy
+              // devices commission as an "unknown" type). Matches the gate the
+              // device-detail EnergyCard uses. Drives the home energy-flow overview.
+              if (d.deviceType.hasEnergyMeasurement ||
+                  (context.watch<DeviceProvider>().viewFor(d.id)?.hasLivePower ?? false)) ...[
+                const SectionLabel('Energy role'),
+                _EnergyRoleTile(device: d),
+                const SizedBox(height: 20),
+              ],
 
               // ── Software updates ────────────────────────────────────────────
               _OtaSection(device: d),
@@ -412,6 +425,117 @@ class _RoomPickerSheetState extends State<_RoomPickerSheet> {
                   ),
                   onTap: () => _createRoom(context),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Energy role tile + picker sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EnergyRoleTile extends StatelessWidget {
+  const _EnergyRoleTile({required this.device});
+  final MatterDevice device;
+
+  Future<void> _showSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _EnergyRolePickerSheet(deviceId: device.id),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final provider = context.watch<DeviceProvider>();
+    final d        = provider.findById(device.id) ?? device;
+    final role     = d.energyRole;
+
+    return Card(
+      color: cs.surface,
+      child: ListTile(
+        leading: Icon(role.icon, color: cs.primary),
+        title: Text(role == EnergyRole.none ? 'Not in energy overview' : role.label),
+        subtitle: Text(role == EnergyRole.none
+            ? 'Tap to add to the home energy flow'
+            : 'Shown on the home energy flow'),
+        trailing: Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+        onTap: () => _showSheet(context),
+      ),
+    );
+  }
+}
+
+class _EnergyRolePickerSheet extends StatelessWidget {
+  const _EnergyRolePickerSheet({required this.deviceId});
+  final String deviceId;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs          = Theme.of(context).colorScheme;
+    final provider    = context.watch<DeviceProvider>();
+    final device      = provider.findById(deviceId);
+    final currentRole = device?.energyRole ?? EnergyRole.none;
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: cs.onSurfaceVariant.withAlpha(80),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+            child: Text(
+              'Energy role',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final role in EnergyRole.assignable)
+                  RadioListTile<EnergyRole>(
+                    value:      role,
+                    groupValue: currentRole,
+                    secondary:  Icon(
+                      role.icon,
+                      color: role == currentRole ? cs.primary : cs.onSurfaceVariant,
+                    ),
+                    title: Text(role == EnergyRole.none ? 'Not in energy overview' : role.label),
+                    onChanged: (_) async {
+                      await provider.assignEnergyRole(deviceId, role);
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                  ),
               ],
             ),
           ),

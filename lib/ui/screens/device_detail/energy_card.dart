@@ -24,26 +24,10 @@ part of '../device_detail_screen.dart';
 class EnergyCard extends StatelessWidget {
   const EnergyCard({
     required this.live,
-    required this.history,
-    required this.currentBucketWh,
-    required this.currentExportedBucketWh,
     super.key,
   });
 
-  final DeviceLiveData     live;
-  final List<EnergyBucket> history;
-  final int                currentBucketWh;
-  final int                currentExportedBucketWh;
-
-  // ── Formatters ────────────────────────────────────────────────────────────
-
-  static (String, String) _formatPower(int mw) {
-    final w = mw / 1000.0;
-    if (w.abs() >= 1000) return ((w / 1000).toStringAsFixed(1), 'kW');
-    if (w.abs() >= 100)  return (w.toStringAsFixed(0), 'W');
-    if (w.abs() >= 10)   return (w.toStringAsFixed(1), 'W');
-    return (w.toStringAsFixed(2), 'W');
-  }
+  final DeviceLiveData live;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +40,7 @@ class EnergyCard extends StatelessWidget {
     final hasCurrent  = ma != null && ma != 0;
 
     final (powerLabel, powerUnit) =
-        mw != null ? _formatPower(mw) : ('--', 'W');
+        mw != null ? formatPowerMw(mw) : ('--', 'W');
     final watts = mw != null ? mw / 1000.0 : 0.0;
 
     return Card(
@@ -124,16 +108,6 @@ class EnergyCard extends StatelessWidget {
                 ),
               ),
             ],
-
-            // ── History chart ───────────────────────────────────────────────
-            const SizedBox(height: 18),
-            Divider(height: 1, color: Colors.white.withAlpha(15)),
-            const SizedBox(height: 14),
-            EnergyHistoryChart(
-              history:                 history,
-              currentBucketWh:         currentBucketWh,
-              currentExportedBucketWh: currentExportedBucketWh,
-            ),
           ],
         ),
       ),

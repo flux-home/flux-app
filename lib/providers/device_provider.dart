@@ -2,19 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/automation_rule.dart';
-import 'package:matter_home/models/energy_bucket.dart';
 import 'package:matter_home/models/switch_group.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/energy_role.dart';
+import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/ota_progress.dart';
 import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
-import 'package:matter_home/services/energy_history_recorder.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -29,10 +29,8 @@ class DeviceProvider extends ChangeNotifier {
   /// the live [FluxCoapService] via [adoptHubMode] — see `docs/controller-only-control.md`.
   DeviceProvider(this._store, MatterPort channel, {
     FluxCoapService? controllerService,
-    DateTime Function() now = DateTime.now,
   })  : _channel     = channel,
-        _ctrlService = controllerService,
-        _now         = now {
+        _ctrlService = controllerService {
     _load();
     _deviceStateSub = _channel.deviceStateUpdates.listen(_onDeviceStateEvent);
     Future.microtask(_startAllSubscriptions);
@@ -58,7 +56,6 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
   final DeviceStore _store;
-  final DateTime Function() _now;
   MatterPort _channel;
   /// Non-null in hub mode — used to reconcile the device list with the
   /// controller's NVS on startup and to seed [isOnline] from [Device.reachable].
@@ -78,7 +75,6 @@ class DeviceProvider extends ChangeNotifier {
   final Map<String, String>                _clusterCache  = {}; // deviceId → JSON
   final Map<String, OtaProgressState>      _otaProgress   = {};
   final Map<String, PersistedSnapshot>     _snapshots     = {};
-  final Map<String, EnergyHistoryRecorder> _energyRecorders = {};
 
   // ── Automation rules ────────────────────────────────────────────────────
   final List<AutomationRule> _rules               = [];
@@ -119,6 +115,15 @@ class DeviceProvider extends ChangeNotifier {
       return (room, views);
     }).toList();
   }
+
+  /// Flat list of all devices as merged [DeviceView]s (across every room).
+  /// Used by the category screens, which filter rather than group by room.
+  List<DeviceView> get deviceViews =>
+      _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
+
+  /// Live whole-home energy picture aggregated by [EnergyRole] across all
+  /// devices. Drives the home-screen energy-flow overview.
+  EnergySummary get energySummary => EnergySummary.fromDevices(deviceViews);
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.
   DeviceView? viewFor(String id) {
@@ -372,18 +377,6 @@ class DeviceProvider extends ChangeNotifier {
   /// Prefer [viewFor] when you also need commissioning fields.
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
 
-  /// Sealed 15-minute energy buckets for [deviceId], oldest first.
-  List<EnergyBucket> energyHistoryFor(String deviceId) =>
-      _energyRecorders[deviceId]?.history ?? const [];
-
-  /// Energy consumed in the current (unsealed) 15-min slot, in Wh.
-  int energyCurrentBucketWhFor(String deviceId) =>
-      _energyRecorders[deviceId]?.currentBucketWh ?? 0;
-
-  /// Energy exported in the current (unsealed) 15-min slot, in Wh.
-  int energyCurrentExportedBucketWhFor(String deviceId) =>
-      _energyRecorders[deviceId]?.currentExportedBucketWh ?? 0;
-
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
   OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
@@ -585,44 +578,32 @@ class DeviceProvider extends ChangeNotifier {
     // Execute any contact sensor links triggered by a state transition.
     _handleContactChange(device.id, attrs, prevContact);
 
-    // ── Energy accounting ───────────────────────────────────────────────────
+    // ── Energy odometer (live device readout, not app-side history) ───────────
     //
     // CumulativeEnergyImported arrives once in the initial report (and
     // occasionally on large jumps).  PeriodicEnergyImported arrives on every
     // measurement interval once the device has PERE firmware support.
     //
-    // Strategy:
-    //   • If a fresh CumulativeEnergyImported value arrives → use it directly
-    //     (exact device reading; also resets the accumulated periodic total).
-    //   • If only PeriodicEnergyImported arrives → add the delta to the last
-    //     known cumulative so the odometer keeps ticking between exact reads.
-    //     This is NOT estimation — both values come straight from the device.
+    // A fresh cumulative value is stored verbatim; when only a periodic delta
+    // arrives, add it to the last known cumulative so the odometer keeps ticking
+    // between exact reads.  Both values come straight from the device — this is
+    // display, not estimation.  (Long-term history/tracking lives on the Flux
+    // controller, not the app.)
 
-    final newCumulativeMwh         = attrs['cumulativeEnergyMwh']         as int?;
-    final newCumulativeExportedMwh   = attrs['cumulativeEnergyExportedMwh'] as int?;
-    final periodicMwh                = attrs['periodicEnergyMwh']           as int?;
-    final periodicExportedMwh        = attrs['periodicEnergyExportedMwh']   as int?;
+    final newCumulativeMwh    = attrs['cumulativeEnergyMwh']       as int?;
+    final periodicMwh         = attrs['periodicEnergyMwh']         as int?;
+    final periodicExportedMwh = attrs['periodicEnergyExportedMwh'] as int?;
 
-    EnergyHistoryRecorder recorder() => _energyRecorders[device.id] ??=
-        EnergyHistoryRecorder(deviceId: device.id, store: _store, onUpdated: notifyListeners, now: _now);
-
-    if (newCumulativeMwh != null) {
-      recorder().record(_now(), newCumulativeMwh,
-          exportedMwh: newCumulativeExportedMwh);
-    } else if (periodicMwh != null && periodicMwh > 0) {
+    if (newCumulativeMwh == null && periodicMwh != null && periodicMwh > 0) {
       final baseline = _liveCache[device.id]?.cumulativeEnergyMwh ?? 0;
-      final updated  = baseline + periodicMwh;
-      final cacheUpdate = <String, dynamic>{'cumulativeEnergyMwh': updated};
+      final cacheUpdate = <String, dynamic>{'cumulativeEnergyMwh': baseline + periodicMwh};
 
-      int? updatedExported;
       if (periodicExportedMwh != null && periodicExportedMwh > 0) {
         final exportBaseline = _liveCache[device.id]?.cumulativeEnergyExportedMwh ?? 0;
-        updatedExported = exportBaseline + periodicExportedMwh;
-        cacheUpdate['cumulativeEnergyExportedMwh'] = updatedExported;
+        cacheUpdate['cumulativeEnergyExportedMwh'] = exportBaseline + periodicExportedMwh;
       }
 
       _liveCache[device.id] = _liveCache[device.id]!.merge(cacheUpdate);
-      recorder().record(_now(), updated, exportedMwh: updatedExported);
     }
 
     // Infer device type from subscription attributes when the stored type
@@ -1015,6 +996,16 @@ class DeviceProvider extends ChangeNotifier {
     final idx = _indexById(deviceId);
     if (idx < 0) return;
     _devices[idx] = _devices[idx].copyWith(roomId: roomId);
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Assigns [deviceId] an [EnergyRole] for the home energy-flow overview.
+  /// Pass [EnergyRole.none] to remove it from the overview.
+  Future<void> assignEnergyRole(String deviceId, EnergyRole role) async {
+    final idx = _indexById(deviceId);
+    if (idx < 0) return;
+    _devices[idx] = _devices[idx].copyWith(energyRole: role);
     await _persist();
     notifyListeners();
   }
