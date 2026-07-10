@@ -32,6 +32,35 @@ final $typed_data.Uint8List connectivityStateDescriptor = $convert.base64Decode(
     'RJVklUWV9ESVNDT1ZFUklORxABEhsKF0NPTk5FQ1RJVklUWV9TVUJTQ1JJQkVEEAISGQoVQ09O'
     'TkVDVElWSVRZX1JFVFJZSU5HEAM=');
 
+@$core.Deprecated('Use modbusProfileDescriptor instead')
+const ModbusProfile$json = {
+  '1': 'ModbusProfile',
+  '2': [
+    {'1': 'MODBUS_PROFILE_SUNSPEC', '2': 0},
+    {'1': 'MODBUS_PROFILE_UNKNOWN', '2': 1},
+    {'1': 'MODBUS_PROFILE_VM3P75CT', '2': 2},
+  ],
+};
+
+/// Descriptor for `ModbusProfile`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List modbusProfileDescriptor = $convert.base64Decode(
+    'Cg1Nb2RidXNQcm9maWxlEhoKFk1PREJVU19QUk9GSUxFX1NVTlNQRUMQABIaChZNT0RCVVNfUF'
+    'JPRklMRV9VTktOT1dOEAESGwoXTU9EQlVTX1BST0ZJTEVfVk0zUDc1Q1QQAg==');
+
+@$core.Deprecated('Use modbusTransportDescriptor instead')
+const ModbusTransport$json = {
+  '1': 'ModbusTransport',
+  '2': [
+    {'1': 'MODBUS_TRANSPORT_TCP', '2': 0},
+    {'1': 'MODBUS_TRANSPORT_UDP', '2': 1},
+  ],
+};
+
+/// Descriptor for `ModbusTransport`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List modbusTransportDescriptor = $convert.base64Decode(
+    'Cg9Nb2RidXNUcmFuc3BvcnQSGAoUTU9EQlVTX1RSQU5TUE9SVF9UQ1AQABIYChRNT0RCVVNfVF'
+    'JBTlNQT1JUX1VEUBAB');
+
 @$core.Deprecated('Use deviceEventTypeDescriptor instead')
 const DeviceEventType$json = {
   '1': 'DeviceEventType',
@@ -328,6 +357,96 @@ final $typed_data.Uint8List registerNodeRequestDescriptor = $convert.base64Decod
     '9kZV9pZBgCIAEoBFIGbm9kZUlkEhIKBG5hbWUYAyABKAlSBG5hbWUSGwoJdmVuZG9yX2lkGAQg'
     'ASgNUgh2ZW5kb3JJZBIdCgpwcm9kdWN0X2lkGAUgASgNUglwcm9kdWN0SWQSHwoLZGV2aWNlX3'
     'R5cGUYBiABKA1SCmRldmljZVR5cGU=');
+
+@$core.Deprecated('Use modbusDeviceConfigDescriptor instead')
+const ModbusDeviceConfig$json = {
+  '1': 'ModbusDeviceConfig',
+  '2': [
+    {'1': 'host', '3': 1, '4': 1, '5': 9, '10': 'host'},
+    {'1': 'port', '3': 2, '4': 1, '5': 13, '10': 'port'},
+    {'1': 'unit_id', '3': 3, '4': 1, '5': 13, '10': 'unitId'},
+    {
+      '1': 'profile',
+      '3': 4,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ModbusProfile',
+      '10': 'profile'
+    },
+    {'1': 'poll_seconds', '3': 5, '4': 1, '5': 13, '10': 'pollSeconds'},
+    {'1': 'name', '3': 6, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'node_id', '3': 7, '4': 1, '5': 4, '10': 'nodeId'},
+    {
+      '1': 'transport',
+      '3': 8,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ModbusTransport',
+      '10': 'transport'
+    },
+  ],
+};
+
+/// Descriptor for `ModbusDeviceConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List modbusDeviceConfigDescriptor = $convert.base64Decode(
+    'ChJNb2RidXNEZXZpY2VDb25maWcSEgoEaG9zdBgBIAEoCVIEaG9zdBISCgRwb3J0GAIgASgNUg'
+    'Rwb3J0EhcKB3VuaXRfaWQYAyABKA1SBnVuaXRJZBItCgdwcm9maWxlGAQgASgOMhMuZmx1eC5N'
+    'b2RidXNQcm9maWxlUgdwcm9maWxlEiEKDHBvbGxfc2Vjb25kcxgFIAEoDVILcG9sbFNlY29uZH'
+    'MSEgoEbmFtZRgGIAEoCVIEbmFtZRIXCgdub2RlX2lkGAcgASgEUgZub2RlSWQSMwoJdHJhbnNw'
+    'b3J0GAggASgOMhUuZmx1eC5Nb2RidXNUcmFuc3BvcnRSCXRyYW5zcG9ydA==');
+
+@$core.Deprecated('Use modbusCandidateDescriptor instead')
+const ModbusCandidate$json = {
+  '1': 'ModbusCandidate',
+  '2': [
+    {'1': 'host', '3': 1, '4': 1, '5': 9, '10': 'host'},
+    {
+      '1': 'profile',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ModbusProfile',
+      '10': 'profile'
+    },
+    {'1': 'serial', '3': 3, '4': 1, '5': 9, '10': 'serial'},
+    {'1': 'model', '3': 4, '4': 1, '5': 9, '10': 'model'},
+    {
+      '1': 'transport',
+      '3': 5,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ModbusTransport',
+      '10': 'transport'
+    },
+  ],
+};
+
+/// Descriptor for `ModbusCandidate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List modbusCandidateDescriptor = $convert.base64Decode(
+    'Cg9Nb2RidXNDYW5kaWRhdGUSEgoEaG9zdBgBIAEoCVIEaG9zdBItCgdwcm9maWxlGAIgASgOMh'
+    'MuZmx1eC5Nb2RidXNQcm9maWxlUgdwcm9maWxlEhYKBnNlcmlhbBgDIAEoCVIGc2VyaWFsEhQK'
+    'BW1vZGVsGAQgASgJUgVtb2RlbBIzCgl0cmFuc3BvcnQYBSABKA4yFS5mbHV4Lk1vZGJ1c1RyYW'
+    '5zcG9ydFIJdHJhbnNwb3J0');
+
+@$core.Deprecated('Use modbusDiscoveredDescriptor instead')
+const ModbusDiscovered$json = {
+  '1': 'ModbusDiscovered',
+  '2': [
+    {
+      '1': 'candidates',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.ModbusCandidate',
+      '10': 'candidates'
+    },
+  ],
+};
+
+/// Descriptor for `ModbusDiscovered`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List modbusDiscoveredDescriptor = $convert.base64Decode(
+    'ChBNb2RidXNEaXNjb3ZlcmVkEjUKCmNhbmRpZGF0ZXMYASADKAsyFS5mbHV4Lk1vZGJ1c0Nhbm'
+    'RpZGF0ZVIKY2FuZGlkYXRlcw==');
 
 @$core.Deprecated('Use attrDescriptor instead')
 const Attr$json = {

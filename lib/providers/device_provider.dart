@@ -121,6 +121,11 @@ class DeviceProvider extends ChangeNotifier {
   List<DeviceView> get deviceViews =>
       _devices.map((d) => DeviceView(d, _liveCache[d.id])).toList();
 
+  /// Controller-side Modbus devices (synthetic node-id range). Drives the
+  /// Modbus devices management screen.
+  List<DeviceView> get modbusDevices =>
+      deviceViews.where((v) => v.isModbus).toList();
+
   /// Live whole-home energy picture aggregated by [EnergyRole] across all
   /// devices. Drives the home-screen energy-flow overview.
   EnergySummary get energySummary => EnergySummary.fromDevices(deviceViews);

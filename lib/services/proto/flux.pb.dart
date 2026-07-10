@@ -1516,6 +1516,308 @@ class RegisterNodeRequest extends $pb.GeneratedMessage {
   void clearDeviceType() => $_clearField(6);
 }
 
+/// POST /modbus/devices
+/// Add or update a Modbus TCP device.  The controller persists the config,
+/// registers the device (device_type per profile), and begins polling it.
+class ModbusDeviceConfig extends $pb.GeneratedMessage {
+  factory ModbusDeviceConfig({
+    $core.String? host,
+    $core.int? port,
+    $core.int? unitId,
+    ModbusProfile? profile,
+    $core.int? pollSeconds,
+    $core.String? name,
+    $fixnum.Int64? nodeId,
+    ModbusTransport? transport,
+  }) {
+    final result = create();
+    if (host != null) result.host = host;
+    if (port != null) result.port = port;
+    if (unitId != null) result.unitId = unitId;
+    if (profile != null) result.profile = profile;
+    if (pollSeconds != null) result.pollSeconds = pollSeconds;
+    if (name != null) result.name = name;
+    if (nodeId != null) result.nodeId = nodeId;
+    if (transport != null) result.transport = transport;
+    return result;
+  }
+
+  ModbusDeviceConfig._();
+
+  factory ModbusDeviceConfig.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ModbusDeviceConfig.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModbusDeviceConfig',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'host')
+    ..aI(2, _omitFieldNames ? '' : 'port', fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'unitId', fieldType: $pb.PbFieldType.OU3)
+    ..aE<ModbusProfile>(4, _omitFieldNames ? '' : 'profile',
+        enumValues: ModbusProfile.values)
+    ..aI(5, _omitFieldNames ? '' : 'pollSeconds',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOS(6, _omitFieldNames ? '' : 'name')
+    ..a<$fixnum.Int64>(7, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aE<ModbusTransport>(8, _omitFieldNames ? '' : 'transport',
+        enumValues: ModbusTransport.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusDeviceConfig clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusDeviceConfig copyWith(void Function(ModbusDeviceConfig) updates) =>
+      super.copyWith((message) => updates(message as ModbusDeviceConfig))
+          as ModbusDeviceConfig;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ModbusDeviceConfig create() => ModbusDeviceConfig._();
+  @$core.override
+  ModbusDeviceConfig createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ModbusDeviceConfig getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModbusDeviceConfig>(create);
+  static ModbusDeviceConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get host => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set host($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasHost() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearHost() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get port => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set port($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPort() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPort() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get unitId => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set unitId($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasUnitId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearUnitId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  ModbusProfile get profile => $_getN(3);
+  @$pb.TagNumber(4)
+  set profile(ModbusProfile value) => $_setField(4, value);
+  @$pb.TagNumber(4)
+  $core.bool hasProfile() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearProfile() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get pollSeconds => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set pollSeconds($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasPollSeconds() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearPollSeconds() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get name => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set name($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasName() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearName() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get nodeId => $_getI64(6);
+  @$pb.TagNumber(7)
+  set nodeId($fixnum.Int64 value) => $_setInt64(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasNodeId() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearNodeId() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  ModbusTransport get transport => $_getN(7);
+  @$pb.TagNumber(8)
+  set transport(ModbusTransport value) => $_setField(8, value);
+  @$pb.TagNumber(8)
+  $core.bool hasTransport() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearTransport() => $_clearField(8);
+}
+
+/// One candidate surfaced by a discovery scan (not yet registered).
+class ModbusCandidate extends $pb.GeneratedMessage {
+  factory ModbusCandidate({
+    $core.String? host,
+    ModbusProfile? profile,
+    $core.String? serial,
+    $core.String? model,
+    ModbusTransport? transport,
+  }) {
+    final result = create();
+    if (host != null) result.host = host;
+    if (profile != null) result.profile = profile;
+    if (serial != null) result.serial = serial;
+    if (model != null) result.model = model;
+    if (transport != null) result.transport = transport;
+    return result;
+  }
+
+  ModbusCandidate._();
+
+  factory ModbusCandidate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ModbusCandidate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModbusCandidate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'host')
+    ..aE<ModbusProfile>(2, _omitFieldNames ? '' : 'profile',
+        enumValues: ModbusProfile.values)
+    ..aOS(3, _omitFieldNames ? '' : 'serial')
+    ..aOS(4, _omitFieldNames ? '' : 'model')
+    ..aE<ModbusTransport>(5, _omitFieldNames ? '' : 'transport',
+        enumValues: ModbusTransport.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusCandidate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusCandidate copyWith(void Function(ModbusCandidate) updates) =>
+      super.copyWith((message) => updates(message as ModbusCandidate))
+          as ModbusCandidate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ModbusCandidate create() => ModbusCandidate._();
+  @$core.override
+  ModbusCandidate createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ModbusCandidate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModbusCandidate>(create);
+  static ModbusCandidate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get host => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set host($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasHost() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearHost() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  ModbusProfile get profile => $_getN(1);
+  @$pb.TagNumber(2)
+  set profile(ModbusProfile value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasProfile() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearProfile() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get serial => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set serial($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSerial() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSerial() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get model => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set model($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasModel() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearModel() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  ModbusTransport get transport => $_getN(4);
+  @$pb.TagNumber(5)
+  set transport(ModbusTransport value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasTransport() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearTransport() => $_clearField(5);
+}
+
+/// GET /modbus/discovered
+/// Result of scanning the controller's own Ethernet subnet for Modbus devices.
+/// Suggest-only: nothing is polled until the app confirms via POST /modbus/devices.
+class ModbusDiscovered extends $pb.GeneratedMessage {
+  factory ModbusDiscovered({
+    $core.Iterable<ModbusCandidate>? candidates,
+  }) {
+    final result = create();
+    if (candidates != null) result.candidates.addAll(candidates);
+    return result;
+  }
+
+  ModbusDiscovered._();
+
+  factory ModbusDiscovered.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ModbusDiscovered.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModbusDiscovered',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..pPM<ModbusCandidate>(1, _omitFieldNames ? '' : 'candidates',
+        subBuilder: ModbusCandidate.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusDiscovered clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusDiscovered copyWith(void Function(ModbusDiscovered) updates) =>
+      super.copyWith((message) => updates(message as ModbusDiscovered))
+          as ModbusDiscovered;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ModbusDiscovered create() => ModbusDiscovered._();
+  @$core.override
+  ModbusDiscovered createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ModbusDiscovered getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModbusDiscovered>(create);
+  static ModbusDiscovered? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<ModbusCandidate> get candidates => $_getList(0);
+}
+
 enum Attr_Value { boolVal, intVal, longVal, notSet }
 
 /// A single cluster attribute with a typed value.

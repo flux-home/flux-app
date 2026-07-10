@@ -115,6 +115,12 @@ class MatterDevice {
   final String roomId;
   final EnergyRole energyRole;
 
+  /// True for controller-side Modbus devices, which the controller registers
+  /// under a synthetic node id at/above `FLUX_MODBUS_NODE_BASE`
+  /// (`0x0100000000000000`) — well above the small operational node ids real
+  /// Matter devices get.
+  bool get isModbus => nodeId >= 0x0100000000000000;
+
   MatterDevice copyWith({
     String? id,
     String? name,

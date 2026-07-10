@@ -32,6 +32,7 @@ class DeviceView {
   DeviceType  get deviceType           => _device.deviceType;
   int         get nodeId               => _device.nodeId;
   EnergyRole  get energyRole           => _device.energyRole;
+  bool        get isModbus             => _device.isModbus;
 
   /// The underlying commissioning record.
   /// Pass this to screens that need a stable identity handle for navigation

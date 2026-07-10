@@ -40,6 +40,53 @@ class ConnectivityState extends $pb.ProtobufEnum {
   const ConnectivityState._(super.value, super.name);
 }
 
+/// Register-map profile that tells the controller how to decode a device.
+/// (SUNSPEC stays 0 for wire/NVS compatibility; UNKNOWN is discovery-only.)
+class ModbusProfile extends $pb.ProtobufEnum {
+  static const ModbusProfile MODBUS_PROFILE_SUNSPEC =
+      ModbusProfile._(0, _omitEnumNames ? '' : 'MODBUS_PROFILE_SUNSPEC');
+  static const ModbusProfile MODBUS_PROFILE_UNKNOWN =
+      ModbusProfile._(1, _omitEnumNames ? '' : 'MODBUS_PROFILE_UNKNOWN');
+
+  /// (discovery result only — not decodable)
+  static const ModbusProfile MODBUS_PROFILE_VM3P75CT =
+      ModbusProfile._(2, _omitEnumNames ? '' : 'MODBUS_PROFILE_VM3P75CT');
+
+  static const $core.List<ModbusProfile> values = <ModbusProfile>[
+    MODBUS_PROFILE_SUNSPEC,
+    MODBUS_PROFILE_UNKNOWN,
+    MODBUS_PROFILE_VM3P75CT,
+  ];
+
+  static final $core.List<ModbusProfile?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static ModbusProfile? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ModbusProfile._(super.value, super.name);
+}
+
+/// Transport for a Modbus device. TCP is the default; some meters (e.g. the
+/// VM-3P75CT) speak Modbus over UDP.
+class ModbusTransport extends $pb.ProtobufEnum {
+  static const ModbusTransport MODBUS_TRANSPORT_TCP =
+      ModbusTransport._(0, _omitEnumNames ? '' : 'MODBUS_TRANSPORT_TCP');
+  static const ModbusTransport MODBUS_TRANSPORT_UDP =
+      ModbusTransport._(1, _omitEnumNames ? '' : 'MODBUS_TRANSPORT_UDP');
+
+  static const $core.List<ModbusTransport> values = <ModbusTransport>[
+    MODBUS_TRANSPORT_TCP,
+    MODBUS_TRANSPORT_UDP,
+  ];
+
+  static final $core.List<ModbusTransport?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 1);
+  static ModbusTransport? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ModbusTransport._(super.value, super.name);
+}
+
 class DeviceEventType extends $pb.ProtobufEnum {
   static const DeviceEventType DEVICE_EVENT_ESTABLISHED =
       DeviceEventType._(0, _omitEnumNames ? '' : 'DEVICE_EVENT_ESTABLISHED');

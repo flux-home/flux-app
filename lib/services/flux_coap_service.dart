@@ -278,6 +278,33 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) { debugPrint('FluxCoapService getDeviceList: $e'); return null; }
   }
 
+  // ── Modbus devices ──────────────────────────────────────────────────────
+  // The controller polls Modbus TCP/UDP devices and exposes them as ordinary
+  // (synthetic-node-id) devices in /devices. Only provisioning is Modbus-specific.
+
+  /// Scan the controller's own subnet for Modbus devices — GET /modbus/discovered.
+  /// The controller runs a ~20 s /24 scan and replies via a separate CoAP
+  /// response, so a generous timeout is used.
+  Future<$proto.ModbusDiscovered?> scanModbusDevices() async {
+    final b = await _get('/modbus/discovered', timeout: const Duration(seconds: 30));
+    if (b == null) return null;
+    try { return $proto.ModbusDiscovered.fromBuffer(b); }
+    on Exception catch (e) { debugPrint('FluxCoapService scanModbusDevices: $e'); return null; }
+  }
+
+  /// Add/update a Modbus device — POST /modbus/devices. The controller persists
+  /// the config, registers it under a synthetic node id, and starts polling.
+  /// Callers should re-read /devices (syncWithController) to pick it up.
+  Future<bool> addModbusDevice($proto.ModbusDeviceConfig cfg) async {
+    final resp = await _post('/modbus/devices', cfg.writeToBuffer());
+    return resp != null;
+  }
+
+  /// Remove a Modbus device — DELETE /modbus/devices?id=<hex>.
+  Future<bool> removeModbusDevice(int nodeId) =>
+      _delete('/modbus/devices',
+          query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
+
   // ── Commission-then-handoff — POST /commission ───────────────────────────
 
   /// Hands a device the phone has just BLE-commissioned (onto its throwaway
