@@ -164,11 +164,13 @@ class _MatterHomeAppState extends State<MatterHomeApp>
         // Catch anything that changed while backgrounded, then resume polling.
         _sync();
         _startPolling();
+        context.read<HubConnection>().startHealthMonitoring();
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
         _pollTimer?.cancel();
+        context.read<HubConnection>().pauseHealthMonitoring();
     }
   }
 

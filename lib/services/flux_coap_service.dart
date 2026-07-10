@@ -139,11 +139,19 @@ class FluxCoapService implements MatterPort {
   /// we reconnect and retry once. On a timeout the controller may be mid-operation
   /// (a commission can take ~60s), so we rebuild for the next call but do not
   /// resend — and let the timeout propagate.
+  /// Optional reachability signal: invoked with `true` whenever the controller
+  /// answers a request (any CoAP code) and `false` on a timeout/connection
+  /// failure. [HubConnection] wires this to drive the app-wide online state.
+  void Function(bool reachable)? onReachability;
+
   Future<CoapResponse> _send(CoapRequest req, Duration timeout,
       {bool retryOnConnError = true}) async {
     try {
-      return await _client.send(req).timeout(timeout);
+      final resp = await _client.send(req).timeout(timeout);
+      onReachability?.call(true);
+      return resp;
     } on TimeoutException {
+      onReachability?.call(false);
       unawaited(_reconnect());
       rethrow;
     } on Exception catch (e) {
@@ -153,12 +161,20 @@ class FluxCoapService implements MatterPort {
       // overlapping device commission that wedges the device. Reconnect for the
       // next call, but surface this error instead of retrying.
       if (!retryOnConnError) {
+        onReachability?.call(false);
         unawaited(_reconnect());
         rethrow;
       }
       debugPrint('FluxCoapService: connection error ($e) — reconnecting and retrying once');
       await _reconnect();
-      return await _client.send(req).timeout(timeout);
+      try {
+        final resp = await _client.send(req).timeout(timeout);
+        onReachability?.call(true);
+        return resp;
+      } on Exception {
+        onReachability?.call(false);
+        rethrow;
+      }
     }
   }
 

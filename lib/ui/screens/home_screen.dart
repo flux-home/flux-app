@@ -9,6 +9,7 @@ import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
 import 'package:matter_home/ui/widgets/category_bar.dart';
+import 'package:matter_home/ui/widgets/controller_status_chip.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
@@ -22,21 +23,34 @@ class HomeScreen extends StatelessWidget {
     // Commissioning requires a hub (see CommissioningController), so the FAB
     // surfaces whichever action is actually possible: pair a hub first, then
     // add devices once one is connected.
-    final hub = context.watch<HubConnection>();
-    final hubConnected  = hub.isConnected;
-    final hubConfigured = hub.hasConfiguredHub;
+    final hub    = context.watch<HubConnection>();
+    final status = hub.status;
+    final online = status == ControllerStatus.online;
+    final noHub  = status == ControllerStatus.noHub;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Flux Home', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => context.push('/settings'))],
+        actions: [
+          const ControllerStatusChip(),
+          IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => context.push('/settings')),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => hubConnected ? _addDevice(context) : _addHub(context),
+        // Pair a hub when none is set up; add a device only when the hub is
+        // reachable; otherwise the action would silently fail, so surface why.
+        onPressed: noHub
+            ? () => _addHub(context)
+            : online
+                ? () => _addDevice(context)
+                : () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text("Can't reach your hub — check it's powered "
+                        'and on your network.'))),
         elevation: 2,
         shape: const CircleBorder(),
-        tooltip: hubConnected ? 'Add device' : 'Add hub',
-        child: Icon(hubConnected ? Icons.add : Icons.router_outlined, size: 28),
+        backgroundColor: (!noHub && !online) ? Theme.of(context).disabledColor : null,
+        tooltip: noHub ? 'Add hub' : 'Add device',
+        child: Icon(noHub ? Icons.router_outlined : Icons.add, size: 28),
       ),
       body: Consumer<DeviceProvider>(
         builder: (context, provider, _) {
@@ -54,7 +68,7 @@ class HomeScreen extends StatelessWidget {
             // configured but currently offline, also retry the connection.
             onRefresh: () async {
               final hub = context.read<HubConnection>();
-              if (!hub.isConnected && hub.hasConfiguredHub) {
+              if (!hub.isOnline && hub.hasConfiguredHub) {
                 await hub.reconnect();
               }
               await provider.syncWithController();
@@ -68,12 +82,12 @@ class HomeScreen extends StatelessWidget {
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: DotMatrixEmptyHint(
-                          headline: hubConnected
+                          headline: online
                               ? 'NO DEVICES'
-                              : hubConfigured ? 'HUB OFFLINE' : 'NO HUB YET',
-                          subline: hubConnected
+                              : noHub ? 'NO HUB YET' : 'HUB OFFLINE',
+                          subline: online
                               ? 'TAP + TO ADD'
-                              : hubConfigured ? 'PULL TO RECONNECT' : 'TAP + TO PAIR',
+                              : noHub ? 'TAP + TO PAIR' : 'PULL TO RECONNECT',
                         ),
                       ),
                     ],
