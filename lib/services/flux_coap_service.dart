@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:coap/coap.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:matter_home/services/controller_transport/controller_transport.dart';
+import 'package:matter_home/services/controller_transport/default_transport.dart';
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
@@ -20,41 +21,10 @@ import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
 export 'package:matter_home/services/proto/flux.pb.dart'
     show ControllerInfo, Device, DeviceList;
-
-// ── Endpoint ────────────────────────────────────────────────────────────────
-
-/// Resolved Flux Controller CoAP address.
-///
-/// [psk] — 16-byte pre-shared key for DTLS on port 5684 (required).
-/// Obtained by scanning the QR code on the device label.
-class FluxControllerEndpoint {
-  const FluxControllerEndpoint({
-    required this.host,
-    required this.port,
-    this.psk,
-    this.dtlsIdentity,  // e.g. 'flux-controller-e25311' from QR id= field
-  });
-
-  final String     host;
-  final int        port;
-  final Uint8List? psk;
-  /// DTLS PSK identity sent during handshake.
-  /// Defaults to [host] when null (IP address fallback).
-  final String?    dtlsIdentity;
-
-  bool get hasDtls => psk != null && psk!.length == 16;
-
-  Uri coapUri(String path, {Map<String, String>? query}) => Uri(
-    scheme:          hasDtls ? 'coaps' : 'coap',
-    host:            host,
-    port:            port,
-    path:            path,
-    queryParameters: query,
-  );
-
-  @override
-  String toString() => '${hasDtls ? "coaps" : "coap"}://$host:$port';
-}
+// FluxControllerEndpoint moved into the transport module; re-export so existing
+// importers of this file are unaffected.
+export 'package:matter_home/services/controller_transport/controller_transport.dart'
+    show FluxControllerEndpoint;
 
 // ── FluxCoapService ──────────────────────────────────────────────────────────
 
@@ -76,16 +46,15 @@ class FluxControllerEndpoint {
 /// ```
 class FluxCoapService implements MatterPort {
 
-  FluxCoapService(this.endpoint) {
-    _client = _buildClient();
-  }
+  FluxCoapService(this.endpoint, {ControllerTransport? transport})
+      : _transport = transport ?? defaultControllerTransport(endpoint);
 
   final FluxControllerEndpoint endpoint;
-  late CoapClient _client;
+  final ControllerTransport    _transport;
   bool _disposed = false;
 
-  // Per-node Observe relations
-  final Map<int, CoapObserveClientRelation> _subscriptions = {};
+  // Per-node observe stream subscriptions.
+  final Map<int, StreamSubscription<TransportEvent>> _subscriptions = {};
 
   final _deviceStateCtrl      = StreamController<DeviceStateEvent>.broadcast();
   final _commissionEventsCtrl = StreamController<String>.broadcast();
@@ -98,149 +67,55 @@ class FluxCoapService implements MatterPort {
   @override
   Stream<String> get commissionEvents => _commissionEventsCtrl.stream;
 
-  // ── CoAP client factory ────────────────────────────────────────────────────
-
-  CoapClient _buildClient() {
-    if (endpoint.hasDtls) {
-      final psk = endpoint.psk!;
-      return CoapClient(
-        endpoint.coapUri('/'),
-        config: _DtlsConfig(),
-        pskCredentialsCallback: (_) => PskCredentials(
-          identity:     (endpoint.dtlsIdentity ?? endpoint.host).codeUnits,
-          preSharedKey: psk,
-        ),
-      );
-    }
-    return CoapClient(endpoint.coapUri('/'));
-  }
-
-  // ── DTLS connection recovery ───────────────────────────────────────────────
-  // The DTLS session is established once and reused. If the controller reboots
-  // (or the session otherwise drops) the old client is permanently dead — every
-  // send then throws "Not connected!" or times out. Rebuild it on failure so the
-  // connection re-establishes instead of failing forever. Single-flighted so
-  // concurrent failures rebuild once.
-  Future<void>? _reconnecting;
-
-  Future<void> _reconnect() {
-    final inflight = _reconnecting;
-    if (inflight != null) return inflight;
-    final f = () async {
-      try { _client.close(); } on Exception catch (_) {}
-      if (!_disposed) _client = _buildClient();
-    }();
-    _reconnecting = f.whenComplete(() => _reconnecting = null);
-    return _reconnecting!;
-  }
-
-  /// Sends [req], recovering from a dead DTLS session. On a connection-level
-  /// error (e.g. "Not connected!") the request never reached the controller, so
-  /// we reconnect and retry once. On a timeout the controller may be mid-operation
-  /// (a commission can take ~60s), so we rebuild for the next call but do not
-  /// resend — and let the timeout propagate.
   /// Optional reachability signal: invoked with `true` whenever the controller
-  /// answers a request (any CoAP code) and `false` on a timeout/connection
-  /// failure. [HubConnection] wires this to drive the app-wide online state.
+  /// answers a request and `false` on a timeout/connection failure.
+  /// [HubConnection] wires this to drive the app-wide online state.
   void Function(bool reachable)? onReachability;
 
-  Future<CoapResponse> _send(CoapRequest req, Duration timeout,
-      {bool retryOnConnError = true}) async {
-    try {
-      final resp = await _client.send(req).timeout(timeout);
-      onReachability?.call(true);
-      return resp;
-    } on TimeoutException {
-      onReachability?.call(false);
-      unawaited(_reconnect());
-      rethrow;
-    } on Exception catch (e) {
-      if (_disposed) rethrow;
-      // Non-idempotent calls (e.g. POST /commission) must NOT be resent: the
-      // controller may still be mid-operation, and a resend starts a second,
-      // overlapping device commission that wedges the device. Reconnect for the
-      // next call, but surface this error instead of retrying.
-      if (!retryOnConnError) {
-        onReachability?.call(false);
-        unawaited(_reconnect());
-        rethrow;
-      }
-      debugPrint('FluxCoapService: connection error ($e) — reconnecting and retrying once');
-      await _reconnect();
-      try {
-        final resp = await _client.send(req).timeout(timeout);
-        onReachability?.call(true);
-        return resp;
-      } on Exception {
-        onReachability?.call(false);
-        rethrow;
-      }
-    }
-  }
+  // ── Low-level helpers — delegate raw CoAP to the transport ─────────────────
+  // The transport may run on a background isolate, keeping the DTLS handshake
+  // off the UI thread. This class keeps only proto encode/decode + typed API.
 
-  // ── Low-level CoAP helpers ─────────────────────────────────────────────────
-
-  static const _proto    = CoapMediaType.applicationOctetStream;
   static const _timeout5   = Duration(seconds: 5);
   static const _timeout15  = Duration(seconds: 15); // DTLS handshake can take ~10s
   static const _timeout30  = Duration(seconds: 30);
   static const _timeout45  = Duration(seconds: 45); // full cluster dump (whole tree)
 
-  Future<Uint8List?> _get(String path, {
+  Future<Uint8List?> _request(TransportMethod method, String path, {
     Map<String, String>? query,
+    Uint8List? body,
     Duration? timeout,
+    bool retryOnConnError = true,
   }) async {
-    // First request on a DTLS connection includes the handshake (~10s).
-    // Use 15s as the default to give it enough headroom.
     final t = timeout ?? (endpoint.hasDtls ? _timeout15 : _timeout5);
-    try {
-      final req  = CoapRequest.get(endpoint.coapUri(path, query: query), accept: _proto);
-      final resp = await _send(req, t);
-      if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
-      return null;
-    } on Exception catch (e) {
-      debugPrint('FluxCoapService GET $path: $e');
-      return null;
-    }
+    final r = await _transport.request(TransportRequest(
+      method, path,
+      query: query,
+      body: body,
+      timeoutMs: t.inMilliseconds,
+      retryOnConnError: retryOnConnError,
+    ));
+    onReachability?.call(r.ok);
+    return r.success ? r.payload : null;
   }
 
-  Future<Uint8List?> _put(String path, Uint8List body,
-      {Duration timeout = _timeout5}) async {
-    try {
-      final req  = CoapRequest.put(endpoint.coapUri(path),
-          payload: body, contentFormat: _proto, accept: _proto);
-      final resp = await _send(req, timeout);
-      if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
-      return null;
-    } on Exception catch (e) {
-      debugPrint('FluxCoapService PUT $path: $e');
-      return null;
-    }
-  }
+  Future<Uint8List?> _get(String path, {Map<String, String>? query, Duration? timeout}) =>
+      _request(TransportMethod.get, path, query: query, timeout: timeout);
+
+  Future<Uint8List?> _put(String path, Uint8List body, {Duration timeout = _timeout5}) =>
+      _request(TransportMethod.put, path, body: body, timeout: timeout);
 
   Future<Uint8List?> _post(String path, Uint8List body,
-      {Duration timeout = _timeout30, bool retryOnConnError = true}) async {
-    try {
-      final req  = CoapRequest.post(endpoint.coapUri(path),
-          payload: body, contentFormat: _proto, accept: _proto);
-      final resp = await _send(req, timeout, retryOnConnError: retryOnConnError);
-      if (resp.code.isSuccess) return Uint8List.fromList(resp.payload);
-      return null;
-    } on Exception catch (e) {
-      debugPrint('FluxCoapService POST $path: $e');
-      return null;
-    }
-  }
+          {Duration timeout = _timeout30, bool retryOnConnError = true}) =>
+      _request(TransportMethod.post, path, body: body,
+          timeout: timeout, retryOnConnError: retryOnConnError);
 
   Future<bool> _delete(String path, {Map<String, String>? query}) async {
-    try {
-      final req  = CoapRequest.delete(endpoint.coapUri(path, query: query));
-      final resp = await _send(req, _timeout5);
-      return resp.code.isSuccess;
-    } on Exception catch (e) {
-      debugPrint('FluxCoapService DELETE $path: $e');
-      return false;
-    }
+    final r = await _transport.request(TransportRequest(
+        TransportMethod.delete, path, query: query,
+        timeoutMs: _timeout5.inMilliseconds));
+    onReachability?.call(r.ok);
+    return r.success;
   }
 
   // ── Config resources ───────────────────────────────────────────────────────
@@ -359,65 +234,56 @@ class FluxCoapService implements MatterPort {
   @override
   Future<bool> startSubscription(int nodeId) async {
     await stopSubscription(nodeId);
-    try {
-      final hexId = nodeId.toRadixString(16).padLeft(16, '0');
-      final req   = CoapRequest.get(
-        endpoint.coapUri('/events', query: {'id': hexId}),
-        accept: _proto,
-      );
-      final relation = await _client.observe(req);
-      _subscriptions[nodeId] = relation;
-      relation.listen(
-        (resp) => _handleStateResponse(nodeId, resp),
-        onError: (Object e) {
-          debugPrint('FluxCoapService sub $nodeId error: $e');
-          _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, e.toString()));
-          if (!_disposed) {
-            Future.delayed(const Duration(seconds: 5),
-                () => startSubscription(nodeId))
-              .catchError((Object e) {
-                debugPrint('FluxCoapService sub $nodeId retry error: $e');
-                return false;
-              });
-          }
-        },
-        onDone: () {
-          debugPrint('FluxCoapService sub $nodeId done');
-          _subscriptions.remove(nodeId);
-          if (!_disposed) {
-            _deviceStateCtrl.add(SubscriptionResubscribingEvent(nodeId, 0));
-            Future.delayed(const Duration(seconds: 5),
-                () => startSubscription(nodeId))
-              .catchError((Object e) {
-                debugPrint('FluxCoapService sub $nodeId retry error: $e');
-                return false;
-              });
-          }
-        },
-      );
-      return true;
-    } catch (e) {
-      debugPrint('FluxCoapService.startSubscription($nodeId): $e');
-      return false;
+    void scheduleRetry() {
+      if (_disposed) return;
+      Future.delayed(const Duration(seconds: 5), () => startSubscription(nodeId))
+          .catchError((Object e) {
+        debugPrint('FluxCoapService sub $nodeId retry error: $e');
+        return false;
+      });
     }
+
+    final hexId = nodeId.toRadixString(16).padLeft(16, '0');
+    _subscriptions[nodeId] =
+        _transport.observe('/events', query: {'id': hexId}).listen(
+      (ev) {
+        switch (ev.kind) {
+          case TransportEventKind.data:
+            onReachability?.call(true);
+            if (ev.payload != null) _handleStateBytes(nodeId, ev.payload!);
+          case TransportEventKind.error:
+            debugPrint('FluxCoapService sub $nodeId error: ${ev.error}');
+            _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, ev.error ?? ''));
+            scheduleRetry();
+          case TransportEventKind.done:
+            debugPrint('FluxCoapService sub $nodeId done');
+            _subscriptions.remove(nodeId);
+            _deviceStateCtrl.add(SubscriptionResubscribingEvent(nodeId, 0));
+            scheduleRetry();
+        }
+      },
+      onError: (Object e) {
+        debugPrint('FluxCoapService sub $nodeId stream error: $e');
+        _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, e.toString()));
+        scheduleRetry();
+      },
+    );
+    return true;
   }
 
   @override
   Future<void> stopSubscription(int nodeId) async {
-    final rel = _subscriptions.remove(nodeId);
-    if (rel != null && !rel.isCancelled) {
-      try { _client.cancelObserveProactive(rel); } on Exception catch (_) {}
-    }
+    final sub = _subscriptions.remove(nodeId);
+    await sub?.cancel();
   }
 
-  void _handleStateResponse(int nodeId, CoapResponse resp) {
+  void _handleStateBytes(int nodeId, Uint8List bytes) {
     try {
-      final bytes = Uint8List.fromList(resp.payload);
       if (bytes.isEmpty) return;
       final ev = $proto.DeviceStateEvent.fromBuffer(bytes);
       _deviceStateCtrl.add(_toAppEvent(ev));
     } on Exception catch (e) {
-      debugPrint('FluxCoapService._handleStateResponse: $e');
+      debugPrint('FluxCoapService._handleStateBytes: $e');
     }
   }
 
@@ -843,35 +709,12 @@ class FluxCoapService implements MatterPort {
 
   void dispose() {
     _disposed = true;
-    for (final rel in _subscriptions.values) {
-      try { _client.cancelObserveReactive(rel); } on Exception catch (_) {}
+    for (final sub in _subscriptions.values) {
+      unawaited(sub.cancel());
     }
     _subscriptions.clear();
-    _client.close();
+    unawaited(_transport.dispose());
     _deviceStateCtrl.close();
     _commissionEventsCtrl.close();
   }
-}
-
-// ── DTLS CoAP config ──────────────────────────────────────────────────────────
-//
-// OpenSSL 3.0 does NOT include PSK cipher suites in its default cipher list.
-// We must explicitly set them so the ClientHello includes ciphers that the
-// firmware's mbedTLS actually supports.  securityLevel=0 drops the minimum
-// key-length floor that OpenSSL 3 enforces by default (level 1), which would
-// otherwise silently exclude some PSK suites.
-class _DtlsConfig extends CoapConfigDefault {
-  @override
-  String? get dtlsCiphers =>
-      'PSK-AES128-GCM-SHA256:'
-      'PSK-AES256-GCM-SHA384:'
-      'PSK-AES128-CCM8:'
-      'PSK-AES256-CCM8:'
-      'PSK-AES128-CBC-SHA256:'
-      'PSK-AES256-CBC-SHA384:'
-      'PSK-AES128-CBC-SHA:'
-      'PSK-AES256-CBC-SHA';
-
-  @override
-  int? get openSslSecurityLevel => 0;
 }
