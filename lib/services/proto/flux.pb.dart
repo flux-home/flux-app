@@ -2781,6 +2781,96 @@ class EnergyBucket extends $pb.GeneratedMessage {
   void clearLoadWh() => $_clearField(5);
 }
 
+/// Per-device energy contribution over the same time base as EnergyHistory —
+/// currently emitted for PV devices only, so the app can break the summed PV
+/// total down per inverter. wh[i] aligns to EnergyHistory.buckets[i] (0 = no
+/// contribution in that bucket); the series is dense (wh_count == buckets_count).
+class EnergyDeviceSeries extends $pb.GeneratedMessage {
+  factory EnergyDeviceSeries({
+    $fixnum.Int64? nodeId,
+    EnergyClass? cls,
+    $core.String? name,
+    $core.Iterable<$core.int>? wh,
+  }) {
+    final result = create();
+    if (nodeId != null) result.nodeId = nodeId;
+    if (cls != null) result.cls = cls;
+    if (name != null) result.name = name;
+    if (wh != null) result.wh.addAll(wh);
+    return result;
+  }
+
+  EnergyDeviceSeries._();
+
+  factory EnergyDeviceSeries.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyDeviceSeries.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyDeviceSeries',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aE<EnergyClass>(2, _omitFieldNames ? '' : 'cls',
+        enumValues: EnergyClass.values)
+    ..aOS(3, _omitFieldNames ? '' : 'name')
+    ..p<$core.int>(4, _omitFieldNames ? '' : 'wh', $pb.PbFieldType.KU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyDeviceSeries clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyDeviceSeries copyWith(void Function(EnergyDeviceSeries) updates) =>
+      super.copyWith((message) => updates(message as EnergyDeviceSeries))
+          as EnergyDeviceSeries;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyDeviceSeries create() => EnergyDeviceSeries._();
+  @$core.override
+  EnergyDeviceSeries createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyDeviceSeries getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyDeviceSeries>(create);
+  static EnergyDeviceSeries? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get nodeId => $_getI64(0);
+  @$pb.TagNumber(1)
+  set nodeId($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasNodeId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearNodeId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  EnergyClass get cls => $_getN(1);
+  @$pb.TagNumber(2)
+  set cls(EnergyClass value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCls() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCls() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get name => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set name($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasName() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearName() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $pb.PbList<$core.int> get wh => $_getList(3);
+}
+
 class EnergyHistory extends $pb.GeneratedMessage {
   factory EnergyHistory({
     $fixnum.Int64? start,
@@ -2790,6 +2880,7 @@ class EnergyHistory extends $pb.GeneratedMessage {
     $core.bool? timeSynced,
     $core.bool? truncated,
     $core.Iterable<EnergyBucket>? buckets,
+    $core.Iterable<EnergyDeviceSeries>? deviceSeries,
   }) {
     final result = create();
     if (start != null) result.start = start;
@@ -2799,6 +2890,7 @@ class EnergyHistory extends $pb.GeneratedMessage {
     if (timeSynced != null) result.timeSynced = timeSynced;
     if (truncated != null) result.truncated = truncated;
     if (buckets != null) result.buckets.addAll(buckets);
+    if (deviceSeries != null) result.deviceSeries.addAll(deviceSeries);
     return result;
   }
 
@@ -2824,6 +2916,8 @@ class EnergyHistory extends $pb.GeneratedMessage {
     ..aOB(6, _omitFieldNames ? '' : 'truncated')
     ..pPM<EnergyBucket>(7, _omitFieldNames ? '' : 'buckets',
         subBuilder: EnergyBucket.create)
+    ..pPM<EnergyDeviceSeries>(8, _omitFieldNames ? '' : 'deviceSeries',
+        subBuilder: EnergyDeviceSeries.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2901,6 +2995,11 @@ class EnergyHistory extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(7)
   $pb.PbList<EnergyBucket> get buckets => $_getList(6);
+
+  /// Per-device breakdown (PV only for now); the buckets above stay the summed
+  /// per-class totals. Capped — excess devices simply aren't broken out.
+  @$pb.TagNumber(8)
+  $pb.PbList<EnergyDeviceSeries> get deviceSeries => $_getList(7);
 }
 
 const $core.bool _omitFieldNames =

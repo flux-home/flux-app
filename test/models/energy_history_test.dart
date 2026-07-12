@@ -50,6 +50,51 @@ void main() {
       expect(fromGrid.selfSufficiencyPercent, 0);
     });
 
+    test('per-PV device series decode: aligned watts, totals, and names', () {
+      final h = $proto.EnergyHistory(
+        start: Int64(1_000_000),
+        bucketSeconds: 900,
+        buckets: [
+          $proto.EnergyBucket(index: 0, pvWh: 500),
+          $proto.EnergyBucket(index: 1, pvWh: 250),
+        ],
+        deviceSeries: [
+          $proto.EnergyDeviceSeries(
+            nodeId: Int64(0x0100000000000002),
+            cls: $proto.EnergyClass.ENERGY_CLASS_PV,
+            name: 'Roof East',
+            wh: [250, 250], // 250 Wh/bucket = 1000 W avg
+          ),
+          $proto.EnergyDeviceSeries(
+            nodeId: Int64(0x0100000000000003),
+            cls: $proto.EnergyClass.ENERGY_CLASS_PV,
+            name: 'Roof West',
+            wh: [250, 0],
+          ),
+        ],
+      );
+
+      final d = EnergyHistoryData.fromProto(h);
+      expect(d.hasPvBreakdown, isTrue);
+      expect(d.pvSeries.map((s) => s.name), ['Roof East', 'Roof West']);
+      expect(d.pvSeries[0].wattsPerBucket, [closeTo(1000, 0.001), closeTo(1000, 0.001)]);
+      expect(d.pvSeries[1].wattsPerBucket, [closeTo(1000, 0.001), 0]);
+      expect(d.pvSeries[0].kwh, closeTo(0.5, 0.0001));
+      expect(d.pvSeries[1].kwh, closeTo(0.25, 0.0001));
+      // Per-device series sum matches the summed PV total.
+      expect(d.pvSeries.fold<double>(0, (a, s) => a + s.kwh),
+          closeTo(d.pvKwh, 0.0001));
+    });
+
+    test('no device_series → no breakdown (older firmware)', () {
+      final d = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 100)],
+      ));
+      expect(d.hasPvBreakdown, isFalse);
+      expect(d.pvSeries, isEmpty);
+    });
+
     test('no consumption → null self-sufficiency, empty history is empty', () {
       final none = EnergyHistoryData.fromProto($proto.EnergyHistory(
         bucketSeconds: 900,

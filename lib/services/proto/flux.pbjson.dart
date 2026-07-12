@@ -668,6 +668,30 @@ final $typed_data.Uint8List energyBucketDescriptor = $convert.base64Decode(
     'IgASgNUgxncmlkSW1wb3J0V2gSJAoOZ3JpZF9leHBvcnRfd2gYAyABKA1SDGdyaWRFeHBvcnRX'
     'aBITCgVwdl93aBgEIAEoDVIEcHZXaBIXCgdsb2FkX3doGAUgASgNUgZsb2FkV2g=');
 
+@$core.Deprecated('Use energyDeviceSeriesDescriptor instead')
+const EnergyDeviceSeries$json = {
+  '1': 'EnergyDeviceSeries',
+  '2': [
+    {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
+    {
+      '1': 'cls',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.EnergyClass',
+      '10': 'cls'
+    },
+    {'1': 'name', '3': 3, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'wh', '3': 4, '4': 3, '5': 13, '10': 'wh'},
+  ],
+};
+
+/// Descriptor for `EnergyDeviceSeries`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyDeviceSeriesDescriptor = $convert.base64Decode(
+    'ChJFbmVyZ3lEZXZpY2VTZXJpZXMSFwoHbm9kZV9pZBgBIAEoBFIGbm9kZUlkEiMKA2NscxgCIA'
+    'EoDjIRLmZsdXguRW5lcmd5Q2xhc3NSA2NscxISCgRuYW1lGAMgASgJUgRuYW1lEg4KAndoGAQg'
+    'AygNUgJ3aA==');
+
 @$core.Deprecated('Use energyHistoryDescriptor instead')
 const EnergyHistory$json = {
   '1': 'EnergyHistory',
@@ -686,6 +710,14 @@ const EnergyHistory$json = {
       '6': '.flux.EnergyBucket',
       '10': 'buckets'
     },
+    {
+      '1': 'device_series',
+      '3': 8,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.EnergyDeviceSeries',
+      '10': 'deviceSeries'
+    },
   ],
 };
 
@@ -694,4 +726,6 @@ final $typed_data.Uint8List energyHistoryDescriptor = $convert.base64Decode(
     'Cg1FbmVyZ3lIaXN0b3J5EhQKBXN0YXJ0GAEgASgDUgVzdGFydBIlCg5idWNrZXRfc2Vjb25kcx'
     'gCIAEoDVINYnVja2V0U2Vjb25kcxISCgRmcm9tGAMgASgDUgRmcm9tEg4KAnRvGAQgASgDUgJ0'
     'bxIfCgt0aW1lX3N5bmNlZBgFIAEoCFIKdGltZVN5bmNlZBIcCgl0cnVuY2F0ZWQYBiABKAhSCX'
-    'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHM=');
+    'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHMS'
+    'PQoNZGV2aWNlX3NlcmllcxgIIAMoCzIYLmZsdXguRW5lcmd5RGV2aWNlU2VyaWVzUgxkZXZpY2'
+    'VTZXJpZXM=');

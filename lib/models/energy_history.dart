@@ -26,6 +26,26 @@ class EnergyHistoryPoint {
       [pvW, gridImportW, gridExportW, loadW].reduce((a, b) => a > b ? a : b);
 }
 
+/// One PV inverter's generation over the same time base — average power (W) per
+/// bucket, index-aligned to [EnergyHistoryData.points].
+@immutable
+class PvDeviceSeries {
+  const PvDeviceSeries({
+    required this.nodeId,
+    required this.name,
+    required this.wattsPerBucket,
+    required this.kwh,
+  });
+
+  final int nodeId;
+  final String name;
+  final List<double> wattsPerBucket;
+  final double kwh; // window total
+
+  double get peakW =>
+      wattsPerBucket.isEmpty ? 0 : wattsPerBucket.reduce((a, b) => a > b ? a : b);
+}
+
 /// A decoded, chart-ready energy history: the per-bucket power series plus the
 /// window totals (kWh) and derived KPIs. Built from the controller's
 /// [$proto.EnergyHistory]; the UI never sees raw protobuf.
@@ -40,6 +60,7 @@ class EnergyHistoryData {
     required this.gridImportKwh,
     required this.gridExportKwh,
     required this.loadKwh,
+    this.pvSeries = const [],
   });
 
   final List<EnergyHistoryPoint> points;
@@ -52,11 +73,35 @@ class EnergyHistoryData {
   final double gridExportKwh;
   final double loadKwh;
 
+  /// Per-inverter PV breakdown, when the controller reports it. Empty → only the
+  /// summed PV total ([pvKwh] / [EnergyHistoryPoint.pvW]) is available.
+  final List<PvDeviceSeries> pvSeries;
+
+  /// True when the controller reported a per-device PV breakdown — then the
+  /// individual inverter lines are drawn (by device name) instead of the summed
+  /// "Solar" total. Older firmware reports none → the total line is used.
+  bool get hasPvBreakdown => pvSeries.isNotEmpty;
   bool get isEmpty => points.isEmpty;
 
-  /// Peak power across every series — drives the chart's Y scale.
-  double get peakW =>
-      points.isEmpty ? 0 : points.map((p) => p.maxSeries).reduce((a, b) => a > b ? a : b);
+  /// Peak power across every drawn series — drives the chart's Y scale. When a
+  /// PV breakdown exists the individual inverter lines (not the summed total)
+  /// are what's drawn, so scale to those.
+  double get peakW {
+    if (points.isEmpty) return 0;
+    var peak = 0.0;
+    for (final p in points) {
+      final consumptionSide =
+          [p.gridImportW, p.gridExportW, p.loadW].reduce((a, b) => a > b ? a : b);
+      if (consumptionSide > peak) peak = consumptionSide;
+      if (!hasPvBreakdown && p.pvW > peak) peak = p.pvW;
+    }
+    if (hasPvBreakdown) {
+      for (final s in pvSeries) {
+        if (s.peakW > peak) peak = s.peakW;
+      }
+    }
+    return peak;
+  }
 
   /// Share of consumption covered without buying from the grid, 0–100.
   /// `(consumed − imported) / consumed`. Null when there was no consumption.
@@ -90,6 +135,26 @@ class EnergyHistoryData {
         loadW: watts(b.loadWh),
       ));
     }
+    // Per-device PV breakdown (index-aligned to buckets), if the controller
+    // reported it. Each series' wh[] is dense and aligned to h.buckets by index.
+    final pvSeries = <PvDeviceSeries>[];
+    for (final s in h.deviceSeries) {
+      if (s.cls != $proto.EnergyClass.ENERGY_CLASS_PV) continue;
+      var total = 0;
+      final watts = <double>[];
+      for (var i = 0; i < points.length; i++) {
+        final wh = i < s.wh.length ? s.wh[i] : 0;
+        total += wh;
+        watts.add(wh / perHour);
+      }
+      pvSeries.add(PvDeviceSeries(
+        nodeId: s.nodeId.toInt(),
+        name: s.name.isNotEmpty ? s.name : 'PV ${s.nodeId.toInt()}',
+        wattsPerBucket: watts,
+        kwh: total / 1000.0,
+      ));
+    }
+
     return EnergyHistoryData(
       points: points,
       bucket: Duration(seconds: bucketSec),
@@ -99,6 +164,7 @@ class EnergyHistoryData {
       gridImportKwh: impWh / 1000.0,
       gridExportKwh: expWh / 1000.0,
       loadKwh: loadWh / 1000.0,
+      pvSeries: pvSeries,
     );
   }
 }

@@ -6,10 +6,21 @@ import 'package:provider/provider.dart';
 
 // Series accents — shared with the house energy scene so the whole Energy view
 // reads with one palette.
-const _pvColor     = Color(0xFFF6D08A); // amber   — solar
+const _pvColor     = Color(0xFFF6D08A); // amber   — solar (aggregate)
 const _loadColor   = Color(0xFFF3B8D6); // pink    — home consumption
 const _importColor = Color(0xFFF2A9A0); // coral   — grid import
 const _exportColor = Color(0xFFA9E0C0); // mint    — grid export
+
+// Warm palette for per-inverter PV lines (keeps the "solar = warm" identity
+// while staying distinguishable). Indexed by PV device order; wraps if exceeded.
+const _pvPalette = <Color>[
+  Color(0xFFF6D08A), // amber
+  Color(0xFFEFA765), // orange
+  Color(0xFFE8D66B), // yellow
+  Color(0xFFCBB25E), // gold
+  Color(0xFFF2BFA0), // peach
+  Color(0xFFDCC77A), // wheat
+];
 
 /// A "Last 24 hours" energy history card: overlaid power lines (one per source
 /// / sink) over a 24-hour time axis, a scrubbable readout, and kWh totals.
@@ -59,7 +70,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
               const SizedBox(height: 8),
               _chart(data),
               const SizedBox(height: 12),
-              _legend(context),
+              _legend(context, data),
               const SizedBox(height: 14),
               _kpis(context, data),
               if (!data.timeSynced) _footnote(context,
@@ -116,6 +127,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
       );
     }
 
+    final idx = _selected!;
     final h = sel.time.hour.toString().padLeft(2, '0');
     final m = sel.time.minute.toString().padLeft(2, '0');
     return Column(
@@ -125,7 +137,16 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
             fontWeight: FontWeight.w700, color: cs.onSurface)),
         const SizedBox(height: 4),
         Wrap(spacing: 12, runSpacing: 2, children: [
-          _readoutChip(_pvColor, 'Solar', sel.pvW),
+          if (data.hasPvBreakdown)
+            for (var k = 0; k < data.pvSeries.length; k++)
+              _readoutChip(
+                  _pvPalette[k % _pvPalette.length],
+                  data.pvSeries[k].name,
+                  idx < data.pvSeries[k].wattsPerBucket.length
+                      ? data.pvSeries[k].wattsPerBucket[idx]
+                      : 0)
+          else
+            _readoutChip(_pvColor, 'Solar', sel.pvW),
           _readoutChip(_loadColor, 'Home', sel.loadW),
           _readoutChip(_importColor, 'Import', sel.gridImportW),
           _readoutChip(_exportColor, 'Export', sel.gridExportW),
@@ -183,11 +204,16 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
   }
 
   // ── Legend ────────────────────────────────────────────────────────────────
-  Widget _legend(BuildContext context) {
+  Widget _legend(BuildContext context, EnergyHistoryData data) {
     return Wrap(
       spacing: 16, runSpacing: 6, alignment: WrapAlignment.center,
       children: [
-        _legendItem(context, _pvColor, 'Solar'),
+        if (data.hasPvBreakdown)
+          for (var k = 0; k < data.pvSeries.length; k++)
+            _legendItem(context, _pvPalette[k % _pvPalette.length],
+                data.pvSeries[k].name)
+        else
+          _legendItem(context, _pvColor, 'Solar'),
         _legendItem(context, _loadColor, 'Home'),
         _legendItem(context, _importColor, 'Grid import'),
         _legendItem(context, _exportColor, 'Grid export'),
@@ -379,10 +405,39 @@ class _LineChartPainter extends CustomPainter {
             ..isAntiAlias = true);
     }
 
+    // A series drawn from an arbitrary per-bucket value list (for PV breakdown).
+    void listLine(List<double> vals, Color c) {
+      final path = Path();
+      for (var i = 0; i < n; i++) {
+        final px = x(i), py = y(i < vals.length ? vals[i] : 0);
+        if (i == 0) {
+          path.moveTo(px, py);
+        } else {
+          path.lineTo(px, py);
+        }
+      }
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = c
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..strokeJoin = StrokeJoin.round
+            ..isAntiAlias = true);
+    }
+
     line((p) => p.gridExportW, _exportColor);
     line((p) => p.gridImportW, _importColor);
     line((p) => p.loadW, _loadColor);
-    line((p) => p.pvW, _pvColor); // solar on top
+    // PV on top: per-inverter lines when the controller broke it down, else the
+    // summed total.
+    if (data.hasPvBreakdown) {
+      for (var k = 0; k < data.pvSeries.length; k++) {
+        listLine(data.pvSeries[k].wattsPerBucket, _pvPalette[k % _pvPalette.length]);
+      }
+    } else {
+      line((p) => p.pvW, _pvColor);
+    }
 
     // Scrub cursor.
     final s = selected;
@@ -390,14 +445,19 @@ class _LineChartPainter extends CustomPainter {
       final cx = x(s);
       canvas.drawLine(Offset(cx, _padTop), Offset(cx, _padTop + plotH),
           Paint()..color = labelColor.withValues(alpha: 0.6)..strokeWidth = 1);
-      void dot(double Function(EnergyHistoryPoint) sel, Color c) {
-        canvas.drawCircle(Offset(cx, y(sel(points[s]))), 3.0,
-            Paint()..color = c);
+      void dot(double w, Color c) =>
+          canvas.drawCircle(Offset(cx, y(w)), 3.0, Paint()..color = c);
+      dot(points[s].gridExportW, _exportColor);
+      dot(points[s].gridImportW, _importColor);
+      dot(points[s].loadW, _loadColor);
+      if (data.hasPvBreakdown) {
+        for (var k = 0; k < data.pvSeries.length; k++) {
+          final vals = data.pvSeries[k].wattsPerBucket;
+          dot(s < vals.length ? vals[s] : 0, _pvPalette[k % _pvPalette.length]);
+        }
+      } else {
+        dot(points[s].pvW, _pvColor);
       }
-      dot((p) => p.gridExportW, _exportColor);
-      dot((p) => p.gridImportW, _importColor);
-      dot((p) => p.loadW, _loadColor);
-      dot((p) => p.pvW, _pvColor);
     }
   }
 
