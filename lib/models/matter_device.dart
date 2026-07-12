@@ -12,12 +12,14 @@ enum NetworkType {
   wifi,
   thread,
   ethernet,
+  modbus,
   unknown;
 
   String get label => switch (this) {
     NetworkType.wifi => 'Wi-Fi',
     NetworkType.thread => 'Thread',
     NetworkType.ethernet => 'Ethernet',
+    NetworkType.modbus => 'Modbus',
     NetworkType.unknown => 'Unknown',
   };
 
@@ -26,6 +28,7 @@ enum NetworkType {
     NetworkType.wifi => 'wifi',
     NetworkType.thread => 'memory',
     NetworkType.ethernet => 'settings_ethernet',
+    NetworkType.modbus => 'cable',
     NetworkType.unknown => 'device_unknown',
   };
 }

@@ -1246,47 +1246,51 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
             ),
           ),
 
-          const SizedBox(height: 20),
-
           // ── Diagnostics / inspect ─────────────────────────────────────────
-          Card(
-            color: cs.surface,
-            child: Column(
-              children: [
-                ListTile(
-                  leading: Icon(Icons.hub_outlined, color: cs.primary),
-                  title: const Text('Thread diagnostics'),
-                  subtitle: const Text('Channel, role, neighbours, routing table'),
-                  trailing: const Icon(Icons.chevron_right),
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => ThreadDiagScreen(device: widget.device),
+          // Thread diagnostics and Matter cluster inspection are meaningless for
+          // Modbus devices (no Thread mesh, no Matter clusters), so hide the whole
+          // card for them.
+          if (!widget.device.isModbus) ...[
+            const SizedBox(height: 20),
+            Card(
+              color: cs.surface,
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.hub_outlined, color: cs.primary),
+                    title: const Text('Thread diagnostics'),
+                    subtitle: const Text('Channel, role, neighbours, routing table'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => ThreadDiagScreen(device: widget.device),
+                      ),
                     ),
                   ),
-                ),
-                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                ListTile(
-                  leading: Icon(Icons.manage_search, color: cs.primary),
-                  title: const Text('Inspect clusters'),
-                  subtitle: const Text('View all Matter clusters and attributes'),
-                  trailing: const Icon(Icons.chevron_right),
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => ClusterInspectorScreen(device: widget.device),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+                  ListTile(
+                    leading: Icon(Icons.manage_search, color: cs.primary),
+                    title: const Text('Inspect clusters'),
+                    subtitle: const Text('View all Matter clusters and attributes'),
+                    trailing: const Icon(Icons.chevron_right),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => ClusterInspectorScreen(device: widget.device),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
 
           const SizedBox(height: 16),
         ],

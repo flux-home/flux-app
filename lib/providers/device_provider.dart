@@ -166,6 +166,14 @@ class DeviceProvider extends ChangeNotifier {
           return d.copyWith(deviceType: DeviceType.thermostat);
         }
       }
+      // Legacy fix: older builds hardcoded every controller device to Thread.
+      // Correct Modbus nodes to Modbus and drop the bogus Thread label on other
+      // controller nodes (we can't yet tell Wi-Fi from Thread) so the info
+      // screen stops mislabelling them. Mirrors the repair in reconcile.
+      final normalized = _normalizeControllerNetworkType(d);
+      if (normalized != d.networkType) {
+        return d.copyWith(networkType: normalized);
+      }
       return d;
     }).toList();
 
@@ -194,6 +202,21 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   // ── Controller reconciliation ─────────────────────────────────────────────────
+
+  /// The correct [NetworkType] for a controller-managed device given what we can
+  /// determine locally: Modbus nodes (synthetic node id) are Modbus; the bogus
+  /// Thread label older builds stamped on every controller node is downgraded to
+  /// unknown (we can't yet distinguish Wi-Fi from Thread). Genuine Wi-Fi/Ethernet
+  /// labels — only ever set from real commissioning data — are preserved, as are
+  /// phone-managed devices.
+  static NetworkType _normalizeControllerNetworkType(MatterDevice d) {
+    if (d.isModbus) return NetworkType.modbus;
+    if (d.managedBy == ManagedBy.controller &&
+        d.networkType == NetworkType.thread) {
+      return NetworkType.unknown;
+    }
+    return d.networkType;
+  }
 
   bool _syncInFlight = false;
 
@@ -246,6 +269,13 @@ class DeviceProvider extends ChangeNotifier {
         final dt = cd.deviceType > 0
             ? DeviceType.fromMatterDeviceTypeId(cd.deviceType)
             : DeviceType.unknown;
+        // Modbus devices carry a synthetic node id (>= FLUX_MODBUS_NODE_BASE) and
+        // are reliably identifiable here. The controller doesn't (yet) report the
+        // transport for real Matter nodes, so leave those as `unknown` — the info
+        // screen hides the Network row rather than falsely labelling them Thread.
+        final networkType = nodeId >= 0x0100000000000000
+            ? NetworkType.modbus
+            : NetworkType.unknown;
         final device = MatterDevice(
           id:             _uuid.v4(),
           name:           cd.name.isNotEmpty ? cd.name : 'Device $nodeId',
@@ -253,7 +283,7 @@ class DeviceProvider extends ChangeNotifier {
           nodeId:         nodeId,
           commissionedAt: now,
           lastModified:   now,
-          networkType:    NetworkType.thread,
+          networkType:    networkType,
           managedBy:      ManagedBy.controller,
           isOnline:       cd.reachable,
         );
@@ -269,6 +299,17 @@ class DeviceProvider extends ChangeNotifier {
         // Already known — re-seed online state from controller’s reachable flag.
         if (_devices[idx].isOnline != cd.reachable) {
           _devices[idx] = _devices[idx].copyWith(isOnline: cd.reachable);
+          changed = true;
+        }
+        // Repair the network type for records persisted by older builds, which
+        // hardcoded every controller device to Thread. Modbus nodes become
+        // Modbus; a bogus Thread on a controller node is downgraded to unknown
+        // (we can't tell Wi-Fi from Thread yet). Genuine Wi-Fi/Ethernet labels
+        // — which only come from real commissioning data — are left intact.
+        final existing = _devices[idx];
+        final corrected = _normalizeControllerNetworkType(existing);
+        if (corrected != existing.networkType) {
+          _devices[idx] = existing.copyWith(networkType: corrected);
           changed = true;
         }
       }
