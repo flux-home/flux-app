@@ -175,6 +175,23 @@ class FluxCoapService implements MatterPort {
     }
   }
 
+  /// Push the user's energy-role assignments so the controller classifies the
+  /// energy log by role (which node is PV / battery / grid) instead of guessing
+  /// from the Modbus profile. [nodeToClass] maps node id → flux_EnergyClass code
+  /// (1=grid, 2=pv, 3=load, 4=battery); it's the full set (replaces the stored
+  /// map). See POST /energy/roles.
+  Future<bool> setEnergyRoles(Map<int, int> nodeToClass) async {
+    final map = $proto.EnergyRoleMap(
+      entries: nodeToClass.entries.map((e) => $proto.EnergyRoleEntry(
+            nodeId: Int64(e.key),
+            cls: $proto.EnergyClass.valueOf(e.value) ??
+                $proto.EnergyClass.ENERGY_CLASS_UNKNOWN,
+          )),
+    );
+    final resp = await _post('/energy/roles', map.writeToBuffer());
+    return resp != null;
+  }
+
   // ── Modbus devices ──────────────────────────────────────────────────────
   // The controller polls Modbus TCP/UDP devices and exposes them as ordinary
   // (synthetic-node-id) devices in /devices. Only provisioning is Modbus-specific.

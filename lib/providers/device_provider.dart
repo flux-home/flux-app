@@ -127,6 +127,16 @@ class DeviceProvider extends ChangeNotifier {
   List<DeviceView> get modbusDevices =>
       deviceViews.where((v) => v.isModbus).toList();
 
+  /// The app's (authoritative, user-editable) name for the device with [nodeId],
+  /// or null if unknown. Lets views resolve names locally instead of trusting
+  /// stale names baked into controller-side data (e.g. the energy-history log).
+  String? deviceNameForNode(int nodeId) {
+    for (final d in _devices) {
+      if (d.nodeId == nodeId) return d.name;
+    }
+    return null;
+  }
+
   /// Live whole-home energy picture aggregated by [EnergyRole] across all
   /// devices. Drives the home-screen energy-flow overview.
   EnergySummary get energySummary => EnergySummary.fromDevices(deviceViews);
@@ -374,6 +384,10 @@ class DeviceProvider extends ChangeNotifier {
       await _persist();
       notifyListeners();
     }
+
+    // Keep the controller's energy-log classification in sync with the user's
+    // role assignments (cheap; the controller just replaces its override map).
+    unawaited(_syncEnergyRoles());
   }
 
   /// Local-only removal of a controller-managed device that the controller has
@@ -1095,6 +1109,23 @@ class DeviceProvider extends ChangeNotifier {
     _devices[idx] = _devices[idx].copyWith(energyRole: role);
     await _persist();
     notifyListeners();
+    // Push the full role map so the controller classifies the energy log by
+    // role (fixes e.g. a PV source on a Matter plug). Fire-and-forget; a full
+    // resync also runs on every controller reconcile.
+    unawaited(_syncEnergyRoles());
+  }
+
+  /// Sends the current energy-role assignments to the controller (full set).
+  /// No-op without a controller.
+  Future<void> _syncEnergyRoles() async {
+    final svc = _ctrlService;
+    if (svc == null) return;
+    final map = <int, int>{};
+    for (final d in _devices) {
+      final cls = d.energyRole.controllerClass;
+      if (cls != null) map[d.nodeId] = cls;
+    }
+    await svc.setEnergyRoles(map);
   }
   // ── Share / rename / remove ───────────────────────────────────────────────
 

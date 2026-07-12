@@ -36,6 +36,19 @@ enum EnergyRole {
         EnergyRole.homeBattery => Icons.battery_charging_full_outlined,
       };
 
+  /// The controller's energy-log class code for this role (mirrors
+  /// flux_EnergyClass: 1=grid, 2=pv, 3=load, 4=battery). Consumers and the two
+  /// tracked consumer roles both map to `load` (the log only distinguishes
+  /// grid/pv/load/battery). `none` → null (no override; clears it controller-side).
+  int? get controllerClass => switch (this) {
+        EnergyRole.grid        => 1,
+        EnergyRole.pv          => 2,
+        EnergyRole.carCharger  => 3,
+        EnergyRole.heatPump    => 3,
+        EnergyRole.homeBattery => 4,
+        EnergyRole.none        => null,
+      };
+
   /// Parses a persisted [name]; unknown or missing values fall back to [none].
   static EnergyRole fromName(String? name) => EnergyRole.values.firstWhere(
         (e) => e.name == name,

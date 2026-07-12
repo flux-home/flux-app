@@ -659,6 +659,20 @@ const EnergyBucket$json = {
     {'1': 'grid_export_wh', '3': 3, '4': 1, '5': 13, '10': 'gridExportWh'},
     {'1': 'pv_wh', '3': 4, '4': 1, '5': 13, '10': 'pvWh'},
     {'1': 'load_wh', '3': 5, '4': 1, '5': 13, '10': 'loadWh'},
+    {
+      '1': 'battery_charge_wh',
+      '3': 6,
+      '4': 1,
+      '5': 13,
+      '10': 'batteryChargeWh'
+    },
+    {
+      '1': 'battery_discharge_wh',
+      '3': 7,
+      '4': 1,
+      '5': 13,
+      '10': 'batteryDischargeWh'
+    },
   ],
 };
 
@@ -666,7 +680,9 @@ const EnergyBucket$json = {
 final $typed_data.Uint8List energyBucketDescriptor = $convert.base64Decode(
     'CgxFbmVyZ3lCdWNrZXQSFAoFaW5kZXgYASABKA1SBWluZGV4EiQKDmdyaWRfaW1wb3J0X3doGA'
     'IgASgNUgxncmlkSW1wb3J0V2gSJAoOZ3JpZF9leHBvcnRfd2gYAyABKA1SDGdyaWRFeHBvcnRX'
-    'aBITCgVwdl93aBgEIAEoDVIEcHZXaBIXCgdsb2FkX3doGAUgASgNUgZsb2FkV2g=');
+    'aBITCgVwdl93aBgEIAEoDVIEcHZXaBIXCgdsb2FkX3doGAUgASgNUgZsb2FkV2gSKgoRYmF0dG'
+    'VyeV9jaGFyZ2Vfd2gYBiABKA1SD2JhdHRlcnlDaGFyZ2VXaBIwChRiYXR0ZXJ5X2Rpc2NoYXJn'
+    'ZV93aBgHIAEoDVISYmF0dGVyeURpc2NoYXJnZVdo');
 
 @$core.Deprecated('Use energyDeviceSeriesDescriptor instead')
 const EnergyDeviceSeries$json = {
@@ -729,3 +745,44 @@ final $typed_data.Uint8List energyHistoryDescriptor = $convert.base64Decode(
     'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHMS'
     'PQoNZGV2aWNlX3NlcmllcxgIIAMoCzIYLmZsdXguRW5lcmd5RGV2aWNlU2VyaWVzUgxkZXZpY2'
     'VTZXJpZXM=');
+
+@$core.Deprecated('Use energyRoleEntryDescriptor instead')
+const EnergyRoleEntry$json = {
+  '1': 'EnergyRoleEntry',
+  '2': [
+    {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
+    {
+      '1': 'cls',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.EnergyClass',
+      '10': 'cls'
+    },
+  ],
+};
+
+/// Descriptor for `EnergyRoleEntry`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyRoleEntryDescriptor = $convert.base64Decode(
+    'Cg9FbmVyZ3lSb2xlRW50cnkSFwoHbm9kZV9pZBgBIAEoBFIGbm9kZUlkEiMKA2NscxgCIAEoDj'
+    'IRLmZsdXguRW5lcmd5Q2xhc3NSA2Nscw==');
+
+@$core.Deprecated('Use energyRoleMapDescriptor instead')
+const EnergyRoleMap$json = {
+  '1': 'EnergyRoleMap',
+  '2': [
+    {
+      '1': 'entries',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.EnergyRoleEntry',
+      '10': 'entries'
+    },
+  ],
+};
+
+/// Descriptor for `EnergyRoleMap`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyRoleMapDescriptor = $convert.base64Decode(
+    'Cg1FbmVyZ3lSb2xlTWFwEi8KB2VudHJpZXMYASADKAsyFS5mbHV4LkVuZXJneVJvbGVFbnRyeV'
+    'IHZW50cmllcw==');

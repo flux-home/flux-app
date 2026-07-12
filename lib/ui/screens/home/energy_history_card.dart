@@ -141,7 +141,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
             for (var k = 0; k < data.pvSeries.length; k++)
               _readoutChip(
                   _pvPalette[k % _pvPalette.length],
-                  data.pvSeries[k].name,
+                  _pvName(context, data.pvSeries[k]),
                   idx < data.pvSeries[k].wattsPerBucket.length
                       ? data.pvSeries[k].wattsPerBucket[idx]
                       : 0)
@@ -203,6 +203,12 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
     );
   }
 
+  /// The app's current name for a PV series' device (node_id → local device
+  /// name), so renaming in the app updates the chart immediately — the name
+  /// baked into the controller's log is only a fallback.
+  String _pvName(BuildContext context, PvDeviceSeries s) =>
+      context.read<DeviceProvider>().deviceNameForNode(s.nodeId) ?? s.name;
+
   // ── Legend ────────────────────────────────────────────────────────────────
   Widget _legend(BuildContext context, EnergyHistoryData data) {
     return Wrap(
@@ -211,7 +217,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
         if (data.hasPvBreakdown)
           for (var k = 0; k < data.pvSeries.length; k++)
             _legendItem(context, _pvPalette[k % _pvPalette.length],
-                data.pvSeries[k].name)
+                _pvName(context, data.pvSeries[k]))
         else
           _legendItem(context, _pvColor, 'Solar'),
         _legendItem(context, _loadColor, 'Home'),

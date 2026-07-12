@@ -2684,6 +2684,8 @@ class EnergyBucket extends $pb.GeneratedMessage {
     $core.int? gridExportWh,
     $core.int? pvWh,
     $core.int? loadWh,
+    $core.int? batteryChargeWh,
+    $core.int? batteryDischargeWh,
   }) {
     final result = create();
     if (index != null) result.index = index;
@@ -2691,6 +2693,9 @@ class EnergyBucket extends $pb.GeneratedMessage {
     if (gridExportWh != null) result.gridExportWh = gridExportWh;
     if (pvWh != null) result.pvWh = pvWh;
     if (loadWh != null) result.loadWh = loadWh;
+    if (batteryChargeWh != null) result.batteryChargeWh = batteryChargeWh;
+    if (batteryDischargeWh != null)
+      result.batteryDischargeWh = batteryDischargeWh;
     return result;
   }
 
@@ -2714,6 +2719,10 @@ class EnergyBucket extends $pb.GeneratedMessage {
         fieldType: $pb.PbFieldType.OU3)
     ..aI(4, _omitFieldNames ? '' : 'pvWh', fieldType: $pb.PbFieldType.OU3)
     ..aI(5, _omitFieldNames ? '' : 'loadWh', fieldType: $pb.PbFieldType.OU3)
+    ..aI(6, _omitFieldNames ? '' : 'batteryChargeWh',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'batteryDischargeWh',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2779,6 +2788,24 @@ class EnergyBucket extends $pb.GeneratedMessage {
   $core.bool hasLoadWh() => $_has(4);
   @$pb.TagNumber(5)
   void clearLoadWh() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get batteryChargeWh => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set batteryChargeWh($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasBatteryChargeWh() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearBatteryChargeWh() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get batteryDischargeWh => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set batteryDischargeWh($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasBatteryDischargeWh() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearBatteryDischargeWh() => $_clearField(7);
 }
 
 /// Per-device energy contribution over the same time base as EnergyHistory —
@@ -3000,6 +3027,129 @@ class EnergyHistory extends $pb.GeneratedMessage {
   /// per-class totals. Capped — excess devices simply aren't broken out.
   @$pb.TagNumber(8)
   $pb.PbList<EnergyDeviceSeries> get deviceSeries => $_getList(7);
+}
+
+/// ─── Energy roles ─────────────────────────────────────────────────────────────
+/// POST /energy/roles — the app pushes the user's energy-role assignments so the
+/// controller can classify the energy log correctly (which device is PV / a
+/// battery / the grid meter), overriding the Modbus-profile heuristic. The app
+/// sends the full set; it replaces the stored map. Nodes not listed fall back to
+/// the heuristic. Returns StatusResponse.
+class EnergyRoleEntry extends $pb.GeneratedMessage {
+  factory EnergyRoleEntry({
+    $fixnum.Int64? nodeId,
+    EnergyClass? cls,
+  }) {
+    final result = create();
+    if (nodeId != null) result.nodeId = nodeId;
+    if (cls != null) result.cls = cls;
+    return result;
+  }
+
+  EnergyRoleEntry._();
+
+  factory EnergyRoleEntry.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyRoleEntry.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyRoleEntry',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aE<EnergyClass>(2, _omitFieldNames ? '' : 'cls',
+        enumValues: EnergyClass.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyRoleEntry clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyRoleEntry copyWith(void Function(EnergyRoleEntry) updates) =>
+      super.copyWith((message) => updates(message as EnergyRoleEntry))
+          as EnergyRoleEntry;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyRoleEntry create() => EnergyRoleEntry._();
+  @$core.override
+  EnergyRoleEntry createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyRoleEntry getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyRoleEntry>(create);
+  static EnergyRoleEntry? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get nodeId => $_getI64(0);
+  @$pb.TagNumber(1)
+  set nodeId($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasNodeId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearNodeId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  EnergyClass get cls => $_getN(1);
+  @$pb.TagNumber(2)
+  set cls(EnergyClass value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCls() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCls() => $_clearField(2);
+}
+
+class EnergyRoleMap extends $pb.GeneratedMessage {
+  factory EnergyRoleMap({
+    $core.Iterable<EnergyRoleEntry>? entries,
+  }) {
+    final result = create();
+    if (entries != null) result.entries.addAll(entries);
+    return result;
+  }
+
+  EnergyRoleMap._();
+
+  factory EnergyRoleMap.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyRoleMap.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyRoleMap',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..pPM<EnergyRoleEntry>(1, _omitFieldNames ? '' : 'entries',
+        subBuilder: EnergyRoleEntry.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyRoleMap clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyRoleMap copyWith(void Function(EnergyRoleMap) updates) =>
+      super.copyWith((message) => updates(message as EnergyRoleMap))
+          as EnergyRoleMap;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyRoleMap create() => EnergyRoleMap._();
+  @$core.override
+  EnergyRoleMap createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyRoleMap getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyRoleMap>(create);
+  static EnergyRoleMap? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<EnergyRoleEntry> get entries => $_getList(0);
 }
 
 const $core.bool _omitFieldNames =
