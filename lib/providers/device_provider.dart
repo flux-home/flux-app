@@ -139,7 +139,16 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Live whole-home energy picture aggregated by [EnergyRole] across all
   /// devices. Drives the home-screen energy-flow overview.
-  EnergySummary get energySummary => EnergySummary.fromDevices(deviceViews);
+  ///
+  /// When a paired hub is unreachable the readings can't be current, so the
+  /// picture is invalidated (empty) rather than showing the last cached flow.
+  /// Per-device, unreachable devices are excluded by [EnergySummary.fromDevices].
+  EnergySummary get energySummary {
+    if (_hubConn != null && _hubConn!.hasConfiguredHub && !_hubConn!.isOnline) {
+      return const EnergySummary();
+    }
+    return EnergySummary.fromDevices(deviceViews);
+  }
 
   // ── 24-hour energy history ──────────────────────────────────────────────────
   // Fetched on demand from the controller's GET /energy/history and cached so

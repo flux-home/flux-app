@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:provider/provider.dart';
 
-/// A compact status pill for the app bar (sits next to the settings action).
-/// Appears only when the hub is unreachable or a reconnect is in progress —
+// Pastel accents, matching the category buttons' style (black fill, pastel
+// outline + text). Coral = not connected, soft grey = connecting.
+const _offlineColor    = Color(0xFFF2A9A0); // coral
+const _connectingColor = Color(0xFFBFC4CC); // muted grey
+
+/// A compact status button for the app bar (sits next to the settings action),
+/// styled like the category buttons below the title: black fill, pastel outline
+/// and text, no icon. Appears only when the hub is unreachable or reconnecting —
 /// tapping it retries. Hidden when online or when no hub is paired.
 class ControllerStatusChip extends StatelessWidget {
   const ControllerStatusChip({super.key});
@@ -17,38 +23,30 @@ class ControllerStatusChip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final cs         = Theme.of(context).colorScheme;
     final connecting = status == ControllerStatus.connecting;
-    final bg = connecting ? cs.surfaceContainerHighest : cs.errorContainer;
-    final fg = connecting ? cs.onSurfaceVariant : cs.onErrorContainer;
+    final color = connecting ? _connectingColor : _offlineColor;
+    final label = connecting ? 'Connecting…' : 'Hub not connected';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 9),
       child: Material(
-        color: bg,
-        shape: const StadiumBorder(),
+        color: Colors.black,
         clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: color, width: 1.5),
+        ),
         child: InkWell(
           onTap: connecting ? null : hub.reconnect,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (connecting)
-                  SizedBox(
-                    width: 12, height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-                  )
-                else
-                  Icon(Icons.cloud_off_outlined, size: 15, color: fg),
-                const SizedBox(width: 5),
-                Text(
-                  connecting ? 'Connecting' : 'Offline',
-                  style: TextStyle(
-                      color: fg, fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),

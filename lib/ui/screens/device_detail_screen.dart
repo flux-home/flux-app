@@ -17,6 +17,8 @@ import 'package:matter_home/ui/screens/device_settings_screen.dart';
 import 'package:matter_home/ui/theme.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_painter.dart';
 import 'package:provider/provider.dart';
+import 'package:matter_home/models/matter_device.dart' show ManagedBy;
+import 'package:matter_home/services/hub_connection.dart';
 
 part 'device_detail/switch_card.dart';
 part 'device_detail/on_off_card.dart';
@@ -265,6 +267,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final cs = Theme.of(context).colorScheme;
     final productName = view.displayProductName;
 
+    // A device is accessible only if it's reachable AND, for controller-managed
+    // devices, the hub itself is connected. When not accessible we invalidate
+    // the live cards rather than showing stale cached values.
+    final hub = context.watch<HubConnection>();
+    final accessible = view.isOnline &&
+        (view.device.managedBy != ManagedBy.controller || hub.isOnline);
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -294,18 +303,18 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            _ConnectingBanner(isStale: view.isStale),
-            if (view.deviceType.isSwitch && view.isOnline) ...[
+            _ConnectingBanner(isStale: !accessible || view.isStale),
+            if (view.deviceType.isSwitch && accessible) ...[
               _SwitchCard(view: view, readings: _clusterReadings ?? const []),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasBrightness && view.isOnline && !view.deviceType.isSwitch) ...[
+            if (view.deviceType.hasBrightness && accessible && !view.deviceType.isSwitch) ...[
               _BrightnessCard(brightness: view.brightness, onChanged: (v) => provider.setBrightness(view.id, v)),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasOnOff && view.isOnline && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
-            if (_onOffIsControllable && !view.deviceType.hasOnOff && view.isOnline && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
-            if (view.deviceType == DeviceType.thermostat && view.isOnline) ...[
+            if (view.deviceType.hasOnOff && accessible && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
+            if (_onOffIsControllable && !view.deviceType.hasOnOff && accessible && !view.deviceType.isSwitch) ...[_OnOffCard(view: view), const SizedBox(height: 12)],
+            if (view.deviceType == DeviceType.thermostat && accessible) ...[
               _ThermostatCard(
                 state: view.thermoState,
                 pendingSetpt: _pendingSetpt,
@@ -314,15 +323,15 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasWindowCovering && view.isOnline) ...[
+            if (view.deviceType.hasWindowCovering && accessible) ...[
               _WindowCoveringCard(view: view),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasFanControl && view.isOnline) ...[
+            if (view.deviceType.hasFanControl && accessible) ...[
               _FanControlCard(view: view),
               const SizedBox(height: 12),
             ],
-            if (view.deviceType.hasColorTemp && view.isOnline) ...[
+            if (view.deviceType.hasColorTemp && accessible) ...[
               _ColorTemperatureCard(view: view),
               const SizedBox(height: 12),
             ],
@@ -334,7 +343,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               DoorLockCard(view: view),
               const SizedBox(height: 12),
             ],
-            if ((view.deviceType.hasEnergyMeasurement ||
+            if (accessible &&
+                (view.deviceType.hasEnergyMeasurement ||
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
               EnergyCard(live: view.live!),
@@ -348,27 +358,30 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             // (label='Power', unit='') so the two don't coexist.
             // When EnergyCard is shown, suppress the individual power/energy
             // readings that would duplicate its display.
-            _ReadingsSection(
-              readings: () {
-                var r = _readings;
-                if (view.deviceType.isSwitch) {
-                  r = r?.where((x) => x.endpoint == null).toList();
-                }
-                if (_onOffIsControllable && !view.deviceType.hasOnOff) {
-                  r = r?.where((x) => !(x.label == 'Power' && x.unit.isEmpty)).toList();
-                }
-                if (view.deviceType.hasEnergyMeasurement ||
-                    (view.live?.activePower != null)) {
-                  const energyLabels = {
-                    'Power', 'Voltage', 'Current',
-                    'Energy imported', 'Energy exported',
-                  };
-                  r = r?.where((x) => !energyLabels.contains(x.label)).toList();
-                }
-                return r;
-              }(),
-              loading: _readingsLoading,
-            ),
+            // Sensor readings are live values too — suppress them when the
+            // device isn't accessible rather than showing stale cached data.
+            if (accessible)
+              _ReadingsSection(
+                readings: () {
+                  var r = _readings;
+                  if (view.deviceType.isSwitch) {
+                    r = r?.where((x) => x.endpoint == null).toList();
+                  }
+                  if (_onOffIsControllable && !view.deviceType.hasOnOff) {
+                    r = r?.where((x) => !(x.label == 'Power' && x.unit.isEmpty)).toList();
+                  }
+                  if (view.deviceType.hasEnergyMeasurement ||
+                      (view.live?.activePower != null)) {
+                    const energyLabels = {
+                      'Power', 'Voltage', 'Current',
+                      'Energy imported', 'Energy exported',
+                    };
+                    r = r?.where((x) => !energyLabels.contains(x.label)).toList();
+                  }
+                  return r;
+                }(),
+                loading: _readingsLoading,
+              ),
           ],
         ),
       ),

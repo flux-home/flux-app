@@ -80,6 +80,9 @@ class EnergySummary {
     var socSum = 0, socCount = 0;
 
     for (final d in devices) {
+      // Skip unreachable devices — their last-known reading isn't current, so
+      // it must not be presented as a live value in the overview.
+      if (!d.isOnline) continue;
       final w = (d.activePowerMw ?? 0) / 1000.0;
       switch (d.energyRole) {
         case EnergyRole.grid:
