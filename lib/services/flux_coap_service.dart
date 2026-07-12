@@ -153,6 +153,28 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) { debugPrint('FluxCoapService getDeviceList: $e'); return null; }
   }
 
+  /// Energy usage aggregated into fixed-width time buckets over [from, to]
+  /// (epoch seconds), [bucketSeconds] wide (default 900 = 15 min). Values are
+  /// watt-hours per bucket, summed per device class. Null on a transient read
+  /// failure. See GET /energy/history.
+  Future<$proto.EnergyHistory?> getEnergyHistory({
+    required int from,
+    required int to,
+    int bucketSeconds = 900,
+  }) async {
+    final b = await _get('/energy/history', query: {
+      'from': '$from',
+      'to': '$to',
+      'bucket': '$bucketSeconds',
+    }, timeout: _timeout30);
+    if (b == null) return null;
+    try { return $proto.EnergyHistory.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getEnergyHistory: $e');
+      return null;
+    }
+  }
+
   // ── Modbus devices ──────────────────────────────────────────────────────
   // The controller polls Modbus TCP/UDP devices and exposes them as ordinary
   // (synthetic-node-id) devices in /devices. Only provisioning is Modbus-specific.

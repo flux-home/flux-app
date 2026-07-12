@@ -1,0 +1,65 @@
+import 'package:fixnum/fixnum.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:matter_home/models/energy_history.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
+
+void main() {
+  group('EnergyHistoryData.fromProto', () {
+    test('converts Wh buckets to average watts and sums kWh totals', () {
+      // 15-min buckets → a full-bucket 250 Wh = 1000 W average.
+      final h = $proto.EnergyHistory(
+        start: Int64(1_000_000),
+        bucketSeconds: 900,
+        timeSynced: true,
+        buckets: [
+          $proto.EnergyBucket(index: 0, pvWh: 250, loadWh: 125),
+          $proto.EnergyBucket(index: 1, gridImportWh: 250, gridExportWh: 0),
+        ],
+      );
+
+      final d = EnergyHistoryData.fromProto(h);
+
+      expect(d.points.length, 2);
+      // 250 Wh over a 900 s bucket = 1000 W average.
+      expect(d.points[0].pvW, closeTo(1000, 0.001));
+      expect(d.points[0].loadW, closeTo(500, 0.001));
+      expect(d.points[1].gridImportW, closeTo(1000, 0.001));
+
+      // Bucket 1 sits 900 s after bucket 0.
+      expect(d.points[1].time.difference(d.points[0].time),
+          const Duration(seconds: 900));
+
+      // Totals in kWh.
+      expect(d.pvKwh, closeTo(0.250, 0.0001));
+      expect(d.loadKwh, closeTo(0.125, 0.0001));
+      expect(d.gridImportKwh, closeTo(0.250, 0.0001));
+      expect(d.peakW, closeTo(1000, 0.001));
+    });
+
+    test('self-sufficiency: none imported → 100%, all imported → 0%', () {
+      final selfSufficient = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0, loadWh: 400, pvWh: 400)],
+      ));
+      expect(selfSufficient.selfSufficiencyPercent, 100);
+
+      final fromGrid = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0, loadWh: 400, gridImportWh: 400)],
+      ));
+      expect(fromGrid.selfSufficiencyPercent, 0);
+    });
+
+    test('no consumption → null self-sufficiency, empty history is empty', () {
+      final none = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 100)],
+      ));
+      expect(none.selfSufficiencyPercent, isNull);
+
+      final empty = EnergyHistoryData.fromProto($proto.EnergyHistory());
+      expect(empty.isEmpty, isTrue);
+      expect(empty.peakW, 0);
+    });
+  });
+}

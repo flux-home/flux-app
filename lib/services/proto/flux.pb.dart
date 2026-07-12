@@ -2675,6 +2675,234 @@ class StatusResponse extends $pb.GeneratedMessage {
   void clearMessage() => $_clearField(2);
 }
 
+/// One time bucket: energy over [start + index*bucket_seconds, +bucket_seconds).
+/// A 0/omitted field (proto3 default) means no contribution from that class.
+class EnergyBucket extends $pb.GeneratedMessage {
+  factory EnergyBucket({
+    $core.int? index,
+    $core.int? gridImportWh,
+    $core.int? gridExportWh,
+    $core.int? pvWh,
+    $core.int? loadWh,
+  }) {
+    final result = create();
+    if (index != null) result.index = index;
+    if (gridImportWh != null) result.gridImportWh = gridImportWh;
+    if (gridExportWh != null) result.gridExportWh = gridExportWh;
+    if (pvWh != null) result.pvWh = pvWh;
+    if (loadWh != null) result.loadWh = loadWh;
+    return result;
+  }
+
+  EnergyBucket._();
+
+  factory EnergyBucket.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyBucket.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyBucket',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'index', fieldType: $pb.PbFieldType.OU3)
+    ..aI(2, _omitFieldNames ? '' : 'gridImportWh',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'gridExportWh',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(4, _omitFieldNames ? '' : 'pvWh', fieldType: $pb.PbFieldType.OU3)
+    ..aI(5, _omitFieldNames ? '' : 'loadWh', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyBucket clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyBucket copyWith(void Function(EnergyBucket) updates) =>
+      super.copyWith((message) => updates(message as EnergyBucket))
+          as EnergyBucket;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyBucket create() => EnergyBucket._();
+  @$core.override
+  EnergyBucket createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyBucket getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyBucket>(create);
+  static EnergyBucket? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get index => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set index($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasIndex() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearIndex() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get gridImportWh => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set gridImportWh($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasGridImportWh() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearGridImportWh() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get gridExportWh => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set gridExportWh($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasGridExportWh() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearGridExportWh() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get pvWh => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set pvWh($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasPvWh() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearPvWh() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get loadWh => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set loadWh($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasLoadWh() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearLoadWh() => $_clearField(5);
+}
+
+class EnergyHistory extends $pb.GeneratedMessage {
+  factory EnergyHistory({
+    $fixnum.Int64? start,
+    $core.int? bucketSeconds,
+    $fixnum.Int64? from,
+    $fixnum.Int64? to,
+    $core.bool? timeSynced,
+    $core.bool? truncated,
+    $core.Iterable<EnergyBucket>? buckets,
+  }) {
+    final result = create();
+    if (start != null) result.start = start;
+    if (bucketSeconds != null) result.bucketSeconds = bucketSeconds;
+    if (from != null) result.from = from;
+    if (to != null) result.to = to;
+    if (timeSynced != null) result.timeSynced = timeSynced;
+    if (truncated != null) result.truncated = truncated;
+    if (buckets != null) result.buckets.addAll(buckets);
+    return result;
+  }
+
+  EnergyHistory._();
+
+  factory EnergyHistory.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyHistory.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyHistory',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'start')
+    ..aI(2, _omitFieldNames ? '' : 'bucketSeconds',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aInt64(3, _omitFieldNames ? '' : 'from')
+    ..aInt64(4, _omitFieldNames ? '' : 'to')
+    ..aOB(5, _omitFieldNames ? '' : 'timeSynced')
+    ..aOB(6, _omitFieldNames ? '' : 'truncated')
+    ..pPM<EnergyBucket>(7, _omitFieldNames ? '' : 'buckets',
+        subBuilder: EnergyBucket.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyHistory clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyHistory copyWith(void Function(EnergyHistory) updates) =>
+      super.copyWith((message) => updates(message as EnergyHistory))
+          as EnergyHistory;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyHistory create() => EnergyHistory._();
+  @$core.override
+  EnergyHistory createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyHistory getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyHistory>(create);
+  static EnergyHistory? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get start => $_getI64(0);
+  @$pb.TagNumber(1)
+  set start($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStart() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStart() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get bucketSeconds => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set bucketSeconds($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasBucketSeconds() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearBucketSeconds() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get from => $_getI64(2);
+  @$pb.TagNumber(3)
+  set from($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasFrom() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearFrom() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $fixnum.Int64 get to => $_getI64(3);
+  @$pb.TagNumber(4)
+  set to($fixnum.Int64 value) => $_setInt64(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasTo() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearTo() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.bool get timeSynced => $_getBF(4);
+  @$pb.TagNumber(5)
+  set timeSynced($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasTimeSynced() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearTimeSynced() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.bool get truncated => $_getBF(5);
+  @$pb.TagNumber(6)
+  set truncated($core.bool value) => $_setBool(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasTruncated() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearTruncated() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $pb.PbList<EnergyBucket> get buckets => $_getList(6);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

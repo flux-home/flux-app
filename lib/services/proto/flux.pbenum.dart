@@ -115,5 +115,41 @@ class DeviceEventType extends $pb.ProtobufEnum {
   const DeviceEventType._(super.value, super.name);
 }
 
+/// ─── Energy history ─────────────────────────────────────────────────────────
+/// GET /energy/history?from=<epoch_s>&to=<epoch_s>&bucket=<seconds>
+/// Energy usage aggregated into fixed-width time buckets, derived by differencing
+/// the cumulative OBIS counters (1.8.0 import / 2.8.0 export) at each bucket edge
+/// — with a fallback to integrating active power for devices that expose no
+/// counter. Values are watt-hours (Wh) per bucket, SUMMED per device class.
+/// Bounded per response (see truncated); page long spans by narrowing [from,to]
+/// or widening bucket. Default bucket is 900 s (15 min).
+class EnergyClass extends $pb.ProtobufEnum {
+  static const EnergyClass ENERGY_CLASS_UNKNOWN =
+      EnergyClass._(0, _omitEnumNames ? '' : 'ENERGY_CLASS_UNKNOWN');
+  static const EnergyClass ENERGY_CLASS_GRID =
+      EnergyClass._(1, _omitEnumNames ? '' : 'ENERGY_CLASS_GRID');
+  static const EnergyClass ENERGY_CLASS_PV =
+      EnergyClass._(2, _omitEnumNames ? '' : 'ENERGY_CLASS_PV');
+  static const EnergyClass ENERGY_CLASS_LOAD =
+      EnergyClass._(3, _omitEnumNames ? '' : 'ENERGY_CLASS_LOAD');
+  static const EnergyClass ENERGY_CLASS_BATTERY =
+      EnergyClass._(4, _omitEnumNames ? '' : 'ENERGY_CLASS_BATTERY');
+
+  static const $core.List<EnergyClass> values = <EnergyClass>[
+    ENERGY_CLASS_UNKNOWN,
+    ENERGY_CLASS_GRID,
+    ENERGY_CLASS_PV,
+    ENERGY_CLASS_LOAD,
+    ENERGY_CLASS_BATTERY,
+  ];
+
+  static final $core.List<EnergyClass?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 4);
+  static EnergyClass? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const EnergyClass._(super.value, super.name);
+}
+
 const $core.bool _omitEnumNames =
     $core.bool.fromEnvironment('protobuf.omit_enum_names');

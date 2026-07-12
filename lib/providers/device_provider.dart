@@ -8,6 +8,7 @@ import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/energy_history.dart';
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/models/matter_device.dart';
@@ -129,6 +130,46 @@ class DeviceProvider extends ChangeNotifier {
   /// Live whole-home energy picture aggregated by [EnergyRole] across all
   /// devices. Drives the home-screen energy-flow overview.
   EnergySummary get energySummary => EnergySummary.fromDevices(deviceViews);
+
+  // ── 24-hour energy history ──────────────────────────────────────────────────
+  // Fetched on demand from the controller's GET /energy/history and cached so
+  // reopening the Energy view is instant; refreshed on pull-to-refresh.
+
+  EnergyHistoryData? _energyHistory;
+  bool _energyHistoryLoading = false;
+  Future<void>? _energyHistoryInflight;
+
+  /// Last-fetched 24-hour energy history, or null if never loaded / hub-less.
+  EnergyHistoryData? get energyHistory => _energyHistory;
+  bool get energyHistoryLoading => _energyHistoryLoading;
+
+  /// Fetch the last 24 hours of energy history from the controller (15-min
+  /// buckets). No-op without a controller. Concurrent calls are coalesced; a
+  /// transient failure leaves any previously-loaded history in place.
+  Future<void> fetchEnergyHistory() {
+    final inflight = _energyHistoryInflight;
+    if (inflight != null) return inflight;
+    final svc = _ctrlService;
+    if (svc == null) return Future.value();
+
+    _energyHistoryLoading = true;
+    notifyListeners();
+
+    final f = () async {
+      final now = DateTime.now();
+      final to = now.millisecondsSinceEpoch ~/ 1000;
+      final from = to - 24 * 3600;
+      final h = await svc.getEnergyHistory(from: from, to: to);
+      if (_disposed) return;
+      if (h != null) _energyHistory = EnergyHistoryData.fromProto(h);
+    }();
+    _energyHistoryInflight = f.whenComplete(() {
+      _energyHistoryInflight = null;
+      _energyHistoryLoading = false;
+      if (!_disposed) notifyListeners();
+    });
+    return _energyHistoryInflight!;
+  }
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.
   DeviceView? viewFor(String id) {

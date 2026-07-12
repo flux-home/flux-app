@@ -79,6 +79,24 @@ final $typed_data.Uint8List deviceEventTypeDescriptor = $convert.base64Decode(
     'NFX0VWRU5UX0FUVFJTX1VQREFURRABEhYKEkRFVklDRV9FVkVOVF9FUlJPUhACEh4KGkRFVklD'
     'RV9FVkVOVF9SRVNVQlNDUklCSU5HEAMSHAoYREVWSUNFX0VWRU5UX0RJU0NPVkVSSU5HEAQ=');
 
+@$core.Deprecated('Use energyClassDescriptor instead')
+const EnergyClass$json = {
+  '1': 'EnergyClass',
+  '2': [
+    {'1': 'ENERGY_CLASS_UNKNOWN', '2': 0},
+    {'1': 'ENERGY_CLASS_GRID', '2': 1},
+    {'1': 'ENERGY_CLASS_PV', '2': 2},
+    {'1': 'ENERGY_CLASS_LOAD', '2': 3},
+    {'1': 'ENERGY_CLASS_BATTERY', '2': 4},
+  ],
+};
+
+/// Descriptor for `EnergyClass`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List energyClassDescriptor = $convert.base64Decode(
+    'CgtFbmVyZ3lDbGFzcxIYChRFTkVSR1lfQ0xBU1NfVU5LTk9XThAAEhUKEUVORVJHWV9DTEFTU1'
+    '9HUklEEAESEwoPRU5FUkdZX0NMQVNTX1BWEAISFQoRRU5FUkdZX0NMQVNTX0xPQUQQAxIYChRF'
+    'TkVSR1lfQ0xBU1NfQkFUVEVSWRAE');
+
 @$core.Deprecated('Use controllerInfoDescriptor instead')
 const ControllerInfo$json = {
   '1': 'ControllerInfo',
@@ -631,3 +649,49 @@ const StatusResponse$json = {
 final $typed_data.Uint8List statusResponseDescriptor = $convert.base64Decode(
     'Cg5TdGF0dXNSZXNwb25zZRISCgRjb2RlGAEgASgNUgRjb2RlEhgKB21lc3NhZ2UYAiABKAlSB2'
     '1lc3NhZ2U=');
+
+@$core.Deprecated('Use energyBucketDescriptor instead')
+const EnergyBucket$json = {
+  '1': 'EnergyBucket',
+  '2': [
+    {'1': 'index', '3': 1, '4': 1, '5': 13, '10': 'index'},
+    {'1': 'grid_import_wh', '3': 2, '4': 1, '5': 13, '10': 'gridImportWh'},
+    {'1': 'grid_export_wh', '3': 3, '4': 1, '5': 13, '10': 'gridExportWh'},
+    {'1': 'pv_wh', '3': 4, '4': 1, '5': 13, '10': 'pvWh'},
+    {'1': 'load_wh', '3': 5, '4': 1, '5': 13, '10': 'loadWh'},
+  ],
+};
+
+/// Descriptor for `EnergyBucket`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyBucketDescriptor = $convert.base64Decode(
+    'CgxFbmVyZ3lCdWNrZXQSFAoFaW5kZXgYASABKA1SBWluZGV4EiQKDmdyaWRfaW1wb3J0X3doGA'
+    'IgASgNUgxncmlkSW1wb3J0V2gSJAoOZ3JpZF9leHBvcnRfd2gYAyABKA1SDGdyaWRFeHBvcnRX'
+    'aBITCgVwdl93aBgEIAEoDVIEcHZXaBIXCgdsb2FkX3doGAUgASgNUgZsb2FkV2g=');
+
+@$core.Deprecated('Use energyHistoryDescriptor instead')
+const EnergyHistory$json = {
+  '1': 'EnergyHistory',
+  '2': [
+    {'1': 'start', '3': 1, '4': 1, '5': 3, '10': 'start'},
+    {'1': 'bucket_seconds', '3': 2, '4': 1, '5': 13, '10': 'bucketSeconds'},
+    {'1': 'from', '3': 3, '4': 1, '5': 3, '10': 'from'},
+    {'1': 'to', '3': 4, '4': 1, '5': 3, '10': 'to'},
+    {'1': 'time_synced', '3': 5, '4': 1, '5': 8, '10': 'timeSynced'},
+    {'1': 'truncated', '3': 6, '4': 1, '5': 8, '10': 'truncated'},
+    {
+      '1': 'buckets',
+      '3': 7,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.EnergyBucket',
+      '10': 'buckets'
+    },
+  ],
+};
+
+/// Descriptor for `EnergyHistory`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyHistoryDescriptor = $convert.base64Decode(
+    'Cg1FbmVyZ3lIaXN0b3J5EhQKBXN0YXJ0GAEgASgDUgVzdGFydBIlCg5idWNrZXRfc2Vjb25kcx'
+    'gCIAEoDVINYnVja2V0U2Vjb25kcxISCgRmcm9tGAMgASgDUgRmcm9tEg4KAnRvGAQgASgDUgJ0'
+    'bxIfCgt0aW1lX3N5bmNlZBgFIAEoCFIKdGltZVN5bmNlZBIcCgl0cnVuY2F0ZWQYBiABKAhSCX'
+    'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHM=');
