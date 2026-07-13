@@ -48,34 +48,27 @@ class EnergyPrices {
   /// Cost (in cents) of the energy imported from the grid in [history], each
   /// bucket valued at the (gross) price covering its time. This is what the user
   /// actually pays. Null when there's no overlap with price coverage.
-  double? importCostCents(EnergyHistoryData? history) =>
-      _weightedCents(history, (p) => p.gridImportW);
-
-  /// Revenue (in cents) from energy exported to the grid in [history], valued at
-  /// the flat feed-in tariff [feedInCt] (Einspeisevergütung). Restricted to the
-  /// same price-covered window as [importCostCents] so the two pair up.
-  double? exportRevenueCents(EnergyHistoryData? history, double feedInCt) =>
-      _weightedCents(history, (p) => p.gridExportW, flatCt: feedInCt);
-
-  /// Σ over price-covered buckets of `power_kWh × ct`, where ct is either a flat
-  /// rate [flatCt] or the spot price at the bucket time via [priceOf].
-  double? _weightedCents(
-    EnergyHistoryData? history,
-    double Function(EnergyHistoryPoint p) watts, {
-    double? flatCt,
-  }) {
+  double? importCostCents(EnergyHistoryData? history) {
     if (history == null || history.points.isEmpty || points.isEmpty) return null;
     final bucketHours = history.bucket.inSeconds / 3600.0;
     var cents = 0.0;
     var any = false;
     for (final p in history.points) {
       final price = currentAt(p.time);
-      if (price == null) continue; // only where we have a price (today)
-      final kwh = watts(p) * bucketHours / 1000.0;
-      cents += kwh * (flatCt ?? price.ctPerKwh);
+      if (price == null) continue; // spot varies by hour → only where priced
+      cents += p.gridImportW * bucketHours / 1000.0 * price.ctPerKwh;
       any = true;
     }
     return any ? cents : null;
+  }
+
+  /// Revenue (in cents) from energy exported to the grid over the whole
+  /// [history] window (the previous 24 h), valued at the flat feed-in tariff
+  /// [feedInCt] (Einspeisevergütung). Unlike import, the feed-in rate is flat,
+  /// so it doesn't need the spot curve and covers the full window.
+  double? exportRevenueCents(EnergyHistoryData? history, double feedInCt) {
+    if (history == null || history.points.isEmpty || feedInCt <= 0) return null;
+    return history.gridExportKwh * feedInCt;
   }
 
   /// [markupUeurPerKwh] (grid fees + levies + taxes, net) and [vatPercent] come

@@ -118,7 +118,7 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
             cs.onSurface),
         if (exportCents != null && exportCents > 0) ...[
           const SizedBox(width: 22),
-          stat(eur(exportCents), 'feed-in', _exportColor),
+          stat(eur(exportCents), 'feed-in · 24h', _exportColor),
         ],
         const Spacer(),
         // Current gross price.

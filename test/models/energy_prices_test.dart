@@ -36,18 +36,21 @@ void main() {
         unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
         prices: [200000],
       ));
-      // One 15-min bucket: import 250 Wh (0.25 kWh), export 500 Wh (0.5 kWh).
+      // Bucket 0 (priced): import 250 Wh, export 500 Wh. Bucket 4 is one hour
+      // later — OUTSIDE the single-hour price coverage — exporting 500 Wh.
       final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
         start: Int64(1_000_000),
         bucketSeconds: 900,
         buckets: [
           $proto.EnergyBucket(index: 0, gridImportWh: 250, gridExportWh: 500),
+          $proto.EnergyBucket(index: 4, gridImportWh: 250, gridExportWh: 500),
         ],
       ));
-      // Import: 0.25 kWh × 20 ct = 5 ct.
+      // Import cost is priced-only: just bucket 0 → 0.25 kWh × 20 ct = 5 ct.
       expect(prices.importCostCents(history), closeTo(5.0, 0.001));
-      // Export: 0.5 kWh × 6.7 ct feed-in = 3.35 ct.
-      expect(prices.exportRevenueCents(history, 6.7), closeTo(3.35, 0.001));
+      // Feed-in covers the FULL window (flat rate): (0.5 + 0.5) kWh × 6.7 ct
+      // = 6.7 ct — bucket 4 counts even though it has no spot price.
+      expect(prices.exportRevenueCents(history, 6.7), closeTo(6.7, 0.001));
       expect(prices.importCostCents(null), isNull);
     });
 
