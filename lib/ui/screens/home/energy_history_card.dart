@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:matter_home/models/energy_history.dart';
 import 'package:matter_home/providers/device_provider.dart';
@@ -36,14 +38,29 @@ class EnergyHistoryCard extends StatefulWidget {
 
 class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
   int? _selected; // scrubbed bucket index, or null → show 24h totals
+  Timer? _refresh;
+
+  // How often to re-pull the history while the view is open. The latest 15-min
+  // bucket keeps filling, so a short cadence keeps the tail current.
+  static const _refreshInterval = Duration(seconds: 30);
 
   @override
   void initState() {
     super.initState();
-    // Kick off the first fetch after the frame so provider listeners are set up.
+    // First fetch after the frame so provider listeners are set up, then keep
+    // it current on a timer (provider coalesces concurrent fetches).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<DeviceProvider>().fetchEnergyHistory();
+      if (mounted) context.read<DeviceProvider>().fetchEnergyHistory();
     });
+    _refresh = Timer.periodic(_refreshInterval, (_) {
+      if (mounted) context.read<DeviceProvider>().fetchEnergyHistory();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
   }
 
   @override
