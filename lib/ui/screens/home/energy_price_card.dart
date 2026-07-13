@@ -6,8 +6,9 @@ import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
-const _priceColor   = Color(0xFFE8D66B); // yellow — price bars
-const _consumeColor = Color(0xFFF3B8D6); // pink — consumption overlay
+const _priceColor  = Color(0xFFE8D66B); // yellow — price bars
+const _importColor = Color(0xFFF2A9A0); // coral — grid import overlay
+const _exportColor = Color(0xFFA9E0C0); // mint  — grid export overlay + feed-in
 
 /// A "Prices & consumption" card: the day-ahead spot price curve as bars with a
 /// readable ct/kWh axis, home consumption overlaid, and the aggregated cost of
@@ -100,48 +101,39 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
 
     String eur(double cents) => '€${(cents / 100).toStringAsFixed(2)}';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    Widget stat(String value, String label, Color color) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top-left: cost of imported (bought) energy.
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(importCents == null ? '—' : eur(importCents),
-                    style: tt.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w700, color: cs.onSurface)),
-                Text('import cost',
-                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              ],
+            Text(value,
+                style: tt.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w700, color: color)),
+            Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          ],
+        );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        stat(importCents == null ? '—' : eur(importCents), 'import cost',
+            cs.onSurface),
+        if (exportCents != null && exportCents > 0) ...[
+          const SizedBox(width: 22),
+          stat(eur(exportCents), 'feed-in', _exportColor),
+        ],
+        const Spacer(),
+        // Current gross price.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
+              style: tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700, color: cs.onSurface),
             ),
-            const Spacer(),
-            // Top-right: current gross price.
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
-                  style: tt.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700, color: cs.onSurface),
-                ),
-                Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
-                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              ],
-            ),
+            Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
           ],
         ),
-        if (exportCents != null && exportCents > 0) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Feed-in +${eur(exportCents)}  ·  net '
-            '${eur((importCents ?? 0) - exportCents)}  '
-            '(@ ${feedInCt.toStringAsFixed(1)} ct/kWh)',
-            style: tt.bodySmall?.copyWith(color: const Color(0xFFA9E0C0)),
-          ),
-        ],
       ],
     );
   }
@@ -169,7 +161,8 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
       spacing: 16, runSpacing: 6, alignment: WrapAlignment.center,
       children: [
         _swatch(context, _priceColor, 'Price (ct/kWh)'),
-        _lineSwatch(context, _consumeColor, 'Consumption'),
+        _lineSwatch(context, _importColor, 'Import'),
+        _lineSwatch(context, _exportColor, 'Export'),
       ],
     );
   }
@@ -300,46 +293,37 @@ class _PriceChartPainter extends CustomPainter {
           Paint()..color = _priceColor.withValues(alpha: 0.50));
     }
 
-    // Consumption overlay (its own scale), only over covered time.
+    // Grid import + export overlays (shared scale), only over covered time.
     final h = history;
     if (h != null && h.points.isNotEmpty) {
-      var consMax = 0.0;
+      var flowMax = 0.0;
       for (final hp in h.points) {
-        if (hp.consumptionW > consMax) consMax = hp.consumptionW;
+        if (hp.gridImportW > flowMax) flowMax = hp.gridImportW;
+        if (hp.gridExportW > flowMax) flowMax = hp.gridExportW;
       }
-      if (consMax > 0) {
-        final baseY = _padTop + plotH;
-        final line = Path();
-        final fill = Path();
-        var started = false;
-        double firstX = 0, lastX = 0;
-        for (final hp in h.points) {
-          final ms = hp.time.millisecondsSinceEpoch;
-          if (ms < startMs || ms > endMs) continue;
-          final px = x(ms);
-          final py = _padTop + plotH * (1 - 0.85 * (hp.consumptionW / consMax));
-          if (!started) {
-            line.moveTo(px, py);
-            fill..moveTo(px, baseY)..lineTo(px, py);
-            firstX = px; started = true;
-          } else {
-            line.lineTo(px, py);
-            fill.lineTo(px, py);
+      if (flowMax > 0) {
+        void trace(double Function(EnergyHistoryPoint) sel, Color c) {
+          final line = Path();
+          var started = false;
+          for (final hp in h.points) {
+            final ms = hp.time.millisecondsSinceEpoch;
+            if (ms < startMs || ms > endMs) continue;
+            final px = x(ms);
+            final py = _padTop + plotH * (1 - 0.85 * (sel(hp) / flowMax));
+            if (!started) { line.moveTo(px, py); started = true; }
+            else { line.lineTo(px, py); }
           }
-          lastX = px;
-        }
-        if (started) {
-          fill..lineTo(lastX, baseY)..lineTo(firstX, baseY)..close();
-          canvas.drawPath(fill, Paint()..color = _consumeColor.withValues(alpha: 0.18));
           canvas.drawPath(
               line,
               Paint()
-                ..color = _consumeColor
+                ..color = c
                 ..style = PaintingStyle.stroke
                 ..strokeWidth = 2
                 ..strokeJoin = StrokeJoin.round
                 ..isAntiAlias = true);
         }
+        trace((hp) => hp.gridExportW, _exportColor);
+        trace((hp) => hp.gridImportW, _importColor);
       }
     }
 
