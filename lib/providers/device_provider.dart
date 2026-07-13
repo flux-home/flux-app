@@ -18,6 +18,7 @@ import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:uuid/uuid.dart';
@@ -196,14 +197,18 @@ class DeviceProvider extends ChangeNotifier {
   EnergyPrices? _energyPrices;
   bool _energyPricesLoading = false;
   Future<void>? _energyPricesInflight;
+  $proto.PricingConfig? _pricingConfig; // tariff markup + VAT applied to prices
 
   /// Last-fetched day-ahead price curve, or null if never loaded / pricing
-  /// disabled on the controller.
+  /// disabled on the controller. Prices are gross (tariff markup + VAT applied).
   EnergyPrices? get energyPrices => _energyPrices;
   bool get energyPricesLoading => _energyPricesLoading;
 
-  /// Fetch the current + upcoming day-ahead price curve (GET /prices). No-op
-  /// without a controller; coalesced; a transient failure keeps prior data.
+  /// The controller's pricing config (tariff markup, VAT, provider…), if loaded.
+  $proto.PricingConfig? get pricingConfig => _pricingConfig;
+
+  /// Fetch the day-ahead price curve (GET /prices) + tariff config, and build
+  /// the gross consumer prices. No-op without a controller; coalesced.
   Future<void> fetchEnergyPrices() {
     final inflight = _energyPricesInflight;
     if (inflight != null) return inflight;
@@ -214,9 +219,17 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
 
     final f = () async {
+      final cfg = await svc.getPricingConfig();
       final c = await svc.getPrices();
       if (_disposed) return;
-      if (c != null) _energyPrices = EnergyPrices.fromProto(c);
+      if (cfg != null) _pricingConfig = cfg;
+      if (c != null) {
+        _energyPrices = EnergyPrices.fromProto(
+          c,
+          markupUeurPerKwh: _pricingConfig?.markupUeurPerKwh ?? 0,
+          vatPercent: _pricingConfig?.vatPercent ?? 0,
+        );
+      }
     }();
     _energyPricesInflight = f.whenComplete(() {
       _energyPricesInflight = null;
@@ -224,6 +237,28 @@ class DeviceProvider extends ChangeNotifier {
       if (!_disposed) notifyListeners();
     });
     return _energyPricesInflight!;
+  }
+
+  /// Update the tariff (grid fees + levies + taxes as [markupUeurPerKwh], and
+  /// [vatPercent]) on the controller, preserving the rest of the config, then
+  /// re-fetch so prices reflect the real consumer price. Returns false on error.
+  Future<bool> updateTariff({
+    required int markupUeurPerKwh,
+    required int vatPercent,
+  }) async {
+    final svc = _ctrlService;
+    if (svc == null) return false;
+    final cfg = _pricingConfig ?? await svc.getPricingConfig();
+    if (cfg == null) return false;
+    cfg
+      ..markupUeurPerKwh = markupUeurPerKwh
+      ..vatPercent = vatPercent;
+    final ok = await svc.setPricingConfig(cfg);
+    if (ok) {
+      _pricingConfig = cfg;
+      await fetchEnergyPrices();
+    }
+    return ok;
   }
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.

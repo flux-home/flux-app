@@ -63,15 +63,28 @@ class EnergyPrices {
     return any ? cents : null;
   }
 
-  factory EnergyPrices.fromProto($proto.PriceCurve c) {
+  /// [markupUeurPerKwh] (grid fees + levies + taxes, net) and [vatPercent] come
+  /// from the controller's PricingConfig and turn the raw wholesale spot curve
+  /// into the gross consumer price the user actually pays:
+  ///   gross_ct = (spot_ct + markup_ct) × (1 + vat/100).
+  factory EnergyPrices.fromProto(
+    $proto.PriceCurve c, {
+    int markupUeurPerKwh = 0,
+    int vatPercent = 0,
+  }) {
     final res = c.resolutionSeconds == 0 ? 3600 : c.resolutionSeconds;
     final start = c.startEpoch.toInt();
 
-    // Convert the stored unit to ct/kWh. Canonical is µEUR/kWh (÷10000);
-    // EUR/MWh (informational) is ÷10.
+    // Convert the stored unit to net ct/kWh. Canonical is µEUR/kWh (÷10000);
+    // EUR/MWh (informational) is ÷10. Then add the tariff markup + VAT to reach
+    // the gross consumer price.
     final divisor =
         c.unit == $enum.PriceUnit.PRICE_UNIT_EUR_PER_MWH ? 10.0 : 10000.0;
-    final cts = c.prices.map((p) => p / divisor).toList(growable: false);
+    final markupCt = markupUeurPerKwh / 10000.0;
+    final vatMul = 1 + vatPercent / 100.0;
+    final cts = c.prices
+        .map((p) => (p / divisor + markupCt) * vatMul)
+        .toList(growable: false);
 
     final currency = c.currency.isNotEmpty ? c.currency : 'EUR';
     if (cts.isEmpty) {

@@ -49,6 +49,21 @@ void main() {
       expect(prices.consumptionCostCents(null), isNull);
     });
 
+    test('markup + VAT yield the gross consumer price', () {
+      // Spot 11.31 ct/kWh (=113100 µEUR/kWh), + 11.04 ct fees, × 1.19 VAT
+      // = 26.60 ct/kWh — matches the awattar bill's Arbeitspreis.
+      final p = EnergyPrices.fromProto(
+        $proto.PriceCurve(
+          resolutionSeconds: 3600,
+          unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
+          prices: [113100],
+        ),
+        markupUeurPerKwh: 110400, // 11.04 ct/kWh
+        vatPercent: 19,
+      );
+      expect(p.points.first.ctPerKwh, closeTo(26.60, 0.02));
+    });
+
     test('negative prices convert and stay negative', () {
       final c = $proto.PriceCurve(
         resolutionSeconds: 3600,

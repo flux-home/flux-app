@@ -187,6 +187,24 @@ class FluxCoapService implements MatterPort {
     }
   }
 
+  /// Pricing acquisition + tariff settings (GET /prices/config).
+  Future<$proto.PricingConfig?> getPricingConfig() async {
+    final b = await _get('/prices/config', timeout: _timeout15);
+    if (b == null) return null;
+    try { return $proto.PricingConfig.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getPricingConfig: $e');
+      return null;
+    }
+  }
+
+  /// Persist pricing config (POST /prices/config). Send the full config — it
+  /// replaces the stored one.
+  Future<bool> setPricingConfig($proto.PricingConfig cfg) async {
+    final resp = await _post('/prices/config', cfg.writeToBuffer());
+    return resp != null;
+  }
+
   /// Push the user's energy-role assignments so the controller classifies the
   /// energy log by role (which node is PV / battery / grid) instead of guessing
   /// from the Modbus profile. [nodeToClass] maps node id → flux_EnergyClass code

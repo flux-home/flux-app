@@ -9,6 +9,7 @@ import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
+import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:provider/provider.dart';
@@ -363,6 +364,24 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                           context,
                           MaterialPageRoute<void>(
                             builder: (_) => const ModbusDevicesScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Card(
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: ListTile(
+                        leading: Icon(Icons.euro_outlined, color: cs.primary),
+                        title: const Text('Electricity tariff'),
+                        subtitle: const Text('Fees, levies & VAT on top of spot'),
+                        trailing: const Icon(Icons.chevron_right),
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(16)),
+                        ),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const TariffSettingsScreen(),
                           ),
                         ),
                       ),
