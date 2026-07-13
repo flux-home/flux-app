@@ -160,22 +160,11 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     return Wrap(
       spacing: 16, runSpacing: 6, alignment: WrapAlignment.center,
       children: [
-        _swatch(context, _priceColor, 'Price (ct/kWh)'),
+        _lineSwatch(context, _priceColor, 'Price (ct/kWh)'),
         _lineSwatch(context, _importColor, 'Import'),
         _lineSwatch(context, _exportColor, 'Export'),
       ],
     );
-  }
-
-  Widget _swatch(BuildContext context, Color c, String label) {
-    final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 12, height: 12, decoration:
-          BoxDecoration(color: c, borderRadius: BorderRadius.circular(3))),
-      const SizedBox(width: 6),
-      Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-    ]);
   }
 
   Widget _lineSwatch(BuildContext context, Color c, String label) {
@@ -279,19 +268,31 @@ class _PriceChartPainter extends CustomPainter {
         ..layout();
       tp.paint(canvas, Offset(_padLeft - tp.width - 4, gy - tp.height / 2));
     }
-    final zeroY = yPrice(0);
 
-    // Price bars (single colour; readable against the labelled axis).
+    // Price as a stepped line — each interval held flat at its price, with
+    // risers at the interval boundaries (no fill).
+    final priceLine = Path();
+    var startedPrice = false;
     for (final p in pts) {
       final x0 = x(p.time.millisecondsSinceEpoch);
       final x1 = x(p.time.millisecondsSinceEpoch + resMs);
-      if (x1 < _padLeft || x0 > size.width) continue; // outside the window
       final yv = yPrice(p.ctPerKwh);
-      final top = p.ctPerKwh >= 0 ? yv : zeroY;
-      final bot = p.ctPerKwh >= 0 ? zeroY : yv;
-      canvas.drawRect(Rect.fromLTRB(x0 + 0.5, top, x1 - 0.5, bot),
-          Paint()..color = _priceColor.withValues(alpha: 0.50));
+      if (!startedPrice) {
+        priceLine.moveTo(x0, yv);
+        startedPrice = true;
+      } else {
+        priceLine.lineTo(x0, yv); // riser to this interval's level
+      }
+      priceLine.lineTo(x1, yv);    // hold flat across the interval
     }
+    canvas.drawPath(
+        priceLine,
+        Paint()
+          ..color = _priceColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..strokeJoin = StrokeJoin.round
+          ..isAntiAlias = true);
 
     // Grid import + export overlays (shared scale), only over covered time.
     final h = history;
