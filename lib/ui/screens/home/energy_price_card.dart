@@ -334,22 +334,28 @@ class _PriceChartPainter extends CustomPainter {
           Paint()..color = labelColor.withValues(alpha: 0.7)..strokeWidth = 1);
     }
 
-    // X labels at each midnight + noon within the window.
+    // Vertical time gridlines + labels every 3 hours across the window, so the
+    // time scale is readable (midnight is emphasised).
     for (final p in pts) {
       final t = p.time;
       final ms = t.millisecondsSinceEpoch;
       if (ms < startMs || ms > endMs) continue;
-      if (t.minute == 0 && (t.hour == 0 || t.hour == 12)) {
-        final lx = x(ms);
-        canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
-            Paint()..color = axisColor.withValues(alpha: 0.35)..strokeWidth = 1);
-        tp
-          ..text = TextSpan(
-              text: t.hour == 0 ? '00:00' : '12:00',
-              style: TextStyle(color: labelColor, fontSize: 9))
-          ..layout();
-        tp.paint(canvas, Offset(lx + 2, size.height - tp.height));
-      }
+      if (t.minute != 0 || t.hour % 3 != 0) continue;
+      final lx = x(ms);
+      final midnight = t.hour == 0;
+      canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
+          Paint()
+            ..color = axisColor.withValues(alpha: midnight ? 0.45 : 0.20)
+            ..strokeWidth = 1);
+      tp
+        ..text = TextSpan(
+            text: '${t.hour.toString().padLeft(2, '0')}:00',
+            style: TextStyle(
+                color: labelColor,
+                fontSize: 8.5,
+                fontWeight: midnight ? FontWeight.w700 : FontWeight.w400))
+        ..layout();
+      tp.paint(canvas, Offset(lx - tp.width / 2, size.height - tp.height));
     }
   }
 
