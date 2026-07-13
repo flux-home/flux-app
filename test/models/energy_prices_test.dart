@@ -28,7 +28,7 @@ void main() {
       expect(p.avgCt, closeTo(20, 0.001));
     });
 
-    test('consumptionCostCents values each bucket at its covering price', () {
+    test('import cost + export revenue over the covered window', () {
       // Price: 20 ct/kWh for a full hour starting at T.
       final prices = EnergyPrices.fromProto($proto.PriceCurve(
         startEpoch: Int64(1_000_000),
@@ -36,17 +36,19 @@ void main() {
         unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
         prices: [200000],
       ));
-      // Consumption: one 15-min bucket importing 250 Wh = 1000 W avg = 0.25 kWh
-      // (whole-home consumption from the balance = import here).
+      // One 15-min bucket: import 250 Wh (0.25 kWh), export 500 Wh (0.5 kWh).
       final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
         start: Int64(1_000_000),
         bucketSeconds: 900,
-        buckets: [$proto.EnergyBucket(index: 0, gridImportWh: 250)],
+        buckets: [
+          $proto.EnergyBucket(index: 0, gridImportWh: 250, gridExportWh: 500),
+        ],
       ));
-      // 0.25 kWh × 20 ct/kWh = 5 ct.
-      expect(prices.consumptionCostCents(history), closeTo(5.0, 0.001));
-      // No history → null.
-      expect(prices.consumptionCostCents(null), isNull);
+      // Import: 0.25 kWh × 20 ct = 5 ct.
+      expect(prices.importCostCents(history), closeTo(5.0, 0.001));
+      // Export: 0.5 kWh × 6.7 ct feed-in = 3.35 ct.
+      expect(prices.exportRevenueCents(history, 6.7), closeTo(3.35, 0.001));
+      expect(prices.importCostCents(null), isNull);
     });
 
     test('markup + VAT yield the gross consumer price', () {

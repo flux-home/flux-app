@@ -6,7 +6,7 @@ import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
-const _priceColor   = Color(0xFF8FC7E8); // blue — price bars
+const _priceColor   = Color(0xFFE8D66B); // yellow — price bars
 const _consumeColor = Color(0xFFF3B8D6); // pink — consumption overlay
 
 /// A "Prices & consumption" card: the day-ahead spot price curve as bars with a
@@ -59,7 +59,8 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
             if (prices == null || prices.isEmpty)
               _placeholder(context, loading)
             else ...[
-              _readout(context, prices, history),
+              _readout(context, prices, history,
+                  (provider.pricingConfig?.feedInUeurPerKwh ?? 0) / 10000.0),
               const SizedBox(height: 10),
               _chart(prices, history),
               const SizedBox(height: 12),
@@ -88,49 +89,59 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     );
   }
 
-  Widget _readout(BuildContext context, EnergyPrices prices, EnergyHistoryData? history) {
+  Widget _readout(BuildContext context, EnergyPrices prices,
+      EnergyHistoryData? history, double feedInCt) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final cur = prices.currentAt(now);
-    final costCents = prices.consumptionCostCents(history);
+    final importCents = prices.importCostCents(history);
+    final exportCents = feedInCt > 0 ? prices.exportRevenueCents(history, feedInCt) : null;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    String eur(double cents) => '€${(cents / 100).toStringAsFixed(2)}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Top-left: aggregated cost of consumed energy.
-        Column(
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+            // Top-left: cost of imported (bought) energy.
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  costCents == null ? '—' : '€${(costCents / 100).toStringAsFixed(2)}',
-                  style: tt.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700, color: cs.onSurface),
-                ),
+                Text(importCents == null ? '—' : eur(importCents),
+                    style: tt.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w700, color: cs.onSurface)),
+                Text('import cost',
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
               ],
             ),
-            Text('consumption cost',
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-          ],
-        ),
-        const Spacer(),
-        // Top-right: current spot price.
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
-              style: tt.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700, color: cs.onSurface),
+            const Spacer(),
+            // Top-right: current gross price.
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
+                  style: tt.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700, color: cs.onSurface),
+                ),
+                Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              ],
             ),
-            Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
           ],
         ),
+        if (exportCents != null && exportCents > 0) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Feed-in +${eur(exportCents)}  ·  net '
+            '${eur((importCents ?? 0) - exportCents)}  '
+            '(@ ${feedInCt.toStringAsFixed(1)} ct/kWh)',
+            style: tt.bodySmall?.copyWith(color: const Color(0xFFA9E0C0)),
+          ),
+        ],
       ],
     );
   }

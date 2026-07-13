@@ -19,6 +19,7 @@ class TariffSettingsScreen extends StatefulWidget {
 class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
   final _fees = TextEditingController();
   final _vat = TextEditingController();
+  final _feedIn = TextEditingController();
   bool _loaded = false;
   bool _saving = false;
 
@@ -38,6 +39,7 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
     if (cfg != null && !_loaded) {
       _fees.text = (cfg.markupUeurPerKwh / 10000.0).toStringAsFixed(2);
       _vat.text = cfg.vatPercent.toString();
+      _feedIn.text = (cfg.feedInUeurPerKwh / 10000.0).toStringAsFixed(1);
       setState(() => _loaded = true);
     }
   }
@@ -46,12 +48,14 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
   void dispose() {
     _fees.dispose();
     _vat.dispose();
+    _feedIn.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final feesCt = double.tryParse(_fees.text.replaceAll(',', '.'));
     final vat = int.tryParse(_vat.text.trim());
+    final feedInCt = double.tryParse(_feedIn.text.replaceAll(',', '.')) ?? 0;
     if (feesCt == null || vat == null) {
       _snack('Enter valid numbers');
       return;
@@ -60,6 +64,7 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
     final ok = await context.read<DeviceProvider>().updateTariff(
           markupUeurPerKwh: (feesCt * 10000).round(),
           vatPercent: vat,
+          feedInUeurPerKwh: (feedInCt * 10000).round(),
         );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -119,10 +124,25 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _feedIn,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Feed-in tariff (Einspeisevergütung)',
+              helperText: 'Paid per kWh exported to the grid (e.g. 6.7)',
+              suffixText: 'ct/kWh',
+              border: OutlineInputBorder(),
+            ),
+          ),
           const SizedBox(height: 12),
           Text(
-            'Gross price = (spot + fees) × (1 + VAT). A fixed monthly base fee '
-            '(if any) isn\'t part of the per-kWh price.',
+            'Gross price = (spot + fees) × (1 + VAT). Feed-in credits exported '
+            'energy. A fixed monthly base fee (if any) isn\'t part of the '
+            'per-kWh price.',
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 24),

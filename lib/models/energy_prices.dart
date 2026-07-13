@@ -45,19 +45,34 @@ class EnergyPrices {
     return null;
   }
 
-  /// Total cost (in cents) of the consumed energy in [history], each bucket
-  /// valued at the spot price covering its time. Null when there's no overlap
-  /// between consumption and price coverage.
-  double? consumptionCostCents(EnergyHistoryData? history) {
+  /// Cost (in cents) of the energy imported from the grid in [history], each
+  /// bucket valued at the (gross) price covering its time. This is what the user
+  /// actually pays. Null when there's no overlap with price coverage.
+  double? importCostCents(EnergyHistoryData? history) =>
+      _weightedCents(history, (p) => p.gridImportW);
+
+  /// Revenue (in cents) from energy exported to the grid in [history], valued at
+  /// the flat feed-in tariff [feedInCt] (Einspeisevergütung). Restricted to the
+  /// same price-covered window as [importCostCents] so the two pair up.
+  double? exportRevenueCents(EnergyHistoryData? history, double feedInCt) =>
+      _weightedCents(history, (p) => p.gridExportW, flatCt: feedInCt);
+
+  /// Σ over price-covered buckets of `power_kWh × ct`, where ct is either a flat
+  /// rate [flatCt] or the spot price at the bucket time via [priceOf].
+  double? _weightedCents(
+    EnergyHistoryData? history,
+    double Function(EnergyHistoryPoint p) watts, {
+    double? flatCt,
+  }) {
     if (history == null || history.points.isEmpty || points.isEmpty) return null;
     final bucketHours = history.bucket.inSeconds / 3600.0;
     var cents = 0.0;
     var any = false;
     for (final p in history.points) {
       final price = currentAt(p.time);
-      if (price == null) continue;
-      final kwh = p.consumptionW * bucketHours / 1000.0;
-      cents += kwh * price.ctPerKwh;
+      if (price == null) continue; // only where we have a price (today)
+      final kwh = watts(p) * bucketHours / 1000.0;
+      cents += kwh * (flatCt ?? price.ctPerKwh);
       any = true;
     }
     return any ? cents : null;

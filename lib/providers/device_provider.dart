@@ -245,6 +245,7 @@ class DeviceProvider extends ChangeNotifier {
   Future<bool> updateTariff({
     required int markupUeurPerKwh,
     required int vatPercent,
+    required int feedInUeurPerKwh,
   }) async {
     final svc = _ctrlService;
     if (svc == null) return false;
@@ -252,7 +253,8 @@ class DeviceProvider extends ChangeNotifier {
     if (cfg == null) return false;
     cfg
       ..markupUeurPerKwh = markupUeurPerKwh
-      ..vatPercent = vatPercent;
+      ..vatPercent = vatPercent
+      ..feedInUeurPerKwh = feedInUeurPerKwh;
     final ok = await svc.setPricingConfig(cfg);
     if (ok) {
       _pricingConfig = cfg;

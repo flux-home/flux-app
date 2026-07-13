@@ -854,6 +854,13 @@ const PricingConfig$json = {
       '10': 'markupUeurPerKwh'
     },
     {'1': 'vat_percent', '3': 8, '4': 1, '5': 13, '10': 'vatPercent'},
+    {
+      '1': 'feed_in_ueur_per_kwh',
+      '3': 9,
+      '4': 1,
+      '5': 17,
+      '10': 'feedInUeurPerKwh'
+    },
   ],
 };
 
@@ -863,4 +870,5 @@ final $typed_data.Uint8List pricingConfigDescriptor = $convert.base64Decode(
     'ABKAlSCHByb3ZpZGVyEhIKBHpvbmUYAyABKAlSBHpvbmUSGwoJYXBpX3Rva2VuGAQgASgJUghh'
     'cGlUb2tlbhIZCghiYXNlX3VybBgFIAEoCVIHYmFzZVVybBIoChBmZXRjaF9ob3VyX2xvY2FsGA'
     'YgASgNUg5mZXRjaEhvdXJMb2NhbBItChNtYXJrdXBfdWV1cl9wZXJfa3doGAcgASgRUhBtYXJr'
-    'dXBVZXVyUGVyS3doEh8KC3ZhdF9wZXJjZW50GAggASgNUgp2YXRQZXJjZW50');
+    'dXBVZXVyUGVyS3doEh8KC3ZhdF9wZXJjZW50GAggASgNUgp2YXRQZXJjZW50Ei4KFGZlZWRfaW'
+    '5fdWV1cl9wZXJfa3doGAkgASgRUhBmZWVkSW5VZXVyUGVyS3do');

@@ -3285,6 +3285,7 @@ class PricingConfig extends $pb.GeneratedMessage {
     $core.int? fetchHourLocal,
     $core.int? markupUeurPerKwh,
     $core.int? vatPercent,
+    $core.int? feedInUeurPerKwh,
   }) {
     final result = create();
     if (enabled != null) result.enabled = enabled;
@@ -3295,6 +3296,7 @@ class PricingConfig extends $pb.GeneratedMessage {
     if (fetchHourLocal != null) result.fetchHourLocal = fetchHourLocal;
     if (markupUeurPerKwh != null) result.markupUeurPerKwh = markupUeurPerKwh;
     if (vatPercent != null) result.vatPercent = vatPercent;
+    if (feedInUeurPerKwh != null) result.feedInUeurPerKwh = feedInUeurPerKwh;
     return result;
   }
 
@@ -3321,6 +3323,8 @@ class PricingConfig extends $pb.GeneratedMessage {
     ..aI(7, _omitFieldNames ? '' : 'markupUeurPerKwh',
         fieldType: $pb.PbFieldType.OS3)
     ..aI(8, _omitFieldNames ? '' : 'vatPercent', fieldType: $pb.PbFieldType.OU3)
+    ..aI(9, _omitFieldNames ? '' : 'feedInUeurPerKwh',
+        fieldType: $pb.PbFieldType.OS3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3413,6 +3417,15 @@ class PricingConfig extends $pb.GeneratedMessage {
   $core.bool hasVatPercent() => $_has(7);
   @$pb.TagNumber(8)
   void clearVatPercent() => $_clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.int get feedInUeurPerKwh => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set feedInUeurPerKwh($core.int value) => $_setSignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasFeedInUeurPerKwh() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearFeedInUeurPerKwh() => $_clearField(9);
 }
 
 const $core.bool _omitFieldNames =
