@@ -269,6 +269,11 @@ class _PriceChartPainter extends CustomPainter {
       tp.paint(canvas, Offset(_padLeft - tp.width - 4, gy - tp.height / 2));
     }
 
+    // Clip data traces to the plot rect so lines/steps never spill past the
+    // axes into the padding or neighbouring widgets.
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(_padLeft, _padTop, size.width, _padTop + plotH));
+
     // Price as a stepped line — each interval held flat at its price, with
     // risers at the interval boundaries (no fill).
     final priceLine = Path();
@@ -334,6 +339,8 @@ class _PriceChartPainter extends CustomPainter {
       canvas.drawLine(Offset(nx, _padTop), Offset(nx, _padTop + plotH),
           Paint()..color = labelColor.withValues(alpha: 0.7)..strokeWidth = 1);
     }
+
+    canvas.restore(); // end plot clip
 
     // Vertical time gridlines + labels every 3 hours across the window, so the
     // time scale is readable (midnight is emphasised).
