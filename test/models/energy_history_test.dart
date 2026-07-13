@@ -37,17 +37,41 @@ void main() {
     });
 
     test('self-sufficiency: none imported → 100%, all imported → 0%', () {
+      // All consumption from own PV (no import) → 100%.
       final selfSufficient = EnergyHistoryData.fromProto($proto.EnergyHistory(
         bucketSeconds: 900,
-        buckets: [$proto.EnergyBucket(index: 0, loadWh: 400, pvWh: 400)],
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 400)],
       ));
+      expect(selfSufficient.consumptionKwh, closeTo(0.4, 0.0001));
       expect(selfSufficient.selfSufficiencyPercent, 100);
 
+      // All consumption from the grid (no generation) → 0%.
       final fromGrid = EnergyHistoryData.fromProto($proto.EnergyHistory(
         bucketSeconds: 900,
-        buckets: [$proto.EnergyBucket(index: 0, loadWh: 400, gridImportWh: 400)],
+        buckets: [$proto.EnergyBucket(index: 0, gridImportWh: 400)],
       ));
+      expect(fromGrid.consumptionKwh, closeTo(0.4, 0.0001));
       expect(fromGrid.selfSufficiencyPercent, 0);
+    });
+
+    test('consumption + self-sufficiency use the energy balance', () {
+      // Generated 1000, exported 600, imported 200, battery charge 100:
+      //   consumption = 1000 + 200 + 0 − 600 − 100 = 500 Wh
+      //   self-consumed = 500 − 200 = 300 → 60%.
+      final d = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [
+          $proto.EnergyBucket(
+            index: 0,
+            pvWh: 1000,
+            gridExportWh: 600,
+            gridImportWh: 200,
+            batteryChargeWh: 100,
+          ),
+        ],
+      ));
+      expect(d.consumptionKwh, closeTo(0.5, 0.0001));
+      expect(d.selfSufficiencyPercent, 60);
     });
 
     test('per-PV device series decode: aligned watts, totals, and names', () {
@@ -96,10 +120,12 @@ void main() {
     });
 
     test('no consumption → null self-sufficiency, empty history is empty', () {
+      // Everything generated was exported → zero net consumption → null.
       final none = EnergyHistoryData.fromProto($proto.EnergyHistory(
         bucketSeconds: 900,
-        buckets: [$proto.EnergyBucket(index: 0, pvWh: 100)],
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 100, gridExportWh: 100)],
       ));
+      expect(none.consumptionKwh, 0);
       expect(none.selfSufficiencyPercent, isNull);
 
       final empty = EnergyHistoryData.fromProto($proto.EnergyHistory());

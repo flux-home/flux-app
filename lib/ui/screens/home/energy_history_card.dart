@@ -260,7 +260,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
     return Column(children: [
       Row(children: [
         _kpi(context, 'Generated', data.pvKwh, _pvColor),
-        _kpi(context, 'Consumed', data.loadKwh, _loadColor),
+        _kpi(context, 'Consumed', data.consumptionKwh, _loadColor),
       ]),
       const SizedBox(height: 10),
       Row(children: [

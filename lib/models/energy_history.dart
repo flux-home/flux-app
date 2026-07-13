@@ -60,6 +60,8 @@ class EnergyHistoryData {
     required this.gridImportKwh,
     required this.gridExportKwh,
     required this.loadKwh,
+    this.batteryChargeKwh = 0,
+    this.batteryDischargeKwh = 0,
     this.pvSeries = const [],
   });
 
@@ -71,7 +73,11 @@ class EnergyHistoryData {
   final double pvKwh;
   final double gridImportKwh;
   final double gridExportKwh;
+  /// Sum of load-classed devices' consumption (monitored appliances only — not
+  /// necessarily whole-home; prefer [consumptionKwh] for totals).
   final double loadKwh;
+  final double batteryChargeKwh;
+  final double batteryDischargeKwh;
 
   /// Per-inverter PV breakdown, when the controller reports it. Empty → only the
   /// summed PV total ([pvKwh] / [EnergyHistoryPoint.pvW]) is available.
@@ -103,12 +109,28 @@ class EnergyHistoryData {
     return peak;
   }
 
-  /// Share of consumption covered without buying from the grid, 0–100.
-  /// `(consumed − imported) / consumed`. Null when there was no consumption.
+  /// Whole-home consumption over the window, from the energy balance:
+  ///   consumption = generated + imported + battery discharge
+  ///               − exported − battery charge
+  /// This is grounded in the grid + PV (+ battery) meters, so it's robust even
+  /// when individual loads aren't metered (unlike [loadKwh]). Clamped ≥ 0.
+  double get consumptionKwh {
+    final c = pvKwh +
+        gridImportKwh +
+        batteryDischargeKwh -
+        gridExportKwh -
+        batteryChargeKwh;
+    return c > 0 ? c : 0;
+  }
+
+  /// Share of consumption met from own generation/storage rather than bought
+  /// from the grid, 0–100: `(consumed − imported) / consumed`. Null when there
+  /// was no consumption.
   int? get selfSufficiencyPercent {
-    if (loadKwh <= 0) return null;
-    final ratio = (loadKwh - gridImportKwh) / loadKwh;
-    return (ratio.clamp(0.0, 1.0) * 100).round();
+    final c = consumptionKwh;
+    if (c <= 0) return null;
+    final selfConsumed = c - gridImportKwh;
+    return ((selfConsumed / c).clamp(0.0, 1.0) * 100).round();
   }
 
   factory EnergyHistoryData.fromProto($proto.EnergyHistory h) {
@@ -120,12 +142,14 @@ class EnergyHistoryData {
     double watts(int wh) => wh / perHour;
 
     final points = <EnergyHistoryPoint>[];
-    var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0;
+    var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0, batChgWh = 0, batDisWh = 0;
     for (final b in h.buckets) {
       pvWh += b.pvWh;
       impWh += b.gridImportWh;
       expWh += b.gridExportWh;
       loadWh += b.loadWh;
+      batChgWh += b.batteryChargeWh;
+      batDisWh += b.batteryDischargeWh;
       points.add(EnergyHistoryPoint(
         time: DateTime.fromMillisecondsSinceEpoch(
             (start + b.index * bucketSec) * 1000),
@@ -164,6 +188,8 @@ class EnergyHistoryData {
       gridImportKwh: impWh / 1000.0,
       gridExportKwh: expWh / 1000.0,
       loadKwh: loadWh / 1000.0,
+      batteryChargeKwh: batChgWh / 1000.0,
+      batteryDischargeKwh: batDisWh / 1000.0,
       pvSeries: pvSeries,
     );
   }
