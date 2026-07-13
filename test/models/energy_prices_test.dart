@@ -1,5 +1,6 @@
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter_home/models/energy_history.dart';
 import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 import 'package:matter_home/services/proto/flux.pbenum.dart' as $enum;
@@ -27,15 +28,25 @@ void main() {
       expect(p.avgCt, closeTo(20, 0.001));
     });
 
-    test('tercile bands: cheapest→cheap, dearest→expensive', () {
-      final c = $proto.PriceCurve(
+    test('consumptionCostCents values each bucket at its covering price', () {
+      // Price: 20 ct/kWh for a full hour starting at T.
+      final prices = EnergyPrices.fromProto($proto.PriceCurve(
+        startEpoch: Int64(1_000_000),
         resolutionSeconds: 3600,
         unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
-        prices: [50000, 100000, 150000, 200000, 250000, 300000],
-      );
-      final p = EnergyPrices.fromProto(c);
-      expect(p.points.first.level, PriceLevel.cheap);
-      expect(p.points.last.level, PriceLevel.expensive);
+        prices: [200000],
+      ));
+      // Consumption: one 15-min bucket importing 250 Wh = 1000 W avg = 0.25 kWh
+      // (whole-home consumption from the balance = import here).
+      final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        start: Int64(1_000_000),
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0, gridImportWh: 250)],
+      ));
+      // 0.25 kWh × 20 ct/kWh = 5 ct.
+      expect(prices.consumptionCostCents(history), closeTo(5.0, 0.001));
+      // No history → null.
+      expect(prices.consumptionCostCents(null), isNull);
     });
 
     test('negative prices convert and stay negative', () {

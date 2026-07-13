@@ -6,27 +6,12 @@ import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
-// Price-level bands (pastel, shared with the rest of the energy palette).
-const _cheapColor     = Color(0xFFA9E0C0); // mint
-const _normalColor    = Color(0xFFF6D08A); // amber
-const _expensiveColor = Color(0xFFF2A9A0); // coral
-const _consumeColor   = Color(0xFFF3B8D6); // pink — consumption overlay
+const _priceColor   = Color(0xFF8FC7E8); // blue — price bars
+const _consumeColor = Color(0xFFF3B8D6); // pink — consumption overlay
 
-Color _levelColor(PriceLevel l) => switch (l) {
-      PriceLevel.cheap => _cheapColor,
-      PriceLevel.normal => _normalColor,
-      PriceLevel.expensive => _expensiveColor,
-    };
-
-String _levelLabel(PriceLevel l) => switch (l) {
-      PriceLevel.cheap => 'Cheap',
-      PriceLevel.normal => 'Normal',
-      PriceLevel.expensive => 'Expensive',
-    };
-
-/// A "Prices & consumption" card: the day-ahead spot price curve as colour-banded
-/// bars (cheap / normal / expensive) over time, with home consumption overlaid,
-/// so you can see whether you draw power when it's cheap or expensive.
+/// A "Prices & consumption" card: the day-ahead spot price curve as bars with a
+/// readable ct/kWh axis, home consumption overlaid, and the aggregated cost of
+/// consumed energy shown top-left.
 class EnergyPriceCard extends StatefulWidget {
   const EnergyPriceCard({super.key});
 
@@ -44,7 +29,6 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DeviceProvider>().fetchEnergyPrices();
     });
-    // Re-fetch + rebuild so the "now" marker and current-price readout advance.
     _refresh = Timer.periodic(_refreshInterval, (_) {
       if (mounted) context.read<DeviceProvider>().fetchEnergyPrices();
     });
@@ -75,7 +59,7 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
             if (prices == null || prices.isEmpty)
               _placeholder(context, loading)
             else ...[
-              _readout(context, prices),
+              _readout(context, prices, history),
               const SizedBox(height: 10),
               _chart(prices, history),
               const SizedBox(height: 12),
@@ -104,53 +88,50 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     );
   }
 
-  Widget _readout(BuildContext context, EnergyPrices prices) {
+  Widget _readout(BuildContext context, EnergyPrices prices, EnergyHistoryData? history) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final cur = prices.currentAt(now);
+    final costCents = prices.consumptionCostCents(history);
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (cur != null) ...[
-          Text(cur.ctPerKwh.toStringAsFixed(1),
-              style: tt.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700, color: cs.onSurface)),
-          Text(' ct/kWh',
-              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 3),
-            child: _levelBadge(cur.level),
-          ),
-        ] else
-          Text('— ct/kWh',
-              style: tt.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700, color: cs.onSurfaceVariant)),
+        // Top-left: aggregated cost of consumed energy.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  costCents == null ? '—' : '€${(costCents / 100).toStringAsFixed(2)}',
+                  style: tt.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700, color: cs.onSurface),
+                ),
+              ],
+            ),
+            Text('consumption cost',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          ],
+        ),
         const Spacer(),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Text(
-            'Ø ${prices.avgCt.toStringAsFixed(1)} · '
-            '${prices.minCt.toStringAsFixed(1)}–${prices.maxCt.toStringAsFixed(1)}',
-            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          ),
+        // Top-right: current spot price.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
+              style: tt.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700, color: cs.onSurface),
+            ),
+            Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          ],
         ),
       ],
-    );
-  }
-
-  Widget _levelBadge(PriceLevel level) {
-    final c = _levelColor(level);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c, width: 1.2),
-      ),
-      child: Text(_levelLabel(level),
-          style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 
@@ -164,7 +145,7 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
             prices: prices,
             history: history,
             now: DateTime.now(),
-            axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
+            axisColor: cs.onSurfaceVariant.withValues(alpha: 0.28),
             labelColor: cs.onSurfaceVariant,
           ),
         );
@@ -176,9 +157,7 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     return Wrap(
       spacing: 16, runSpacing: 6, alignment: WrapAlignment.center,
       children: [
-        _swatch(context, _cheapColor, 'Cheap'),
-        _swatch(context, _normalColor, 'Normal'),
-        _swatch(context, _expensiveColor, 'Expensive'),
+        _swatch(context, _priceColor, 'Price (ct/kWh)'),
         _lineSwatch(context, _consumeColor, 'Consumption'),
       ],
     );
@@ -248,7 +227,8 @@ class _PriceChartPainter extends CustomPainter {
   final Color labelColor;
 
   static const _padBottom = 18.0;
-  static const _padTop = 6.0;
+  static const _padTop = 8.0;
+  static const _padLeft = 28.0; // room for the ct/kWh axis labels
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -256,49 +236,60 @@ class _PriceChartPainter extends CustomPainter {
     if (pts.isEmpty) return;
 
     final plotH = size.height - _padBottom - _padTop;
-    final plotW = size.width;
+    final plotW = size.width - _padLeft;
 
     final resMs = prices.resolution.inMilliseconds;
     final coverStart = pts.first.time.millisecondsSinceEpoch;
     final coverEnd = pts.last.time.millisecondsSinceEpoch + resMs;
 
-    // Window to roughly now ±12h so past consumption and upcoming prices share
-    // the view (the full curve runs a day+ ahead, which would squish the
-    // consumption trace into the left edge). Clamp to the covered range.
+    // Window to ~now ±12h so past consumption and upcoming prices share the view.
     const half = 12 * 3600 * 1000;
     final nowMs = now.millisecondsSinceEpoch;
     var startMs = nowMs - half < coverStart ? coverStart : nowMs - half;
     var endMs = nowMs + half > coverEnd ? coverEnd : nowMs + half;
     if (endMs <= startMs) { startMs = coverStart; endMs = coverEnd; }
     final span = (endMs - startMs).toDouble();
-    double x(int ms) => plotW * (ms - startMs) / span;
+    double x(int ms) => _padLeft + plotW * (ms - startMs) / span;
 
-    // Price Y scale: include 0 so negative prices sit below the zero line.
-    final lo = prices.minCt < 0 ? prices.minCt : 0.0;
-    final hi = prices.maxCt > 0 ? prices.maxCt : 1.0;
+    // Price Y scale — include 0, round the top (and bottom, if negative) to a
+    // nice value so the gridline labels are tidy.
+    final rawHi = prices.maxCt > 0 ? prices.maxCt : 1.0;
+    final rawLo = prices.minCt < 0 ? prices.minCt : 0.0;
+    final step = _niceStep((rawHi - rawLo) / 4);
+    final hi = (rawHi / step).ceil() * step;
+    final lo = (rawLo / step).floor() * step;
     final range = (hi - lo) <= 0 ? 1.0 : (hi - lo);
     double yPrice(double ct) => _padTop + plotH * (1 - (ct - lo) / range);
+
+    // Horizontal gridlines + ct/kWh labels.
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    final gridPaint = Paint()..color = axisColor..strokeWidth = 1;
+    for (var v = lo; v <= hi + 0.001; v += step) {
+      final gy = yPrice(v);
+      canvas.drawLine(Offset(_padLeft, gy), Offset(size.width, gy),
+          gridPaint..color = axisColor.withValues(alpha: v == 0 ? 0.5 : 0.22));
+      tp
+        ..text = TextSpan(
+            text: step >= 1 ? v.toStringAsFixed(0) : v.toStringAsFixed(1),
+            style: TextStyle(color: labelColor, fontSize: 9))
+        ..layout();
+      tp.paint(canvas, Offset(_padLeft - tp.width - 4, gy - tp.height / 2));
+    }
     final zeroY = yPrice(0);
 
-    // Price bars, coloured by level.
+    // Price bars (single colour; readable against the labelled axis).
     for (final p in pts) {
       final x0 = x(p.time.millisecondsSinceEpoch);
       final x1 = x(p.time.millisecondsSinceEpoch + resMs);
+      if (x1 < _padLeft || x0 > size.width) continue; // outside the window
       final yv = yPrice(p.ctPerKwh);
       final top = p.ctPerKwh >= 0 ? yv : zeroY;
       final bot = p.ctPerKwh >= 0 ? zeroY : yv;
-      final rect = Rect.fromLTRB(x0 + 0.5, top, x1 - 0.5, bot);
-      canvas.drawRect(rect,
-          Paint()..color = _levelColor(p.level).withValues(alpha: 0.55));
+      canvas.drawRect(Rect.fromLTRB(x0 + 0.5, top, x1 - 0.5, bot),
+          Paint()..color = _priceColor.withValues(alpha: 0.50));
     }
 
-    // Zero line (only meaningful when there are negative prices).
-    if (lo < 0) {
-      canvas.drawLine(Offset(0, zeroY), Offset(plotW, zeroY),
-          Paint()..color = axisColor..strokeWidth = 1);
-    }
-
-    // Consumption overlay (scaled to its own max), only over covered time.
+    // Consumption overlay (its own scale), only over covered time.
     final h = history;
     if (h != null && h.points.isNotEmpty) {
       var consMax = 0.0;
@@ -315,14 +306,11 @@ class _PriceChartPainter extends CustomPainter {
           final ms = hp.time.millisecondsSinceEpoch;
           if (ms < startMs || ms > endMs) continue;
           final px = x(ms);
-          // Use the bottom ~85% of the plot for the consumption trace.
           final py = _padTop + plotH * (1 - 0.85 * (hp.consumptionW / consMax));
           if (!started) {
             line.moveTo(px, py);
-            fill.moveTo(px, baseY);
-            fill.lineTo(px, py);
-            firstX = px;
-            started = true;
+            fill..moveTo(px, baseY)..lineTo(px, py);
+            firstX = px; started = true;
           } else {
             line.lineTo(px, py);
             fill.lineTo(px, py);
@@ -330,9 +318,7 @@ class _PriceChartPainter extends CustomPainter {
           lastX = px;
         }
         if (started) {
-          fill.lineTo(lastX, baseY);
-          fill.lineTo(firstX, baseY);
-          fill.close();
+          fill..lineTo(lastX, baseY)..lineTo(firstX, baseY)..close();
           canvas.drawPath(fill, Paint()..color = _consumeColor.withValues(alpha: 0.18));
           canvas.drawPath(
               line,
@@ -346,21 +332,22 @@ class _PriceChartPainter extends CustomPainter {
       }
     }
 
-    // "Now" marker.
+    // "Now" marker + current price label.
     if (nowMs >= startMs && nowMs <= endMs) {
       final nx = x(nowMs);
       canvas.drawLine(Offset(nx, _padTop), Offset(nx, _padTop + plotH),
           Paint()..color = labelColor.withValues(alpha: 0.7)..strokeWidth = 1);
     }
 
-    // Hour labels at each midnight + noon.
-    final tp = TextPainter(textDirection: TextDirection.ltr);
+    // X labels at each midnight + noon within the window.
     for (final p in pts) {
       final t = p.time;
+      final ms = t.millisecondsSinceEpoch;
+      if (ms < startMs || ms > endMs) continue;
       if (t.minute == 0 && (t.hour == 0 || t.hour == 12)) {
-        final lx = x(t.millisecondsSinceEpoch);
+        final lx = x(ms);
         canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
-            Paint()..color = axisColor.withValues(alpha: 0.5)..strokeWidth = 1);
+            Paint()..color = axisColor.withValues(alpha: 0.35)..strokeWidth = 1);
         tp
           ..text = TextSpan(
               text: t.hour == 0 ? '00:00' : '12:00',
@@ -369,6 +356,19 @@ class _PriceChartPainter extends CustomPainter {
         tp.paint(canvas, Offset(lx + 2, size.height - tp.height));
       }
     }
+  }
+
+  /// Round [v] up to a tidy 1/2/5 × 10^k step for the price axis.
+  double _niceStep(double v) {
+    if (v <= 0) return 1;
+    var mag = 1.0;
+    while (mag * 10 <= v) {
+      mag *= 10;
+    }
+    for (final m in [1.0, 2.0, 5.0, 10.0]) {
+      if (mag * m >= v) return mag * m;
+    }
+    return mag * 10;
   }
 
   @override
