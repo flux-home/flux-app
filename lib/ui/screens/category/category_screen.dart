@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/home_category.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/ui/screens/home/energy_history_card.dart';
+import 'package:matter_home/ui/screens/home/energy_price_card.dart';
 import 'package:matter_home/ui/screens/home/house_energy_scene.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
@@ -44,6 +45,7 @@ class CategoryScreen extends StatelessWidget {
                 if (showScene) ...[
                   const SliverToBoxAdapter(child: HouseEnergyScene()),
                   const SliverToBoxAdapter(child: EnergyHistoryCard()),
+                  const SliverToBoxAdapter(child: EnergyPriceCard()),
                 ],
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),

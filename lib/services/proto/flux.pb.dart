@@ -3152,6 +3152,269 @@ class EnergyRoleMap extends $pb.GeneratedMessage {
   $pb.PbList<EnergyRoleEntry> get entries => $_getList(0);
 }
 
+/// GET /prices — the current + upcoming day-ahead curve.
+class PriceCurve extends $pb.GeneratedMessage {
+  factory PriceCurve({
+    $fixnum.Int64? startEpoch,
+    $core.int? resolutionSeconds,
+    $core.String? currency,
+    PriceUnit? unit,
+    $core.Iterable<$core.int>? prices,
+    $fixnum.Int64? fetchedAt,
+    $core.bool? stale,
+  }) {
+    final result = create();
+    if (startEpoch != null) result.startEpoch = startEpoch;
+    if (resolutionSeconds != null) result.resolutionSeconds = resolutionSeconds;
+    if (currency != null) result.currency = currency;
+    if (unit != null) result.unit = unit;
+    if (prices != null) result.prices.addAll(prices);
+    if (fetchedAt != null) result.fetchedAt = fetchedAt;
+    if (stale != null) result.stale = stale;
+    return result;
+  }
+
+  PriceCurve._();
+
+  factory PriceCurve.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory PriceCurve.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PriceCurve',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'startEpoch')
+    ..aI(2, _omitFieldNames ? '' : 'resolutionSeconds',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOS(3, _omitFieldNames ? '' : 'currency')
+    ..aE<PriceUnit>(4, _omitFieldNames ? '' : 'unit',
+        enumValues: PriceUnit.values)
+    ..p<$core.int>(5, _omitFieldNames ? '' : 'prices', $pb.PbFieldType.KS3)
+    ..aInt64(6, _omitFieldNames ? '' : 'fetchedAt')
+    ..aOB(7, _omitFieldNames ? '' : 'stale')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PriceCurve clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PriceCurve copyWith(void Function(PriceCurve) updates) =>
+      super.copyWith((message) => updates(message as PriceCurve)) as PriceCurve;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PriceCurve create() => PriceCurve._();
+  @$core.override
+  PriceCurve createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static PriceCurve getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PriceCurve>(create);
+  static PriceCurve? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get startEpoch => $_getI64(0);
+  @$pb.TagNumber(1)
+  set startEpoch($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStartEpoch() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStartEpoch() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get resolutionSeconds => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set resolutionSeconds($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasResolutionSeconds() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearResolutionSeconds() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get currency => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set currency($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasCurrency() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearCurrency() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  PriceUnit get unit => $_getN(3);
+  @$pb.TagNumber(4)
+  set unit(PriceUnit value) => $_setField(4, value);
+  @$pb.TagNumber(4)
+  $core.bool hasUnit() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearUnit() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $pb.PbList<$core.int> get prices => $_getList(4);
+
+  @$pb.TagNumber(6)
+  $fixnum.Int64 get fetchedAt => $_getI64(5);
+  @$pb.TagNumber(6)
+  set fetchedAt($fixnum.Int64 value) => $_setInt64(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasFetchedAt() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearFetchedAt() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.bool get stale => $_getBF(6);
+  @$pb.TagNumber(7)
+  set stale($core.bool value) => $_setBool(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasStale() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearStale() => $_clearField(7);
+}
+
+/// GET/POST /prices/config — pricing acquisition settings (persisted in NVS).
+class PricingConfig extends $pb.GeneratedMessage {
+  factory PricingConfig({
+    $core.bool? enabled,
+    $core.String? provider,
+    $core.String? zone,
+    $core.String? apiToken,
+    $core.String? baseUrl,
+    $core.int? fetchHourLocal,
+    $core.int? markupUeurPerKwh,
+    $core.int? vatPercent,
+  }) {
+    final result = create();
+    if (enabled != null) result.enabled = enabled;
+    if (provider != null) result.provider = provider;
+    if (zone != null) result.zone = zone;
+    if (apiToken != null) result.apiToken = apiToken;
+    if (baseUrl != null) result.baseUrl = baseUrl;
+    if (fetchHourLocal != null) result.fetchHourLocal = fetchHourLocal;
+    if (markupUeurPerKwh != null) result.markupUeurPerKwh = markupUeurPerKwh;
+    if (vatPercent != null) result.vatPercent = vatPercent;
+    return result;
+  }
+
+  PricingConfig._();
+
+  factory PricingConfig.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory PricingConfig.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'PricingConfig',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aOS(2, _omitFieldNames ? '' : 'provider')
+    ..aOS(3, _omitFieldNames ? '' : 'zone')
+    ..aOS(4, _omitFieldNames ? '' : 'apiToken')
+    ..aOS(5, _omitFieldNames ? '' : 'baseUrl')
+    ..aI(6, _omitFieldNames ? '' : 'fetchHourLocal',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'markupUeurPerKwh',
+        fieldType: $pb.PbFieldType.OS3)
+    ..aI(8, _omitFieldNames ? '' : 'vatPercent', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PricingConfig clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  PricingConfig copyWith(void Function(PricingConfig) updates) =>
+      super.copyWith((message) => updates(message as PricingConfig))
+          as PricingConfig;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PricingConfig create() => PricingConfig._();
+  @$core.override
+  PricingConfig createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static PricingConfig getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PricingConfig>(create);
+  static PricingConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get provider => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set provider($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasProvider() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearProvider() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get zone => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set zone($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasZone() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearZone() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get apiToken => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set apiToken($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasApiToken() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearApiToken() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get baseUrl => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set baseUrl($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasBaseUrl() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearBaseUrl() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get fetchHourLocal => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set fetchHourLocal($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasFetchHourLocal() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearFetchHourLocal() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get markupUeurPerKwh => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set markupUeurPerKwh($core.int value) => $_setSignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasMarkupUeurPerKwh() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearMarkupUeurPerKwh() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get vatPercent => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set vatPercent($core.int value) => $_setUnsignedInt32(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasVatPercent() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearVatPercent() => $_clearField(8);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

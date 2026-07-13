@@ -175,6 +175,18 @@ class FluxCoapService implements MatterPort {
     }
   }
 
+  /// The current + upcoming day-ahead price curve (GET /prices), or null on a
+  /// transient read failure / when pricing is disabled.
+  Future<$proto.PriceCurve?> getPrices() async {
+    final b = await _get('/prices', timeout: _timeout15);
+    if (b == null) return null;
+    try { return $proto.PriceCurve.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getPrices: $e');
+      return null;
+    }
+  }
+
   /// Push the user's energy-role assignments so the controller classifies the
   /// energy log by role (which node is PV / battery / grid) instead of guessing
   /// from the Modbus profile. [nodeToClass] maps node id → flux_EnergyClass code

@@ -24,6 +24,14 @@ class EnergyHistoryPoint {
 
   double get maxSeries =>
       [pvW, gridImportW, gridExportW, loadW].reduce((a, b) => a > b ? a : b);
+
+  /// Whole-home consumption for this bucket (average W), from the energy
+  /// balance: generation + import − export. Clamped ≥ 0. (Battery isn't in the
+  /// per-bucket series, so it's omitted here — fine for the price overlay.)
+  double get consumptionW {
+    final c = pvW + gridImportW - gridExportW;
+    return c > 0 ? c : 0;
+  }
 }
 
 /// One PV inverter's generation over the same time base — average power (W) per

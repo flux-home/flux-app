@@ -151,5 +151,27 @@ class EnergyClass extends $pb.ProtobufEnum {
   const EnergyClass._(super.value, super.name);
 }
 
+/// Canonical internal price unit is micro-euro per kWh (µEUR/kWh):
+///   1 EUR/MWh = 1000 µEUR/kWh ;  ct/kWh = µEUR/kWh / 10000.
+/// Signed — EPEX day-ahead prices can be negative.
+class PriceUnit extends $pb.ProtobufEnum {
+  static const PriceUnit PRICE_UNIT_UEUR_PER_KWH =
+      PriceUnit._(0, _omitEnumNames ? '' : 'PRICE_UNIT_UEUR_PER_KWH');
+  static const PriceUnit PRICE_UNIT_EUR_PER_MWH =
+      PriceUnit._(1, _omitEnumNames ? '' : 'PRICE_UNIT_EUR_PER_MWH');
+
+  static const $core.List<PriceUnit> values = <PriceUnit>[
+    PRICE_UNIT_UEUR_PER_KWH,
+    PRICE_UNIT_EUR_PER_MWH,
+  ];
+
+  static final $core.List<PriceUnit?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 1);
+  static PriceUnit? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const PriceUnit._(super.value, super.name);
+}
+
 const $core.bool _omitEnumNames =
     $core.bool.fromEnvironment('protobuf.omit_enum_names');

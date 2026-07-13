@@ -9,6 +9,7 @@ import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/energy_history.dart';
+import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/models/matter_device.dart';
@@ -188,6 +189,41 @@ class DeviceProvider extends ChangeNotifier {
       if (!_disposed) notifyListeners();
     });
     return _energyHistoryInflight!;
+  }
+
+  // ── Day-ahead energy prices ──────────────────────────────────────────────────
+
+  EnergyPrices? _energyPrices;
+  bool _energyPricesLoading = false;
+  Future<void>? _energyPricesInflight;
+
+  /// Last-fetched day-ahead price curve, or null if never loaded / pricing
+  /// disabled on the controller.
+  EnergyPrices? get energyPrices => _energyPrices;
+  bool get energyPricesLoading => _energyPricesLoading;
+
+  /// Fetch the current + upcoming day-ahead price curve (GET /prices). No-op
+  /// without a controller; coalesced; a transient failure keeps prior data.
+  Future<void> fetchEnergyPrices() {
+    final inflight = _energyPricesInflight;
+    if (inflight != null) return inflight;
+    final svc = _ctrlService;
+    if (svc == null) return Future.value();
+
+    _energyPricesLoading = true;
+    notifyListeners();
+
+    final f = () async {
+      final c = await svc.getPrices();
+      if (_disposed) return;
+      if (c != null) _energyPrices = EnergyPrices.fromProto(c);
+    }();
+    _energyPricesInflight = f.whenComplete(() {
+      _energyPricesInflight = null;
+      _energyPricesLoading = false;
+      if (!_disposed) notifyListeners();
+    });
+    return _energyPricesInflight!;
   }
 
   /// Returns a merged [DeviceView] for [id], or null if the device is unknown.

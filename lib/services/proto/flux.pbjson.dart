@@ -97,6 +97,20 @@ final $typed_data.Uint8List energyClassDescriptor = $convert.base64Decode(
     '9HUklEEAESEwoPRU5FUkdZX0NMQVNTX1BWEAISFQoRRU5FUkdZX0NMQVNTX0xPQUQQAxIYChRF'
     'TkVSR1lfQ0xBU1NfQkFUVEVSWRAE');
 
+@$core.Deprecated('Use priceUnitDescriptor instead')
+const PriceUnit$json = {
+  '1': 'PriceUnit',
+  '2': [
+    {'1': 'PRICE_UNIT_UEUR_PER_KWH', '2': 0},
+    {'1': 'PRICE_UNIT_EUR_PER_MWH', '2': 1},
+  ],
+};
+
+/// Descriptor for `PriceUnit`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List priceUnitDescriptor = $convert.base64Decode(
+    'CglQcmljZVVuaXQSGwoXUFJJQ0VfVU5JVF9VRVVSX1BFUl9LV0gQABIaChZQUklDRV9VTklUX0'
+    'VVUl9QRVJfTVdIEAE=');
+
 @$core.Deprecated('Use controllerInfoDescriptor instead')
 const ControllerInfo$json = {
   '1': 'ControllerInfo',
@@ -786,3 +800,67 @@ const EnergyRoleMap$json = {
 final $typed_data.Uint8List energyRoleMapDescriptor = $convert.base64Decode(
     'Cg1FbmVyZ3lSb2xlTWFwEi8KB2VudHJpZXMYASADKAsyFS5mbHV4LkVuZXJneVJvbGVFbnRyeV'
     'IHZW50cmllcw==');
+
+@$core.Deprecated('Use priceCurveDescriptor instead')
+const PriceCurve$json = {
+  '1': 'PriceCurve',
+  '2': [
+    {'1': 'start_epoch', '3': 1, '4': 1, '5': 3, '10': 'startEpoch'},
+    {
+      '1': 'resolution_seconds',
+      '3': 2,
+      '4': 1,
+      '5': 13,
+      '10': 'resolutionSeconds'
+    },
+    {'1': 'currency', '3': 3, '4': 1, '5': 9, '10': 'currency'},
+    {
+      '1': 'unit',
+      '3': 4,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.PriceUnit',
+      '10': 'unit'
+    },
+    {'1': 'prices', '3': 5, '4': 3, '5': 17, '10': 'prices'},
+    {'1': 'fetched_at', '3': 6, '4': 1, '5': 3, '10': 'fetchedAt'},
+    {'1': 'stale', '3': 7, '4': 1, '5': 8, '10': 'stale'},
+  ],
+};
+
+/// Descriptor for `PriceCurve`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List priceCurveDescriptor = $convert.base64Decode(
+    'CgpQcmljZUN1cnZlEh8KC3N0YXJ0X2Vwb2NoGAEgASgDUgpzdGFydEVwb2NoEi0KEnJlc29sdX'
+    'Rpb25fc2Vjb25kcxgCIAEoDVIRcmVzb2x1dGlvblNlY29uZHMSGgoIY3VycmVuY3kYAyABKAlS'
+    'CGN1cnJlbmN5EiMKBHVuaXQYBCABKA4yDy5mbHV4LlByaWNlVW5pdFIEdW5pdBIWCgZwcmljZX'
+    'MYBSADKBFSBnByaWNlcxIdCgpmZXRjaGVkX2F0GAYgASgDUglmZXRjaGVkQXQSFAoFc3RhbGUY'
+    'ByABKAhSBXN0YWxl');
+
+@$core.Deprecated('Use pricingConfigDescriptor instead')
+const PricingConfig$json = {
+  '1': 'PricingConfig',
+  '2': [
+    {'1': 'enabled', '3': 1, '4': 1, '5': 8, '10': 'enabled'},
+    {'1': 'provider', '3': 2, '4': 1, '5': 9, '10': 'provider'},
+    {'1': 'zone', '3': 3, '4': 1, '5': 9, '10': 'zone'},
+    {'1': 'api_token', '3': 4, '4': 1, '5': 9, '10': 'apiToken'},
+    {'1': 'base_url', '3': 5, '4': 1, '5': 9, '10': 'baseUrl'},
+    {'1': 'fetch_hour_local', '3': 6, '4': 1, '5': 13, '10': 'fetchHourLocal'},
+    {
+      '1': 'markup_ueur_per_kwh',
+      '3': 7,
+      '4': 1,
+      '5': 17,
+      '10': 'markupUeurPerKwh'
+    },
+    {'1': 'vat_percent', '3': 8, '4': 1, '5': 13, '10': 'vatPercent'},
+  ],
+};
+
+/// Descriptor for `PricingConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pricingConfigDescriptor = $convert.base64Decode(
+    'Cg1QcmljaW5nQ29uZmlnEhgKB2VuYWJsZWQYASABKAhSB2VuYWJsZWQSGgoIcHJvdmlkZXIYAi'
+    'ABKAlSCHByb3ZpZGVyEhIKBHpvbmUYAyABKAlSBHpvbmUSGwoJYXBpX3Rva2VuGAQgASgJUghh'
+    'cGlUb2tlbhIZCghiYXNlX3VybBgFIAEoCVIHYmFzZVVybBIoChBmZXRjaF9ob3VyX2xvY2FsGA'
+    'YgASgNUg5mZXRjaEhvdXJMb2NhbBItChNtYXJrdXBfdWV1cl9wZXJfa3doGAcgASgRUhBtYXJr'
+    'dXBVZXVyUGVyS3doEh8KC3ZhdF9wZXJjZW50GAggASgNUgp2YXRQZXJjZW50');
