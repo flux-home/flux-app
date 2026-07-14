@@ -6,6 +6,7 @@ import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/flux_controller_discovery.dart';
 import 'package:matter_home/services/flux_ice_channel.dart';
+import 'package:matter_home/services/flux_rendezvous.dart';
 
 /// App-wide reachability of the Flux controller.
 enum ControllerStatus {
@@ -89,21 +90,47 @@ class HubConnection extends ChangeNotifier {
     unawaited(_probe());
   }
 
-  /// Re-runs mDNS discovery (+ manual-IP fallback) and, on success, replaces
-  /// the active service and notifies listeners.
+  /// LAN-first / remote-fallback connect (app ADR-0003). Tries mDNS discovery
+  /// (+ manual-IP fallback) first; if the controller isn't found or isn't
+  /// reachable, falls back to a remote ICE tunnel via the rendezvous. Remote is
+  /// never used while LAN works (LAN is faster and needs no rendezvous/STUN).
   Future<bool> reconnect() async {
     _setStatusFlags(reachable: false, probing: true);
     final ep = await FluxControllerDiscovery.discover();
-    if (ep == null) {
+    if (ep != null) {
+      _service?.dispose();
+      _service = FluxCoapService(ep);
+      _wire(_service);
+      notifyListeners();
+      await _probe();
+      if (_reachable) return true;
+    }
+    // LAN discovery and/or reachability failed → remote fallback.
+    return _tryRemote();
+  }
+
+  /// Remote branch of the FSM: bring up the tunnel using the paired hub's
+  /// cached PSK + rendezvous URL, gathering srflx via a public STUN server.
+  Future<bool> _tryRemote() async {
+    final id = await ControllerSettings.firstControllerId();
+    if (id == null) {
       _setStatusFlags(reachable: false, probing: false);
       return false;
     }
-    _service?.dispose();
-    _service = FluxCoapService(ep);
-    _wire(_service);
-    notifyListeners();
-    await _probe();
-    return _reachable;
+    final psk = await ControllerSettings.loadPsk(id);
+    final url = await ControllerSettings.loadRendezvousUrl(id);
+    if (psk == null || url == null) {
+      _setStatusFlags(reachable: false, probing: false);
+      return false;
+    }
+    final rzv = FluxRendezvous(baseUrl: url, psk: psk);
+    return connectViaRemoteTunnel(
+      controllerPsk: psk,
+      signalOffer:   rzv.signalOffer,
+      dtlsIdentity:  await ControllerSettings.loadDtlsId(id),
+      stunHost:      'stun.l.google.com',
+      stunPort:      19302,
+    );
   }
 
   /// Bring up a remote-access ICE tunnel and swap the active service to talk

@@ -17,6 +17,7 @@ class ControllerSettings {
   static const _kPort        = 'ctrl_port';
   static const _kPsk         = 'ctrl_psk';          // hex32 keyed by controller ID
   static const _kDtlsId      = 'ctrl_dtls_id';      // DTLS identity — same as controller ID
+  static const _kRzvUrl      = 'ctrl_rzv_url';      // rendezvous URL keyed by controller ID (ADR-0006)
 
   static Future<ControllerSettings?> loadManualOverride() async {
     final prefs = await SharedPreferences.getInstance();
@@ -61,6 +62,33 @@ class ControllerSettings {
   static Future<void> clearPsk(String hostname) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('${_kPsk}_$hostname');
+  }
+
+  /// The DTLS identity stored for [controllerId] (defaults to the id itself).
+  static Future<String> loadDtlsId(String controllerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('${_kDtlsId}_$controllerId') ?? controllerId;
+  }
+
+  /// Rendezvous URL for off-LAN signaling (ADR-0006), per controller.
+  static Future<void> saveRendezvousUrl(String controllerId, String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('${_kRzvUrl}_$controllerId', url);
+  }
+
+  static Future<String?> loadRendezvousUrl(String controllerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final u = prefs.getString('${_kRzvUrl}_$controllerId');
+    return (u == null || u.isEmpty) ? null : u;
+  }
+
+  /// The controller ID of the (first) paired hub — the key used for the remote
+  /// path when LAN discovery is unavailable. Null if no hub is configured.
+  static Future<String?> firstControllerId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getKeys().firstWhere(
+        (k) => k.startsWith('${_kPsk}_'), orElse: () => '');
+    return key.isEmpty ? null : key.substring('${_kPsk}_'.length);
   }
 
   Future<void> save() async {
