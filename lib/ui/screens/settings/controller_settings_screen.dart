@@ -41,8 +41,11 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
 
   // Remote access (off-LAN): rendezvous URL (ADR-0006) + STUN server (ADR-0007)
   // persisted per controller, consumed by HubConnection.tryRemote().
-  final TextEditingController _rzvCtrl  = TextEditingController();
-  final TextEditingController _stunCtrl = TextEditingController();
+  final TextEditingController _rzvCtrl      = TextEditingController();
+  final TextEditingController _stunCtrl     = TextEditingController();
+  final TextEditingController _turnCtrl     = TextEditingController();
+  final TextEditingController _turnUserCtrl = TextEditingController();
+  final TextEditingController _turnPassCtrl = TextEditingController();
   String?          _rzvId;
   bool             _connectingRemote = false;
 
@@ -67,6 +70,9 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     _poll?.cancel();
     _rzvCtrl.dispose();
     _stunCtrl.dispose();
+    _turnCtrl.dispose();
+    _turnUserCtrl.dispose();
+    _turnPassCtrl.dispose();
     super.dispose();
   }
 
@@ -91,11 +97,17 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     final id = await ControllerSettings.firstControllerId();
     final url  = id == null ? null : await ControllerSettings.loadRendezvousUrl(id);
     final stun = id == null ? null : await ControllerSettings.loadStunServer(id);
+    final (turn, turnUser, turnPass) = id == null
+        ? (null, null, null)
+        : await ControllerSettings.loadTurn(id);
     if (!mounted) return;
     setState(() {
       _rzvId = id;
-      _rzvCtrl.text  = url ?? '';
-      _stunCtrl.text = stun ?? '';
+      _rzvCtrl.text      = url ?? '';
+      _stunCtrl.text     = stun ?? '';
+      _turnCtrl.text     = turn ?? '';
+      _turnUserCtrl.text = turnUser ?? '';
+      _turnPassCtrl.text = turnPass ?? '';
     });
   }
 
@@ -106,6 +118,10 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     final stun = _stunCtrl.text.trim();
     await ControllerSettings.saveRendezvousUrl(id, url);
     await ControllerSettings.saveStunServer(id, stun);
+    await ControllerSettings.saveTurn(id,
+        server: _turnCtrl.text.trim(),
+        user:   _turnUserCtrl.text.trim(),
+        pass:   _turnPassCtrl.text.trim());
     if (!mounted) return;
     FocusScope.of(context).unfocus();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -535,6 +551,53 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                 ),
                 onSubmitted: (_) => _saveRendezvous(),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _turnCtrl,
+                enabled: _rzvId != null,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: 'TURN relay (host:port)',
+                  hintText: 'turn:relay.example.com:3478',
+                  helperText: 'Optional — needed to reach the hub across mobile/CGNAT.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _turnUserCtrl,
+                    enabled: _rzvId != null,
+                    autocorrect: false,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    decoration: const InputDecoration(
+                      labelText: 'TURN user',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _turnPassCtrl,
+                    enabled: _rzvId != null,
+                    autocorrect: false,
+                    obscureText: true,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    decoration: const InputDecoration(
+                      labelText: 'TURN pass',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _saveRendezvous(),
+                  ),
+                ),
+              ]),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,

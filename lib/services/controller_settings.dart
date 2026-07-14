@@ -19,6 +19,9 @@ class ControllerSettings {
   static const _kDtlsId      = 'ctrl_dtls_id';      // DTLS identity — same as controller ID
   static const _kRzvUrl      = 'ctrl_rzv_url';      // rendezvous URL keyed by controller ID (ADR-0006)
   static const _kStun        = 'ctrl_stun';         // STUN server "host:port" keyed by controller ID (ADR-0007)
+  static const _kTurn        = 'ctrl_turn';         // TURN "host:port" keyed by controller ID (ADR-0004)
+  static const _kTurnUser    = 'ctrl_turn_user';    // TURN username
+  static const _kTurnPass    = 'ctrl_turn_pass';    // TURN credential
 
   static Future<ControllerSettings?> loadManualOverride() async {
     final prefs = await SharedPreferences.getInstance();
@@ -100,6 +103,28 @@ class ControllerSettings {
     final prefs = await SharedPreferences.getInstance();
     final s = prefs.getString('${_kStun}_$controllerId');
     return (s == null || s.isEmpty) ? null : s;
+  }
+
+  /// TURN relay (ADR-0004) for cross-NAT paths where srflx fails: server
+  /// ("host" or "host:port") plus long-term credentials, per controller.
+  static Future<void> saveTurn(String controllerId,
+      {required String server, required String user, required String pass}) async {
+    final prefs = await SharedPreferences.getInstance();
+    Future<void> put(String k, String v) =>
+        v.trim().isEmpty ? prefs.remove(k) : prefs.setString(k, v.trim());
+    await put('${_kTurn}_$controllerId', server);
+    await put('${_kTurnUser}_$controllerId', user);
+    await put('${_kTurnPass}_$controllerId', pass);
+  }
+
+  /// Returns (server, user, pass); server is null when no TURN is configured.
+  static Future<(String?, String?, String?)> loadTurn(String controllerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    String? g(String k) {
+      final v = prefs.getString('${k}_$controllerId');
+      return (v == null || v.isEmpty) ? null : v;
+    }
+    return (g(_kTurn), g(_kTurnUser), g(_kTurnPass));
   }
 
   /// The controller ID of the (first) paired hub — the key used for the remote

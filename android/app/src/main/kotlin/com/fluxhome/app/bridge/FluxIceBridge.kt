@@ -24,11 +24,13 @@ class FluxIceBridge {
 
     // ── MethodChannel ───────────────────────────────────────────────────────
 
-    /** start(stunHost?, stunPort) → { "handle": Long, "offer": String } (null on failure). */
-    fun start(stunHost: String?, stunPort: Int, result: MethodChannel.Result) {
+    /** start(stunHost?, stunPort, turn…) → { "handle": Long, "offer": String } (null on failure). */
+    fun start(stunHost: String?, stunPort: Int,
+              turnHost: String?, turnPort: Int, turnUser: String?, turnPass: String?,
+              result: MethodChannel.Result) {
         thread(name = "flux_ice_start") {   // nativeStart blocks (~3 s gather)
             val handle = try {
-                FluxIceNative.nativeStart(stunHost, stunPort)
+                FluxIceNative.nativeStart(stunHost, stunPort, turnHost, turnPort, turnUser, turnPass)
             } catch (t: Throwable) {
                 Log.e(TAG, "nativeStart failed", t); 0L
             }

@@ -27,11 +27,22 @@ class FluxIceChannel {
   /// a [FluxIceSession] carrying the local offer SDP — POST it (MAC'd) to the
   /// controller's `/remote/signal`, then feed the answer to
   /// [FluxIceSession.setAnswer]. Returns null on failure.
-  Future<FluxIceSession?> start({String? stunHost, int stunPort = 0}) async {
+  Future<FluxIceSession?> start({
+    String? stunHost,
+    int stunPort = 0,
+    String? turnHost,
+    int turnPort = 0,
+    String? turnUser,
+    String? turnPass,
+  }) async {
     try {
       final res = await _method.invokeMethod<Map<dynamic, dynamic>>('start', {
         'stunHost': stunHost,
         'stunPort': stunPort,
+        'turnHost': turnHost,
+        'turnPort': turnPort,
+        'turnUser': turnUser,
+        'turnPass': turnPass,
       });
       if (res == null) return null;
       final handle = (res['handle'] as num).toInt();

@@ -163,25 +163,38 @@ class HubConnection extends ChangeNotifier {
     }
     final rzv = FluxRendezvous(baseUrl: url, psk: psk, onLog: _log);
     final (stunHost, stunPort) = _resolveStun(await ControllerSettings.loadStunServer(id));
+    final (turnServer, turnUser, turnPass) = await ControllerSettings.loadTurn(id);
+    final (turnHost, turnPort) =
+        turnServer == null ? (null, 0) : _resolveHostPort(turnServer, _stunStandardPort);
     return connectViaRemoteTunnel(
       controllerPsk: psk,
       signalOffer:   rzv.signalOffer,
       dtlsIdentity:  await ControllerSettings.loadDtlsId(id),
       stunHost:      stunHost,
       stunPort:      stunPort,
+      turnHost:      turnHost,
+      turnPort:      turnPort,
+      turnUser:      turnUser,
+      turnPass:      turnPass,
     );
   }
 
   /// Resolve a stored STUN setting ("host" or "host:port") to (host, port),
   /// falling back to the built-in Google default when unset. A host without an
   /// explicit port uses the standard STUN port 3478.
-  static (String, int) _resolveStun(String? server) {
-    if (server == null || server.trim().isEmpty) {
-      return (defaultStunHost, defaultStunPort);
-    }
+  static (String, int) _resolveStun(String? server) =>
+      (server == null || server.trim().isEmpty)
+          ? (defaultStunHost, defaultStunPort)
+          : _resolveHostPort(server, _stunStandardPort);
+
+  /// Parse "host", "host:port", or "stun:/turn:host:port" → (host, port),
+  /// falling back to [defaultPort] when no explicit port is given.
+  static (String, int) _resolveHostPort(String server, int defaultPort) {
     var host = server.trim();
-    if (host.startsWith('stun:')) host = host.substring(5); // tolerate scheme
-    var port = _stunStandardPort;
+    for (final scheme in const ['stun:', 'turn:', 'turns:', 'stuns:']) {
+      if (host.startsWith(scheme)) { host = host.substring(scheme.length); break; }
+    }
+    var port = defaultPort;
     final colon = host.lastIndexOf(':');
     if (colon > 0 && colon < host.length - 1) {
       final p = int.tryParse(host.substring(colon + 1));
@@ -209,11 +222,20 @@ class HubConnection extends ChangeNotifier {
     String? dtlsIdentity,
     String? stunHost = defaultStunHost,
     int stunPort = defaultStunPort,
+    String? turnHost,
+    int turnPort = 0,
+    String? turnUser,
+    String? turnPass,
   }) async {
     _diag.clear();
-    _log('start: stun=$stunHost:$stunPort');
+    _log('start: stun=$stunHost:$stunPort'
+        '${turnHost != null ? ' turn=$turnHost:$turnPort' : ' (no TURN)'}');
     _setStatusFlags(reachable: false, probing: true);
-    final session = await FluxIceChannel().start(stunHost: stunHost, stunPort: stunPort);
+    final session = await FluxIceChannel().start(
+      stunHost: stunHost, stunPort: stunPort,
+      turnHost: turnHost, turnPort: turnPort,
+      turnUser: turnUser, turnPass: turnPass,
+    );
     if (session == null) {
       _log('FAIL: native ICE start returned null');
       _setStatusFlags(reachable: false, probing: false);

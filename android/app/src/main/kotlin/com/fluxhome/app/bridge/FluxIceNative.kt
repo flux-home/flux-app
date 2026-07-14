@@ -12,7 +12,10 @@ object FluxIceNative {
     }
 
     /** Opens a CONTROLLING session + gathers. Returns a native handle (0 = failure). */
-    external fun nativeStart(stunHost: String?, stunPort: Int): Long
+    external fun nativeStart(
+        stunHost: String?, stunPort: Int,
+        turnHost: String?, turnPort: Int, turnUser: String?, turnPass: String?,
+    ): Long
 
     /** The local offer SDP captured at start. */
     external fun nativeOffer(handle: Long): String

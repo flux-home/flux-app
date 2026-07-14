@@ -20,18 +20,26 @@ typedef struct {
 
 JNIEXPORT jlong JNICALL
 Java_com_fluxhome_app_bridge_FluxIceNative_nativeStart(JNIEnv *env, jobject thiz,
-                                                       jstring stun_host, jint stun_port) {
+                                                       jstring stun_host, jint stun_port,
+                                                       jstring turn_host, jint turn_port,
+                                                       jstring turn_user, jstring turn_pass) {
     (void)thiz;
     jni_session_t *w = calloc(1, sizeof(*w));
     if (!w) return 0;
 
-    const char *stun = NULL;
-    if (stun_host) stun = (*env)->GetStringUTFChars(env, stun_host, NULL);
+    const char *stun = stun_host ? (*env)->GetStringUTFChars(env, stun_host, NULL) : NULL;
+    const char *th   = turn_host ? (*env)->GetStringUTFChars(env, turn_host, NULL) : NULL;
+    const char *tu   = turn_user ? (*env)->GetStringUTFChars(env, turn_user, NULL) : NULL;
+    const char *tp   = turn_pass ? (*env)->GetStringUTFChars(env, turn_pass, NULL) : NULL;
 
     w->s = flux_ice_mobile_start(stun, (uint16_t)stun_port,
+                                 th, (uint16_t)turn_port, tu, tp,
                                  w->offer, sizeof(w->offer), NULL, NULL);
 
     if (stun) (*env)->ReleaseStringUTFChars(env, stun_host, stun);
+    if (th)   (*env)->ReleaseStringUTFChars(env, turn_host, th);
+    if (tu)   (*env)->ReleaseStringUTFChars(env, turn_user, tu);
+    if (tp)   (*env)->ReleaseStringUTFChars(env, turn_pass, tp);
 
     if (!w->s) { free(w); return 0; }
     return (jlong)(intptr_t)w;

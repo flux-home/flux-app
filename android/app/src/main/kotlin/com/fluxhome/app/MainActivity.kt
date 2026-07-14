@@ -275,7 +275,12 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "start" ->
                         fluxIce.start(call.argument<String>("stunHost"),
-                                      call.argument<Int>("stunPort") ?: 0, result)
+                                      call.argument<Int>("stunPort") ?: 0,
+                                      call.argument<String>("turnHost"),
+                                      call.argument<Int>("turnPort") ?: 0,
+                                      call.argument<String>("turnUser"),
+                                      call.argument<String>("turnPass"),
+                                      result)
                     "setAnswer" ->
                         fluxIce.setAnswer(call.nodeIdArg("handle") ?: 0L,
                                           call.argument<String>("answer") ?: "", result)
