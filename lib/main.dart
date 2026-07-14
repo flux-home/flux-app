@@ -7,8 +7,6 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/router.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/device_store.dart';
-import 'package:matter_home/services/flux_controller_discovery.dart';
-import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -94,16 +92,22 @@ Future<void> main() async {
     ),
   );
 
-  // ── Background controller discovery ──────────────────────────────────────
-  // Runs concurrently with the first frame. On success, DeviceProvider and
-  // HubConnection are both updated so the UI sees hub mode seamlessly.
-  unawaited(FluxControllerDiscovery.discover().then((ep) async {
-    if (ep == null) {
-      debugPrint('main: no controller found — no device control until one connects');
+  // ── Background controller connect ─────────────────────────────────────────
+  // Runs concurrently with the first frame. Goes through HubConnection.reconnect
+  // so the same remote-first / LAN-fallback FSM is used at launch: the off-LAN
+  // ICE tunnel is the default, falling back to LAN discovery. reconnect() swaps
+  // in the service and notifies listeners, so DeviceProvider (attached above)
+  // adopts hub mode seamlessly.
+  unawaited(() async {
+    final connected = await hubConn.reconnect();
+    if (!connected) {
+      debugPrint('main: no controller reachable (remote or LAN) — '
+          'no device control until one connects');
       return;
     }
-    debugPrint('main: controller found at $ep — switching to hub mode');
-    final svc = FluxCoapService(ep);
+    final svc = hubConn.service;
+    if (svc == null) return;
+    debugPrint('main: connected via ${svc.endpoint.host} — hub mode');
 
     // Put both on one Thread network, controller as source of truth: adopt the
     // controller's network if it has one, otherwise seed it with the app's.
@@ -111,11 +115,7 @@ Future<void> main() async {
         .ensureInSync(log: (m) => debugPrint('main: thread sync — $m'));
     debugPrint('main: thread sync result — ${thread.status.name}'
         '${thread.message != null ? ' (${thread.message})' : ''}');
-
-    // setService notifies HubConnection listeners; DeviceProvider (attached
-    // above) adopts hub mode in response — no separate adoptHubMode call needed.
-    hubConn.setService(svc);
-  }));
+  }());
 }
 
 class MatterHomeApp extends StatefulWidget {
