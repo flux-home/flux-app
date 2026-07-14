@@ -58,11 +58,12 @@ class HubConnection extends ChangeNotifier {
 
   static const _heartbeat = Duration(seconds: 15);
 
-  /// Default STUN server for srflx gathering on the remote path. Google's public
-  /// STUN is the out-of-the-box default (ADR-0007) so remote access works with
-  /// no configuration; a hub may still override it via RemoteConfig.stun.
-  static const defaultStunHost = 'stun.l.google.com';
-  static const defaultStunPort = 19302;
+  /// Default STUN server for srflx gathering on the remote path (ADR-0007) —
+  /// metered.ca, the same provider as the default TURN relay, so the whole ICE
+  /// stack rides one vendor with an SLA (no public-STUN dependency). A hub may
+  /// still override it via RemoteConfig.stun.
+  static const defaultStunHost = 'stun.relay.metered.ca';
+  static const defaultStunPort = 80;
 
   /// Standard STUN port, used when a user-configured STUN server gives a host
   /// but no explicit port (the Google default above uses a non-standard port).
