@@ -44,6 +44,12 @@ class HubConnection extends ChangeNotifier {
 
   static const _heartbeat = Duration(seconds: 15);
 
+  /// Default STUN server for srflx gathering on the remote path. Google's public
+  /// STUN is the out-of-the-box default (ADR-0007) so remote access works with
+  /// no configuration; a hub may still override it via RemoteConfig.stun.
+  static const defaultStunHost = 'stun.l.google.com';
+  static const defaultStunPort = 19302;
+
   FluxCoapService? _service;
   bool _hasStoredPsk = false;
   bool _reachable    = false;
@@ -149,8 +155,7 @@ class HubConnection extends ChangeNotifier {
       controllerPsk: psk,
       signalOffer:   rzv.signalOffer,
       dtlsIdentity:  await ControllerSettings.loadDtlsId(id),
-      stunHost:      'stun.l.google.com',
-      stunPort:      19302,
+      // stunHost/stunPort default to Google's public STUN (see the defaults).
     );
   }
 
@@ -168,8 +173,8 @@ class HubConnection extends ChangeNotifier {
     required Uint8List controllerPsk,
     required Future<String?> Function(String offerSdp) signalOffer,
     String? dtlsIdentity,
-    String? stunHost,
-    int stunPort = 0,
+    String? stunHost = defaultStunHost,
+    int stunPort = defaultStunPort,
   }) async {
     _setStatusFlags(reachable: false, probing: true);
     final session = await FluxIceChannel().start(stunHost: stunHost, stunPort: stunPort);
