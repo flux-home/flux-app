@@ -127,6 +127,42 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) { debugPrint('FluxCoapService getInfo: $e'); return null; }
   }
 
+  /// The controller's configured rendezvous URL (RemoteConfig.rendezvous_url,
+  /// field 4) read over the LAN. Lets the app auto-learn where to signal for
+  /// off-LAN access instead of the user typing it. Null if unset/unreachable.
+  /// RemoteConfig isn't in the app's generated proto yet, so field 4 (a
+  /// length-delimited string) is decoded by hand.
+  Future<String?> getRendezvousUrl() async {
+    final b = await _get('/remote/config');
+    if (b == null) return null;
+    var i = 0;
+    while (i < b.length) {
+      final key  = b[i++];
+      final wire = key & 7;
+      final tag  = key >> 3;
+      if (wire == 2) {
+        var len = 0, shift = 0;
+        while (i < b.length) {
+          final x = b[i++];
+          len |= (x & 0x7f) << shift;
+          shift += 7;
+          if (x & 0x80 == 0) break;
+        }
+        final val = b.sublist(i, i + len);
+        i += len;
+        if (tag == 4) return String.fromCharCodes(val); // rendezvous_url
+      } else if (wire == 0) {
+        while (i < b.length && b[i] & 0x80 != 0) { i++; }
+        i++;
+      } else if (wire == 5) {
+        i += 4;
+      } else if (wire == 1) {
+        i += 8;
+      }
+    }
+    return null;
+  }
+
   Future<$proto.ThreadDataset?> getThreadDataset() async {
     final b = await _get('/thread/dataset');
     if (b == null) return null;

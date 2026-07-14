@@ -103,10 +103,28 @@ class HubConnection extends ChangeNotifier {
       _wire(_service);
       notifyListeners();
       await _probe();
-      if (_reachable) return true;
+      if (_reachable) {
+        // Learn the hub's rendezvous URL while we can reach it on the LAN, so a
+        // later off-LAN tryRemote() works without the user ever typing a URL.
+        unawaited(_learnRendezvousUrl());
+        return true;
+      }
     }
     // LAN discovery and/or reachability failed → remote fallback.
     return tryRemote();
+  }
+
+  /// Cache the controller's own rendezvous URL (read over the LAN) against the
+  /// paired controller id, so [tryRemote] can find it later. No-op if the hub
+  /// doesn't advertise one or we can't resolve the controller id.
+  Future<void> _learnRendezvousUrl() async {
+    final svc = _service;
+    if (svc == null) return;
+    final url = await svc.getRendezvousUrl();
+    if (url == null || url.isEmpty) return;
+    final id = await ControllerSettings.firstControllerId()
+        ?? svc.endpoint.dtlsIdentity;
+    if (id != null) await ControllerSettings.saveRendezvousUrl(id, url);
   }
 
   /// Remote branch of the FSM: bring up the tunnel using the paired hub's

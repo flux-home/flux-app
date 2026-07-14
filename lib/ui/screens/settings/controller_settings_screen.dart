@@ -138,6 +138,20 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
       _online  = info != null; // real reachability
       _probing = false;
     });
+    if (info != null) unawaited(_autofillRendezvous(svc));
+  }
+
+  /// While connected on the LAN, learn the rendezvous URL straight from the hub
+  /// and pre-fill the field (and persist it) — so the user never has to type an
+  /// IPv6 URL by hand. Won't overwrite a value the user is already editing.
+  Future<void> _autofillRendezvous(FluxCoapService svc) async {
+    final url = await svc.getRendezvousUrl();
+    if (url == null || url.isEmpty || !mounted) return;
+    if (_rzvCtrl.text.trim().isNotEmpty) return; // don't clobber an edit
+    final id = _rzvId ?? await ControllerSettings.firstControllerId();
+    if (id == null || !mounted) return;
+    await ControllerSettings.saveRendezvousUrl(id, url);
+    if (mounted) setState(() => _rzvCtrl.text = url);
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -462,7 +476,8 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
               ]),
               const SizedBox(height: 4),
               Text(
-                'Reach the hub when you are away from home, via a rendezvous server.',
+                'Reach the hub when you are away from home. Learned from the hub '
+                'automatically while on your home network — edit only to override.',
                 style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
               ),
               const SizedBox(height: 12),
