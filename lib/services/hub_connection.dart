@@ -111,19 +111,14 @@ class HubConnection extends ChangeNotifier {
     unawaited(_probe());
   }
 
-  /// Remote-first / LAN-fallback connect (app ADR-0003). The off-LAN ICE tunnel
-  /// (via the rendezvous, srflx over STUN) is the default path; if it can't be
-  /// brought up — no rendezvous URL learned yet (first run), or the
-  /// rendezvous/STUN is unreachable — falls back to mDNS discovery on the LAN.
-  /// A successful LAN connect also (re)learns the rendezvous URL for next time,
-  /// so the remote path is ready on subsequent connects.
+  /// LAN-first / remote-fallback connect (app ADR-0003). Tries mDNS discovery on
+  /// the LAN first (faster, and needs no rendezvous/STUN/TURN); a successful LAN
+  /// connect also (re)learns the hub's rendezvous URL so the off-LAN path is
+  /// ready later. If the controller can't be reached on the LAN, falls back to
+  /// the remote ICE tunnel (rendezvous + STUN, TURN for CGNAT).
   Future<bool> reconnect() async {
     _setStatusFlags(reachable: false, probing: true);
-    // Off-LAN tunnel first.
-    if (await tryRemote()) return true;
-
-    // Fall back to the LAN.
-    _setStatusFlags(reachable: false, probing: true);
+    // LAN first.
     final ep = await FluxControllerDiscovery.discover();
     if (ep != null) {
       _service?.dispose();
@@ -138,8 +133,8 @@ class HubConnection extends ChangeNotifier {
         return true;
       }
     }
-    _setStatusFlags(reachable: false, probing: false);
-    return false;
+    // LAN discovery and/or reachability failed → remote fallback.
+    return tryRemote();
   }
 
   /// Cache the controller's own rendezvous URL (read over the LAN) against the
