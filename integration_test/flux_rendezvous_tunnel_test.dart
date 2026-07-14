@@ -20,7 +20,10 @@ import 'package:integration_test/integration_test.dart';
 import 'package:matter_home/services/flux_rendezvous.dart';
 import 'package:matter_home/services/hub_connection.dart';
 
-const _rendezvousUrl = 'http://192.168.1.144:8080';
+// Override for the across-NAT run with:
+//   --dart-define=RZV_URL=http://[<public-ipv6>]:8080
+const _rendezvousUrl =
+    String.fromEnvironment('RZV_URL', defaultValue: 'http://192.168.1.144:8080');
 const _identity = 'flux-controller-e25311';
 final _psk = Uint8List.fromList([
   0x2c, 0x15, 0x25, 0xa8, 0xcd, 0xf4, 0x09, 0x08,

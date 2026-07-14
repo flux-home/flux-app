@@ -106,12 +106,15 @@ class HubConnection extends ChangeNotifier {
       if (_reachable) return true;
     }
     // LAN discovery and/or reachability failed → remote fallback.
-    return _tryRemote();
+    return tryRemote();
   }
 
   /// Remote branch of the FSM: bring up the tunnel using the paired hub's
   /// cached PSK + rendezvous URL, gathering srflx via a public STUN server.
-  Future<bool> _tryRemote() async {
+  /// Public so the UI can force the remote path (e.g. a "Connect remotely"
+  /// action) without waiting for LAN discovery to fail — handy for testing
+  /// off-LAN while still on the LAN, and the branch [reconnect] falls back to.
+  Future<bool> tryRemote() async {
     final id = await ControllerSettings.firstControllerId();
     if (id == null) {
       _setStatusFlags(reachable: false, probing: false);

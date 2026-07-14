@@ -39,11 +39,18 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   bool             _probing  = false;
   Timer?           _poll;
 
+  // Remote access (off-LAN): rendezvous URL persisted per controller (ADR-0006),
+  // consumed by HubConnection.tryRemote().
+  final TextEditingController _rzvCtrl = TextEditingController();
+  String?          _rzvId;
+  bool             _connectingRemote = false;
+
   @override
   void initState() {
     super.initState();
     _loadPskStatus();
     _loadActiveDataset();
+    _loadRendezvous();
     final svc = context.read<HubConnection>().service;
     if (svc != null) _fetchInfo(svc);
     // Re-probe periodically so the status reflects the hub going on/offline
@@ -57,6 +64,7 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   @override
   void dispose() {
     _poll?.cancel();
+    _rzvCtrl.dispose();
     super.dispose();
   }
 
@@ -75,6 +83,50 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     if (id.isEmpty) { if (mounted) setState(() => _pskLoaded = true); return; }
     final psk = await ControllerSettings.loadPsk(id);
     if (mounted) setState(() { _storedPsk = psk; _pskLoaded = true; });
+  }
+
+  Future<void> _loadRendezvous() async {
+    final id = await ControllerSettings.firstControllerId();
+    final url = id == null ? null : await ControllerSettings.loadRendezvousUrl(id);
+    if (!mounted) return;
+    setState(() {
+      _rzvId = id;
+      _rzvCtrl.text = url ?? '';
+    });
+  }
+
+  Future<void> _saveRendezvous() async {
+    final id = _rzvId ?? await ControllerSettings.firstControllerId();
+    if (id == null) return;
+    final url = _rzvCtrl.text.trim();
+    await ControllerSettings.saveRendezvousUrl(id, url);
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(url.isEmpty ? 'Rendezvous URL cleared' : 'Rendezvous URL saved'),
+    ));
+  }
+
+  /// Force the off-LAN remote path (skip LAN discovery) — useful for testing
+  /// the tunnel while still on the LAN. In normal use [reconnect] falls back to
+  /// this automatically when the controller can't be reached on the LAN.
+  Future<void> _connectRemote() async {
+    final hub = context.read<HubConnection>();
+    await _saveRendezvous(); // persist any edit first
+    if (!mounted) return;
+    setState(() => _connectingRemote = true);
+    final ok = await hub.tryRemote();
+    if (!mounted) return;
+    setState(() => _connectingRemote = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(ok
+          ? 'Connected via remote tunnel ✓'
+          : 'Remote tunnel failed — check the rendezvous URL and that the hub is online'),
+    ));
+    if (ok) {
+      final svc = hub.service;
+      if (svc != null) _fetchInfo(svc);
+    }
   }
 
   Future<void> _fetchInfo(FluxCoapService svc) async {
@@ -386,8 +438,72 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                         ),
                       ),
                     ),
+                    _remoteAccessCard(cs),
                   ],
                 ),
     );
   }
+
+  /// Remote-access (off-LAN) config: the rendezvous URL the app uses to reach
+  /// the hub when it isn't on the same network. Feeds HubConnection.tryRemote()
+  /// (srflx via a public STUN server; ADR-0006).
+  Widget _remoteAccessCard(ColorScheme cs) => Card(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.cloud_outlined, color: cs.primary, size: 20),
+                const SizedBox(width: 12),
+                const Text('Remote access',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              ]),
+              const SizedBox(height: 4),
+              Text(
+                'Reach the hub when you are away from home, via a rendezvous server.',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _rzvCtrl,
+                enabled: _rzvId != null,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: 'Rendezvous URL',
+                  hintText: 'http://[2003:…]:8080',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _saveRendezvous(),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _rzvId == null ? null : _saveRendezvous,
+                    child: const Text('Save'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: (_rzvId == null || _connectingRemote)
+                        ? null
+                        : _connectRemote,
+                    icon: _connectingRemote
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.wifi_tethering, size: 18),
+                    label: const Text('Connect remotely'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
 }
