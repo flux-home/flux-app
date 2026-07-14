@@ -25,6 +25,18 @@ enum ControllerStatus {
   offline,
 }
 
+/// How the app is currently reaching the controller.
+enum ConnectionKind {
+  /// Not currently connected.
+  none,
+
+  /// Direct connection on the local network (mDNS/LAN).
+  local,
+
+  /// Off-LAN via the remote ICE tunnel (rendezvous + STUN/TURN).
+  remote,
+}
+
 /// Mutable handle on the Flux Controller connection.
 ///
 /// Injected as a [ChangeNotifierProvider] so any widget or provider can
@@ -90,6 +102,17 @@ class HubConnection extends ChangeNotifier {
   }
 
   bool get isOnline => status == ControllerStatus.online;
+
+  /// Which transport the active connection uses. The remote ICE tunnel always
+  /// presents a 127.0.0.1 loopback endpoint (app ADR-0001), so a loopback host
+  /// means remote; any other reachable host is a direct LAN connection. Only
+  /// meaningful while [isOnline].
+  ConnectionKind get connectionKind {
+    if (!_reachable) return ConnectionKind.none;
+    return _service?.endpoint.host == '127.0.0.1'
+        ? ConnectionKind.remote
+        : ConnectionKind.local;
+  }
 
   /// Re-reads whether any controller PSK is stored and notifies listeners if it
   /// changed. Call after the add-controller flow saves a PSK.
