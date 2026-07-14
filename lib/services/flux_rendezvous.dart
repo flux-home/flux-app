@@ -26,8 +26,8 @@ class FluxRendezvous {
   final void Function(String msg)? onLog;
 
   static const _pollAttempts   = 6;  // server long-polls ~25s each
-  static const _postTimeout    = Duration(seconds: 12); // fail fast if unreachable
-  static const _pollTimeout    = Duration(seconds: 30); // > server long-poll (25s)
+  static const _postTimeout    = Duration(seconds: 30); // cellular cold-connect can be slow
+  static const _pollTimeout    = Duration(seconds: 35); // > server long-poll (25s)
 
   /// mailbox = base32(HMAC-SHA256(psk, "flux-rendezvous-mailbox")), lowercase.
   late final String mailbox = _base32(
