@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
@@ -53,6 +55,15 @@ class HubConnection extends ChangeNotifier {
   /// Standard STUN port, used when a user-configured STUN server gives a host
   /// but no explicit port (the Google default above uses a non-standard port).
   static const _stunStandardPort = 3478;
+
+  /// Default TURN provider (metered.ca). Credentials are ephemeral, so they're
+  /// fetched fresh at connect time from this API rather than hard-coded. Used
+  /// only when no TURN relay is configured manually in settings.
+  /// NOTE: test key — for production, issue TURN creds from a backend instead
+  /// of shipping an API key in the app.
+  static const _meteredTurnApi =
+      'https://fluxcontrol.metered.live/api/v1/turn/credentials'
+      '?apiKey=9da12fdc3b0bf3b0e1539b6ab18969f79963';
 
   FluxCoapService? _service;
   bool _hasStoredPsk = false;
@@ -163,9 +174,19 @@ class HubConnection extends ChangeNotifier {
     }
     final rzv = FluxRendezvous(baseUrl: url, psk: psk, onLog: _log);
     final (stunHost, stunPort) = _resolveStun(await ControllerSettings.loadStunServer(id));
-    final (turnServer, turnUser, turnPass) = await ControllerSettings.loadTurn(id);
-    final (turnHost, turnPort) =
-        turnServer == null ? (null, 0) : _resolveHostPort(turnServer, _stunStandardPort);
+
+    // TURN: a manually-configured relay wins; otherwise fall back to the
+    // built-in metered.ca default (fresh ephemeral creds fetched per connect).
+    final (turnServer, mUser, mPass) = await ControllerSettings.loadTurn(id);
+    String? turnHost; var turnPort = 0; String? turnUser; String? turnPass;
+    if (turnServer != null) {
+      (turnHost, turnPort) = _resolveHostPort(turnServer, _stunStandardPort);
+      turnUser = mUser;
+      turnPass = mPass;
+    } else {
+      (turnHost, turnPort, turnUser, turnPass) = await _fetchDefaultTurn();
+    }
+
     return connectViaRemoteTunnel(
       controllerPsk: psk,
       signalOffer:   rzv.signalOffer,
@@ -177,6 +198,34 @@ class HubConnection extends ChangeNotifier {
       turnUser:      turnUser,
       turnPass:      turnPass,
     );
+  }
+
+  /// Fetch fresh TURN credentials from the default provider (metered.ca).
+  /// Returns (host, port, user, pass); host is null on any failure (falls back
+  /// to STUN-only). Picks the first plain-UDP `turn:` entry.
+  Future<(String?, int, String?, String?)> _fetchDefaultTurn() async {
+    try {
+      final r = await http.get(Uri.parse(_meteredTurnApi))
+          .timeout(const Duration(seconds: 10));
+      if (r.statusCode != 200) {
+        _log('default TURN fetch: HTTP ${r.statusCode}');
+        return (null, 0, null, null);
+      }
+      final list = jsonDecode(r.body) as List<dynamic>;
+      for (final e in list) {
+        final m = e as Map<String, dynamic>;
+        final urls = (m['urls'] as String?) ?? '';
+        if (urls.startsWith('turn:') && !urls.contains('transport=tcp')) {
+          final (h, p) = _resolveHostPort(urls, _stunStandardPort);
+          _log('default TURN: $h:$p (metered.ca)');
+          return (h, p, m['username'] as String?, m['credential'] as String?);
+        }
+      }
+      _log('default TURN: no usable turn: entry in response');
+    } on Object catch (e) {
+      _log('default TURN fetch failed: $e');
+    }
+    return (null, 0, null, null);
   }
 
   /// Resolve a stored STUN setting ("host" or "host:port") to (host, port),
