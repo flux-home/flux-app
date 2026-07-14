@@ -39,9 +39,10 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   bool             _probing  = false;
   Timer?           _poll;
 
-  // Remote access (off-LAN): rendezvous URL persisted per controller (ADR-0006),
-  // consumed by HubConnection.tryRemote().
-  final TextEditingController _rzvCtrl = TextEditingController();
+  // Remote access (off-LAN): rendezvous URL (ADR-0006) + STUN server (ADR-0007)
+  // persisted per controller, consumed by HubConnection.tryRemote().
+  final TextEditingController _rzvCtrl  = TextEditingController();
+  final TextEditingController _stunCtrl = TextEditingController();
   String?          _rzvId;
   bool             _connectingRemote = false;
 
@@ -65,6 +66,7 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   void dispose() {
     _poll?.cancel();
     _rzvCtrl.dispose();
+    _stunCtrl.dispose();
     super.dispose();
   }
 
@@ -87,24 +89,28 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
 
   Future<void> _loadRendezvous() async {
     final id = await ControllerSettings.firstControllerId();
-    final url = id == null ? null : await ControllerSettings.loadRendezvousUrl(id);
+    final url  = id == null ? null : await ControllerSettings.loadRendezvousUrl(id);
+    final stun = id == null ? null : await ControllerSettings.loadStunServer(id);
     if (!mounted) return;
     setState(() {
       _rzvId = id;
-      _rzvCtrl.text = url ?? '';
+      _rzvCtrl.text  = url ?? '';
+      _stunCtrl.text = stun ?? '';
     });
   }
 
   Future<void> _saveRendezvous() async {
     final id = _rzvId ?? await ControllerSettings.firstControllerId();
     if (id == null) return;
-    final url = _rzvCtrl.text.trim();
+    final url  = _rzvCtrl.text.trim();
+    final stun = _stunCtrl.text.trim();
     await ControllerSettings.saveRendezvousUrl(id, url);
+    await ControllerSettings.saveStunServer(id, stun);
     if (!mounted) return;
     FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(url.isEmpty ? 'Rendezvous URL cleared' : 'Rendezvous URL saved'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Remote access settings saved')),
+    );
   }
 
   /// Force the off-LAN remote path (skip LAN discovery) — useful for testing
@@ -490,6 +496,22 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Rendezvous URL',
                   hintText: 'http://[2003:…]:8080',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _saveRendezvous(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _stunCtrl,
+                enabled: _rzvId != null,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: 'STUN server',
+                  hintText: 'stun.l.google.com:19302 (default)',
+                  helperText: 'Leave blank to use Google’s public STUN.',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),

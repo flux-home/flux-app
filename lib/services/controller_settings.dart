@@ -18,6 +18,7 @@ class ControllerSettings {
   static const _kPsk         = 'ctrl_psk';          // hex32 keyed by controller ID
   static const _kDtlsId      = 'ctrl_dtls_id';      // DTLS identity — same as controller ID
   static const _kRzvUrl      = 'ctrl_rzv_url';      // rendezvous URL keyed by controller ID (ADR-0006)
+  static const _kStun        = 'ctrl_stun';         // STUN server "host:port" keyed by controller ID (ADR-0007)
 
   static Future<ControllerSettings?> loadManualOverride() async {
     final prefs = await SharedPreferences.getInstance();
@@ -80,6 +81,25 @@ class ControllerSettings {
     final prefs = await SharedPreferences.getInstance();
     final u = prefs.getString('${_kRzvUrl}_$controllerId');
     return (u == null || u.isEmpty) ? null : u;
+  }
+
+  /// STUN server ("host" or "host:port") for srflx gathering on the remote path
+  /// (ADR-0007), per controller. Empty [server] clears it (falls back to the
+  /// built-in Google default).
+  static Future<void> saveStunServer(String controllerId, String server) async {
+    final prefs = await SharedPreferences.getInstance();
+    final s = server.trim();
+    if (s.isEmpty) {
+      await prefs.remove('${_kStun}_$controllerId');
+    } else {
+      await prefs.setString('${_kStun}_$controllerId', s);
+    }
+  }
+
+  static Future<String?> loadStunServer(String controllerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final s = prefs.getString('${_kStun}_$controllerId');
+    return (s == null || s.isEmpty) ? null : s;
   }
 
   /// The controller ID of the (first) paired hub — the key used for the remote

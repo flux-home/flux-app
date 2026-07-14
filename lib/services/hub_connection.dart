@@ -50,6 +50,10 @@ class HubConnection extends ChangeNotifier {
   static const defaultStunHost = 'stun.l.google.com';
   static const defaultStunPort = 19302;
 
+  /// Standard STUN port, used when a user-configured STUN server gives a host
+  /// but no explicit port (the Google default above uses a non-standard port).
+  static const _stunStandardPort = 3478;
+
   FluxCoapService? _service;
   bool _hasStoredPsk = false;
   bool _reachable    = false;
@@ -158,12 +162,35 @@ class HubConnection extends ChangeNotifier {
       return false;
     }
     final rzv = FluxRendezvous(baseUrl: url, psk: psk);
+    final (stunHost, stunPort) = _resolveStun(await ControllerSettings.loadStunServer(id));
     return connectViaRemoteTunnel(
       controllerPsk: psk,
       signalOffer:   rzv.signalOffer,
       dtlsIdentity:  await ControllerSettings.loadDtlsId(id),
-      // stunHost/stunPort default to Google's public STUN (see the defaults).
+      stunHost:      stunHost,
+      stunPort:      stunPort,
     );
+  }
+
+  /// Resolve a stored STUN setting ("host" or "host:port") to (host, port),
+  /// falling back to the built-in Google default when unset. A host without an
+  /// explicit port uses the standard STUN port 3478.
+  static (String, int) _resolveStun(String? server) {
+    if (server == null || server.trim().isEmpty) {
+      return (defaultStunHost, defaultStunPort);
+    }
+    var host = server.trim();
+    if (host.startsWith('stun:')) host = host.substring(5); // tolerate scheme
+    var port = _stunStandardPort;
+    final colon = host.lastIndexOf(':');
+    if (colon > 0 && colon < host.length - 1) {
+      final p = int.tryParse(host.substring(colon + 1));
+      if (p != null && p > 0 && p <= 65535) {
+        port = p;
+        host = host.substring(0, colon);
+      }
+    }
+    return (host, port);
   }
 
   /// Bring up a remote-access ICE tunnel and swap the active service to talk
