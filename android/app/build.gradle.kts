@@ -38,6 +38,17 @@ android {
         targetSdk  = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // flux-ice native build (app ADR-0001/0002). arm64-v8a matches the
+        // existing jniLibs delivery; add x86_64 when an emulator build is needed.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=none")   // flux-ice is pure C
+            }
+        }
     }
 
     signingConfigs {
@@ -63,6 +74,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+    }
+
+    // Build libflux_ice_jni.so from src/main/cpp (flux-ice + libjuice + JNI glue).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
         }
     }
 }

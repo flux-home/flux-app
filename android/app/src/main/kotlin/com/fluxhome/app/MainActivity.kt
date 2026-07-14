@@ -3,6 +3,7 @@ package com.fluxhome.app
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.util.Log
+import com.fluxhome.app.bridge.FluxIceBridge
 import com.fluxhome.app.bridge.MatterBridge
 import com.fluxhome.app.chip.AndroidThreadCredentialReader
 import com.fluxhome.app.chip.ChipClient
@@ -38,9 +39,12 @@ class MainActivity : FlutterActivity() {
         private const val METHOD_CHANNEL  = "com.fluxhome.app/matter"
         private const val EVENT_CHANNEL   = "com.fluxhome.app/commission_events"
         private const val DEVICE_CHANNEL  = "com.fluxhome.app/device_state"
+        private const val FLUX_ICE_METHOD = "com.fluxhome.app/flux_ice"
+        private const val FLUX_ICE_EVENTS = "com.fluxhome.app/flux_ice_events"
     }
 
     private val bridge by lazy { MatterBridge(applicationContext) }
+    private val fluxIce by lazy { FluxIceBridge() }
 
     private var methodChannel: MethodChannel? = null
 
@@ -249,6 +253,36 @@ class MainActivity : FlutterActivity() {
                     "discoverCommissionableNodes" ->
                         bridge.discoverCommissionableNodes(result)
 
+                    else ->
+                        result.notImplemented()
+                }
+            }
+
+        // ── flux-ice: remote-access ICE tunnel (app ADR-0001) ─────────────────
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, FLUX_ICE_EVENTS)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    val handle = (arguments as? Number)?.toLong() ?: 0L
+                    fluxIce.setStateSink(events, handle)
+                }
+                override fun onCancel(arguments: Any?) {
+                    fluxIce.setStateSink(null, 0L)
+                }
+            })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FLUX_ICE_METHOD)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" ->
+                        fluxIce.start(call.argument<String>("stunHost"),
+                                      call.argument<Int>("stunPort") ?: 0, result)
+                    "setAnswer" ->
+                        fluxIce.setAnswer(call.nodeIdArg("handle") ?: 0L,
+                                          call.argument<String>("answer") ?: "", result)
+                    "localPort" ->
+                        fluxIce.localPort(call.nodeIdArg("handle") ?: 0L, result)
+                    "stop" ->
+                        fluxIce.stop(call.nodeIdArg("handle") ?: 0L, result)
                     else ->
                         result.notImplemented()
                 }

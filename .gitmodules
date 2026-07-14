@@ -1,0 +1,4 @@
+[submodule "flux-interface"]
+	path = flux-interface
+	url = git@github.com:flux-home/flux-interface.git
+	branch = feat/remote-access-integration

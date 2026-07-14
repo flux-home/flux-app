@@ -18,5 +18,6 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: any FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     MatterBridge.register(messenger: engineBridge.applicationRegistrar.messenger())
+    FluxIceBridge.register(messenger: engineBridge.applicationRegistrar.messenger())
   }
 }

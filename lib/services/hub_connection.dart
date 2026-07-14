@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/flux_controller_discovery.dart';
+import 'package:matter_home/services/flux_ice_channel.dart';
 
 /// App-wide reachability of the Flux controller.
 enum ControllerStatus {
@@ -103,6 +104,53 @@ class HubConnection extends ChangeNotifier {
     notifyListeners();
     await _probe();
     return _reachable;
+  }
+
+  /// Bring up a remote-access ICE tunnel and swap the active service to talk
+  /// CoAP/DTLS through it (app ADR-0001/0003 — the remote branch of the
+  /// LAN-first FSM). This is the integration seam the FSM calls once LAN
+  /// discovery+reachability have both failed.
+  ///
+  /// [signalOffer] delivers the MAC-authenticated offer to the controller's
+  /// `/remote/signal` (LAN) or the rendezvous (off-LAN) and returns the
+  /// controller's answer SDP; keeping it a callback keeps the transport choice
+  /// out of the connection FSM. [controllerPsk]/[dtlsIdentity] are reused for
+  /// DTLS over the loopback tunnel (flux-interface ADR-0002 — no new secrets).
+  Future<bool> connectViaRemoteTunnel({
+    required Uint8List controllerPsk,
+    required Future<String?> Function(String offerSdp) signalOffer,
+    String? dtlsIdentity,
+    String? stunHost,
+    int stunPort = 0,
+  }) async {
+    _setStatusFlags(reachable: false, probing: true);
+    final session = await FluxIceChannel().start(stunHost: stunHost, stunPort: stunPort);
+    if (session == null) {
+      _setStatusFlags(reachable: false, probing: false);
+      return false;
+    }
+    try {
+      final answer = await signalOffer(session.offer);
+      if (answer == null || answer.isEmpty || !await session.setAnswer(answer)) {
+        await session.stop();
+        _setStatusFlags(reachable: false, probing: false);
+        return false;
+      }
+      await session.awaitConnected();
+      final port = await session.localPort();
+      setService(FluxCoapService(FluxControllerEndpoint(
+        host: '127.0.0.1',
+        port: port,
+        psk: controllerPsk,
+        dtlsIdentity: dtlsIdentity,
+      )));
+      return true;
+    } on Object catch (e) {
+      debugPrint('remote tunnel failed: $e');
+      await session.stop();
+      _setStatusFlags(reachable: false, probing: false);
+      return false;
+    }
   }
 
   // ── Health monitoring ──────────────────────────────────────────────────────
