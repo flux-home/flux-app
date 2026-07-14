@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -14,13 +15,19 @@ import 'package:http/http.dart' as http;
 ///
 /// Pass [signalOffer] as the callback to `HubConnection.connectViaRemoteTunnel`.
 class FluxRendezvous {
-  FluxRendezvous({required this.baseUrl, required this.psk})
+  FluxRendezvous({required this.baseUrl, required this.psk, this.onLog})
       : assert(psk.length == 16, 'PSK must be 16 bytes');
 
   final String baseUrl; // e.g. https://rzv.example.com  (no trailing slash needed)
   final Uint8List psk;
 
-  static const _pollAttempts = 6; // server long-polls ~25s each
+  /// Optional diagnostics sink — each signaling step is reported here (and to
+  /// logcat) so an off-LAN attempt can be debugged from the phone screen.
+  final void Function(String msg)? onLog;
+
+  static const _pollAttempts   = 6;  // server long-polls ~25s each
+  static const _postTimeout    = Duration(seconds: 12); // fail fast if unreachable
+  static const _pollTimeout    = Duration(seconds: 30); // > server long-poll (25s)
 
   /// mailbox = base32(HMAC-SHA256(psk, "flux-rendezvous-mailbox")), lowercase.
   late final String mailbox = _base32(
@@ -30,23 +37,39 @@ class FluxRendezvous {
 
   String get _base => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
+  void _log(String m) {
+    onLog?.call(m);
+    debugPrint('flux-rzv: $m');
+  }
+
   /// POST the offer, then long-poll for the answer SDP (null on failure).
   Future<String?> signalOffer(String offerSdp) async {
     final body = _buildIceSignal(offerSdp);
+    _log('mailbox=${mailbox.substring(0, 8)}… POST offer → $_base');
     try {
-      final post = await http.post(Uri.parse('$_base/$mailbox/offer'), body: body);
+      final post = await http
+          .post(Uri.parse('$_base/$mailbox/offer'), body: body)
+          .timeout(_postTimeout);
       if (post.statusCode ~/ 100 != 2) {
-        debugPrint('rendezvous offer POST ${post.statusCode}');
+        _log('offer POST rejected: HTTP ${post.statusCode}');
         return null;
       }
+      _log('offer POSTed (HTTP ${post.statusCode}); polling for answer…');
       for (var i = 0; i < _pollAttempts; i++) {
-        final r = await http.get(Uri.parse('$_base/$mailbox/answer'));
+        final r = await http
+            .get(Uri.parse('$_base/$mailbox/answer'))
+            .timeout(_pollTimeout);
         if (r.statusCode == 200 && r.bodyBytes.isNotEmpty) {
+          _log('answer received (${r.bodyBytes.length} B)');
           return _decodeSdp(r.bodyBytes);
         }
+        _log('poll ${i + 1}/$_pollAttempts: HTTP ${r.statusCode}, empty');
       }
+      _log('no answer after $_pollAttempts polls (hub not answering?)');
+    } on TimeoutException {
+      _log('TIMEOUT reaching rendezvous — unreachable from this network?');
     } on Object catch (e) {
-      debugPrint('rendezvous signaling failed: $e');
+      _log('rendezvous unreachable: $e');
     }
     return null;
   }

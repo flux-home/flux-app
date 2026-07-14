@@ -161,7 +161,7 @@ class HubConnection extends ChangeNotifier {
       _setStatusFlags(reachable: false, probing: false);
       return false;
     }
-    final rzv = FluxRendezvous(baseUrl: url, psk: psk);
+    final rzv = FluxRendezvous(baseUrl: url, psk: psk, onLog: _log);
     final (stunHost, stunPort) = _resolveStun(await ControllerSettings.loadStunServer(id));
     return connectViaRemoteTunnel(
       controllerPsk: psk,
