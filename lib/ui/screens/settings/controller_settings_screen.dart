@@ -124,12 +124,30 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     final ok = await hub.tryRemote();
     if (!mounted) return;
     setState(() => _connectingRemote = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok
-          ? 'Connected via remote tunnel ✓'
-          : 'Remote tunnel failed — check the rendezvous URL and that the hub is online'),
-    ));
-    if (ok) {
+    // Show the full trace on-screen so the tunnel can be debugged with Wi-Fi
+    // off (no adb): STUN used, whether a public (srflx) candidate gathered,
+    // whether the answer arrived, and the ICE outcome.
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(ok ? 'Remote tunnel ✓' : 'Remote tunnel failed'),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            hub.lastRemoteDiagnostics.isEmpty
+                ? 'No diagnostics captured.'
+                : hub.lastRemoteDiagnostics,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    if (ok && mounted) {
       final svc = hub.service;
       if (svc != null) _fetchInfo(svc);
     }

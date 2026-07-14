@@ -210,21 +210,36 @@ class HubConnection extends ChangeNotifier {
     String? stunHost = defaultStunHost,
     int stunPort = defaultStunPort,
   }) async {
+    _diag.clear();
+    _log('start: stun=$stunHost:$stunPort');
     _setStatusFlags(reachable: false, probing: true);
     final session = await FluxIceChannel().start(stunHost: stunHost, stunPort: stunPort);
     if (session == null) {
+      _log('FAIL: native ICE start returned null');
       _setStatusFlags(reachable: false, probing: false);
       return false;
     }
+    _log('offer gathered: ${_candSummary(session.offer)}');
+    final stateSub = session.states.listen((s) => _log('ICE state: ${s.name}'));
     try {
+      _log('signaling offer via rendezvous…');
       final answer = await signalOffer(session.offer);
-      if (answer == null || answer.isEmpty || !await session.setAnswer(answer)) {
+      if (answer == null || answer.isEmpty) {
+        _log('FAIL: no answer from rendezvous (unreachable? MAC rejected? no hub?)');
+        await session.stop();
+        _setStatusFlags(reachable: false, probing: false);
+        return false;
+      }
+      _log('answer received: ${_candSummary(answer)}');
+      if (!await session.setAnswer(answer)) {
+        _log('FAIL: setAnswer rejected the SDP');
         await session.stop();
         _setStatusFlags(reachable: false, probing: false);
         return false;
       }
       await session.awaitConnected();
       final port = await session.localPort();
+      _log('CONNECTED: ICE up, loopback CoAP port=$port');
       setService(FluxCoapService(FluxControllerEndpoint(
         host: '127.0.0.1',
         port: port,
@@ -233,11 +248,31 @@ class HubConnection extends ChangeNotifier {
       )));
       return true;
     } on Object catch (e) {
-      debugPrint('remote tunnel failed: $e');
+      _log('FAIL: $e');
       await session.stop();
       _setStatusFlags(reachable: false, probing: false);
       return false;
+    } finally {
+      await stateSub.cancel();
     }
+  }
+
+  /// Human-readable trace of the last remote-tunnel attempt — shown on-screen
+  /// (so the phone can be debugged with Wi-Fi off, no adb) and mirrored to
+  /// logcat via debugPrint for the persistent-buffer dump afterwards.
+  final List<String> _diag = [];
+  String get lastRemoteDiagnostics => _diag.join('\n');
+
+  void _log(String line) {
+    _diag.add(line);
+    debugPrint('flux-remote: $line');
+  }
+
+  /// Count candidate types in an SDP — srflx>0 means STUN produced a public
+  /// (server-reflexive) candidate, the key signal when testing off-LAN.
+  static String _candSummary(String sdp) {
+    int n(String t) => RegExp('typ $t').allMatches(sdp).length;
+    return 'host=${n('host')} srflx=${n('srflx')} relay=${n('relay')}';
   }
 
   // ── Health monitoring ──────────────────────────────────────────────────────
