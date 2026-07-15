@@ -117,6 +117,22 @@ class EnergyHistoryData {
     return peak;
   }
 
+  /// Consumption **energy (kWh)** in bucket [i] — the per-15-min value the
+  /// history bar chart plots. Derived from the bucket's average power over its
+  /// duration (kWh = avg-kW × hours).
+  double bucketConsumptionKwh(int i) =>
+      points[i].consumptionW * bucket.inSeconds / 3600000.0;
+
+  /// Largest single-bucket consumption (kWh) — drives the bar chart's Y scale.
+  double get peakConsumptionKwh {
+    var peak = 0.0;
+    for (var i = 0; i < points.length; i++) {
+      final v = bucketConsumptionKwh(i);
+      if (v > peak) peak = v;
+    }
+    return peak;
+  }
+
   /// Whole-home consumption over the window, from the energy balance:
   ///   consumption = generated + imported + battery discharge
   ///               − exported − battery charge

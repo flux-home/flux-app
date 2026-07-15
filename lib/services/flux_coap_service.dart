@@ -193,15 +193,21 @@ class FluxCoapService implements MatterPort {
   /// (epoch seconds), [bucketSeconds] wide (default 900 = 15 min). Values are
   /// watt-hours per bucket, summed per device class. Null on a transient read
   /// failure. See GET /energy/history.
+  ///
+  /// [includeDeviceSeries] false adds `series=0`, telling the controller to skip
+  /// the per-device breakdown (the bulk of the payload) — used by views that
+  /// only need the aggregate buckets (e.g. the consumption history chart).
   Future<$proto.EnergyHistory?> getEnergyHistory({
     required int from,
     required int to,
     int bucketSeconds = 900,
+    bool includeDeviceSeries = true,
   }) async {
     final b = await _get('/energy/history', query: {
       'from': '$from',
       'to': '$to',
       'bucket': '$bucketSeconds',
+      if (!includeDeviceSeries) 'series': '0',
     }, timeout: _timeout30);
     if (b == null) return null;
     try { return $proto.EnergyHistory.fromBuffer(b); }

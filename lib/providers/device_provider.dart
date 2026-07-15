@@ -180,7 +180,10 @@ class DeviceProvider extends ChangeNotifier {
       final now = DateTime.now();
       final to = now.millisecondsSinceEpoch ~/ 1000;
       final from = to - 24 * 3600;
-      final h = await svc.getEnergyHistory(from: from, to: to);
+      // The history chart plots aggregate consumption only, so skip the
+      // per-device series — it's the bulk of the payload.
+      final h = await svc.getEnergyHistory(
+          from: from, to: to, includeDeviceSeries: false);
       if (_disposed) return;
       if (h != null) _energyHistory = EnergyHistoryData.fromProto(h);
     }();
