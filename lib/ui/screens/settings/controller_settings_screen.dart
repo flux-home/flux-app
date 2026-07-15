@@ -8,11 +8,16 @@ import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
-import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
-import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 import 'package:matter_home/services/thread_sync_service.dart';
+import 'package:matter_home/ui/screens/settings/remote_access_screen.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
 import 'package:provider/provider.dart';
+
+// Connection-state accents, shared with ControllerStatusChip.
+const _localColor   = Color(0xFF9FD8A8); // green
+const _remoteColor  = Color(0xFFA9C7F2); // blue
+const _connectingC  = Color(0xFFBFC4CC); // grey
+const _offlineColor = Color(0xFFF2A9A0); // coral
 
 enum _HubAction { refresh, syncThread, remove }
 
@@ -26,39 +31,21 @@ class ControllerSettingsScreen extends StatefulWidget {
 
 class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   ControllerInfo?  _info;
-  bool             _loading      = false;
+  bool             _loading       = false;
   Uint8List?       _storedPsk;
-  bool             _pskLoaded    = false;
+  bool             _pskLoaded     = false;
   ThreadDataset?   _activeDataset;
   bool             _syncingThread = false;
-
-  /// Live reachability: true once a `/info` read succeeds, false when it fails.
-  /// This is the real "connected" signal — [HubConnection.isConnected] only
-  /// means "a hub was discovered at some point", which stays true even offline.
-  bool             _online   = false;
-  bool             _probing  = false;
+  bool             _probing       = false;
   Timer?           _poll;
-
-  // Remote access (off-LAN): rendezvous URL (ADR-0006) + STUN server (ADR-0007)
-  // persisted per controller, consumed by HubConnection.tryRemote().
-  final TextEditingController _rzvCtrl      = TextEditingController();
-  final TextEditingController _stunCtrl     = TextEditingController();
-  final TextEditingController _turnCtrl     = TextEditingController();
-  final TextEditingController _turnUserCtrl = TextEditingController();
-  final TextEditingController _turnPassCtrl = TextEditingController();
-  String?          _rzvId;
-  bool             _connectingRemote = false;
 
   @override
   void initState() {
     super.initState();
     _loadPskStatus();
     _loadActiveDataset();
-    _loadRendezvous();
     final svc = context.read<HubConnection>().service;
     if (svc != null) _fetchInfo(svc);
-    // Re-probe periodically so the status reflects the hub going on/offline
-    // while this screen is open.
     _poll = Timer.periodic(const Duration(seconds: 10), (_) {
       final s = context.read<HubConnection>().service;
       if (s != null && !_probing && !_loading) _fetchInfo(s);
@@ -68,11 +55,6 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   @override
   void dispose() {
     _poll?.cancel();
-    _rzvCtrl.dispose();
-    _stunCtrl.dispose();
-    _turnCtrl.dispose();
-    _turnUserCtrl.dispose();
-    _turnPassCtrl.dispose();
     super.dispose();
   }
 
@@ -93,111 +75,20 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     if (mounted) setState(() { _storedPsk = psk; _pskLoaded = true; });
   }
 
-  Future<void> _loadRendezvous() async {
-    final id = await ControllerSettings.firstControllerId();
-    final url  = id == null ? null : await ControllerSettings.loadRendezvousUrl(id);
-    final stun = id == null ? null : await ControllerSettings.loadStunServer(id);
-    final (turn, turnUser, turnPass) = id == null
-        ? (null, null, null)
-        : await ControllerSettings.loadTurn(id);
-    if (!mounted) return;
-    setState(() {
-      _rzvId = id;
-      _rzvCtrl.text      = url ?? '';
-      _stunCtrl.text     = stun ?? '';
-      _turnCtrl.text     = turn ?? '';
-      _turnUserCtrl.text = turnUser ?? '';
-      _turnPassCtrl.text = turnPass ?? '';
-    });
-  }
-
-  Future<void> _saveRendezvous() async {
-    final id = _rzvId ?? await ControllerSettings.firstControllerId();
-    if (id == null) return;
-    final url  = _rzvCtrl.text.trim();
-    final stun = _stunCtrl.text.trim();
-    await ControllerSettings.saveRendezvousUrl(id, url);
-    await ControllerSettings.saveStunServer(id, stun);
-    await ControllerSettings.saveTurn(id,
-        server: _turnCtrl.text.trim(),
-        user:   _turnUserCtrl.text.trim(),
-        pass:   _turnPassCtrl.text.trim());
-    if (!mounted) return;
-    FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Remote access settings saved')),
-    );
-  }
-
-  /// Force the off-LAN remote path (skip LAN discovery) — useful for testing
-  /// the tunnel while still on the LAN. In normal use [reconnect] falls back to
-  /// this automatically when the controller can't be reached on the LAN.
-  Future<void> _connectRemote() async {
-    final hub = context.read<HubConnection>();
-    await _saveRendezvous(); // persist any edit first
-    if (!mounted) return;
-    setState(() => _connectingRemote = true);
-    final ok = await hub.tryRemote();
-    if (!mounted) return;
-    setState(() => _connectingRemote = false);
-    // Show the full trace on-screen so the tunnel can be debugged with Wi-Fi
-    // off (no adb): STUN used, whether a public (srflx) candidate gathered,
-    // whether the answer arrived, and the ICE outcome.
-    await showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(ok ? 'Remote tunnel ✓' : 'Remote tunnel failed'),
-        content: SingleChildScrollView(
-          child: SelectableText(
-            hub.lastRemoteDiagnostics.isEmpty
-                ? 'No diagnostics captured.'
-                : hub.lastRemoteDiagnostics,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-    if (ok && mounted) {
-      final svc = hub.service;
-      if (svc != null) _fetchInfo(svc);
-    }
-  }
-
   Future<void> _fetchInfo(FluxCoapService svc) async {
     if (mounted) setState(() => _probing = true);
     final info = await svc.getInfo();
     if (!mounted) return;
     setState(() {
       _info    = info;
-      _online  = info != null; // real reachability
       _probing = false;
     });
-    if (info != null) unawaited(_autofillRendezvous(svc));
-  }
-
-  /// While connected on the LAN, learn the rendezvous URL straight from the hub
-  /// and pre-fill the field (and persist it) — so the user never has to type an
-  /// IPv6 URL by hand. Won't overwrite a value the user is already editing.
-  Future<void> _autofillRendezvous(FluxCoapService svc) async {
-    final url = await svc.getRendezvousUrl();
-    if (url == null || url.isEmpty || !mounted) return;
-    if (_rzvCtrl.text.trim().isNotEmpty) return; // don't clobber an edit
-    final id = _rzvId ?? await ControllerSettings.firstControllerId();
-    if (id == null || !mounted) return;
-    await ControllerSettings.saveRendezvousUrl(id, url);
-    if (mounted) setState(() => _rzvCtrl.text = url);
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   Future<void> _rediscover() async {
-    setState(() { _loading = true; _info = null; _online = false; });
+    setState(() { _loading = true; _info = null; });
     final hub   = context.read<HubConnection>();
     final found = await hub.reconnect();
     if (!mounted) return;
@@ -252,23 +143,20 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     await ControllerSettings.clearPsk(id);
     await hub.reconnect();
     if (mounted) {
-      setState(() { _storedPsk = null; _info = null; _online = false; });
+      setState(() { _storedPsk = null; _info = null; });
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Hub removed')));
     }
   }
 
-  /// Reconciles the Thread network with the hub as source of truth: adopts the
-  /// hub's network if it has one, otherwise pushes the app's active dataset.
+  /// Reconciles the Thread network with the hub as source of truth.
   Future<void> _syncThread() async {
     final svc = context.read<HubConnection>().service;
     if (svc == null) return;
-
     setState(() => _syncingThread = true);
     try {
       final result = await ThreadSyncService(svc).ensureInSync();
       if (!mounted) return;
-
       final message = switch (result.status) {
         ThreadSyncStatus.adopted     => "Using the hub's Thread network ✓",
         ThreadSyncStatus.pushed      => 'Thread network sent to the hub ✓',
@@ -291,70 +179,29 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
     }
   }
 
-  // ── Details ───────────────────────────────────────────────────────────────
-
-  /// Hub details shown inline beneath the hub card. Rows that need live data
-  /// (host, firmware, uptime) only appear once a `/info` read has succeeded;
-  /// the stored pairing key, fabric and Thread network are always shown.
-  Widget _detailsCard(ColorScheme cs) {
-    final fabricProvisioned = (_info?.fabricId.toInt() ?? 0) != 0;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('DETAILS',
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                    color: cs.onSurfaceVariant)),
-            const SizedBox(height: 4),
-            if (_info != null) ...[
-              _detailRow('Host', _info!.hostname),
-              if (_info!.ethernetIp.isNotEmpty)
-                _detailRow('IP address', _info!.ethernetIp),
-              if (_info!.firmwareVersion.isNotEmpty)
-                _detailRow('Firmware', _info!.firmwareVersion),
-              if (_info!.uptimeSeconds > 0)
-                _detailRow('Uptime', _formatUptime(_info!.uptimeSeconds)),
-            ],
-            if (_storedPsk != null)
-              _detailRow('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
-            _detailRow(
-              'Fabric',
-              fabricProvisioned ? '0x${_info!.fabricId.toHexString()}' : 'none',
-            ),
-            _detailRow(
-              'Thread network',
-              _activeDataset != null && !_activeDataset!.isEmpty
-                  ? _activeDataset!.label
-                  : 'none',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  /// A friendly name for the hub — falls back to a generic label.
   String _hubName() {
     final host = _info?.hostname ?? '';
     return host.isNotEmpty ? host : 'Flux Hub';
   }
 
-  String _hubSubtitle() => switch (true) {
-        _ when _loading                                       => 'Searching…',
-        _ when _online && (_info?.fabricId.toInt() ?? 0) == 0 => 'Starting up…',
-        _ when _online && _info!.firmwareVersion.isNotEmpty   => 'Connected · v${_info!.firmwareVersion}',
-        _ when _online                                        => 'Connected',
-        _ when _probing                                       => 'Checking…',
-        _                                                      => 'Offline',
-      };
+  /// (accent colour, short label) for the current connection state.
+  (Color, String) _connState(HubConnection hub) {
+    if (_loading) return (_connectingC, 'Searching…');
+    switch (hub.status) {
+      case ControllerStatus.online:
+        return hub.connectionKind == ConnectionKind.remote
+            ? (_remoteColor, 'Remote')
+            : (_localColor, 'Local');
+      case ControllerStatus.connecting:
+        return (_connectingC, 'Connecting…');
+      case ControllerStatus.offline:
+        return (_offlineColor, 'Offline');
+      case ControllerStatus.noHub:
+        return (_offlineColor, 'Offline');
+    }
+  }
 
   String _pskSummary(Uint8List psk) =>
       '${psk.take(4).map((b) => b.toRadixString(16).padLeft(2, '0')).join()}…';
@@ -369,11 +216,11 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
   }
 
   Widget _detailRow(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 92,
+        SizedBox(width: 108,
             child: Text(label, style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant))),
@@ -387,12 +234,7 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hub = context.watch<HubConnection>(); // rebuild when the service is swapped
-    // A hub is "configured" the moment a PSK is stored, even if the controller
-    // can't be reached right now — so we must never fall back to "NO HUB YET"
-    // in that case. HubConnection.hasConfiguredHub is the source of truth;
-    // _storedPsk only loads once the controller ID can be resolved (i.e. the
-    // box was discovered), which never happens for an offline PSK-added hub.
+    final hub = context.watch<HubConnection>();
     final configured = hub.hasConfiguredHub || (_pskLoaded && _storedPsk != null);
     final cs         = Theme.of(context).colorScheme;
 
@@ -414,214 +256,143 @@ class _ControllerSettingsScreenState extends State<ControllerSettingsScreen> {
               : ListView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      child: ListTile(
-                        leading: Icon(Icons.router_outlined, color: cs.primary),
-                        title: Text(_hubName()),
-                        subtitle: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8, height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _online ? Colors.green.shade400 : cs.outline,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(_hubSubtitle()),
-                          ],
-                        ),
-                        trailing: PopupMenuButton<_HubAction>(
-                          onSelected: _onHubAction,
-                          itemBuilder: (ctx) => [
-                            PopupMenuItem(
-                              value: _HubAction.refresh,
-                              enabled: !_loading,
-                              child: const Text('Refresh'),
-                            ),
-                            PopupMenuItem(
-                              value: _HubAction.syncThread,
-                              enabled: !_syncingThread,
-                              child: const Text('Sync Thread network'),
-                            ),
-                            const PopupMenuDivider(),
-                            PopupMenuItem(
-                              value: _HubAction.remove,
-                              child: Text('Remove hub', style: TextStyle(color: cs.error)),
-                            ),
-                          ],
-                        ),
-                      ),
+                    _heroCard(hub, cs),
+                    const SizedBox(height: 12),
+                    // Remote access — off-LAN reachability. Intentionally NOT
+                    // gated on `online`: this is the path you use to reach the
+                    // hub *when you're away*, so it must stay reachable offline.
+                    _navCard(
+                      icon: Icons.cloud_outlined,
+                      title: 'Remote access',
+                      subtitle: 'Reach the hub when you are away',
+                      onTap: () => Navigator.push(context, MaterialPageRoute<void>(
+                          builder: (_) => const RemoteAccessScreen())),
                     ),
-                    _detailsCard(cs),
-                    Card(
-                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                      child: ListTile(
-                        leading: Icon(Icons.dns_outlined, color: cs.primary),
-                        title: const Text('Modbus devices'),
-                        subtitle: const Text('Meters & inverters over Modbus'),
-                        trailing: const Icon(Icons.chevron_right),
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(16)),
-                        ),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const ModbusDevicesScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Card(
-                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                      child: ListTile(
-                        leading: Icon(Icons.euro_outlined, color: cs.primary),
-                        title: const Text('Electricity tariff'),
-                        subtitle: const Text('Fees, levies & VAT on top of spot'),
-                        trailing: const Icon(Icons.chevron_right),
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(16)),
-                        ),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const TariffSettingsScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    _remoteAccessCard(cs),
                   ],
                 ),
     );
   }
 
-  /// Remote-access (off-LAN) config: the rendezvous URL the app uses to reach
-  /// the hub when it isn't on the same network. Feeds HubConnection.tryRemote()
-  /// (srflx via a public STUN server; ADR-0006).
-  Widget _remoteAccessCard(ColorScheme cs) => Card(
-        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Icon(Icons.cloud_outlined, color: cs.primary, size: 20),
-                const SizedBox(width: 12),
-                const Text('Remote access',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-              ]),
-              const SizedBox(height: 4),
-              Text(
-                'Reach the hub when you are away from home. Learned from the hub '
-                'automatically while on your home network — edit only to override.',
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _rzvCtrl,
-                enabled: _rzvId != null,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: 'Rendezvous URL',
-                  hintText: 'http://[2003:…]:8080',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _saveRendezvous(),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _stunCtrl,
-                enabled: _rzvId != null,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: 'STUN server',
-                  hintText: 'stun.l.google.com:19302 (default)',
-                  helperText: 'Leave blank to use Google’s public STUN.',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _saveRendezvous(),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _turnCtrl,
-                enabled: _rzvId != null,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: 'TURN relay (host:port)',
-                  hintText: 'turn:relay.example.com:3478',
-                  helperText: 'Optional — needed to reach the hub across mobile/CGNAT.',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(children: [
+  /// Slick hub hero: name + colored connection state + firmware, with details
+  /// tucked into an expandable so the top stays clean.
+  Widget _heroCard(HubConnection hub, ColorScheme cs) {
+    final (color, stateLabel) = _connState(hub);
+    final version = _info?.firmwareVersion ?? '';
+    final fabricProvisioned = (_info?.fabricId.toInt() ?? 0) != 0;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
+            child: Row(
+              children: [
+                Container(width: 11, height: 11,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+                const SizedBox(width: 14),
                 Expanded(
-                  child: TextField(
-                    controller: _turnUserCtrl,
-                    enabled: _rzvId != null,
-                    autocorrect: false,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                    decoration: const InputDecoration(
-                      labelText: 'TURN user',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_hubName(),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 3),
+                      Row(children: [
+                        Text(stateLabel,
+                            style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
+                        if (version.isNotEmpty) ...[
+                          Text('  ·  ', style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+                          Flexible(
+                            child: Text(version,
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12, fontFamily: 'monospace',
+                                    color: cs.onSurfaceVariant)),
+                          ),
+                        ],
+                      ]),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _turnPassCtrl,
-                    enabled: _rzvId != null,
-                    autocorrect: false,
-                    obscureText: true,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                    decoration: const InputDecoration(
-                      labelText: 'TURN pass',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+                PopupMenuButton<_HubAction>(
+                  onSelected: _onHubAction,
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem(
+                      value: _HubAction.refresh,
+                      enabled: !_loading,
+                      child: const Text('Refresh'),
                     ),
-                    onSubmitted: (_) => _saveRendezvous(),
-                  ),
+                    PopupMenuItem(
+                      value: _HubAction.syncThread,
+                      enabled: hub.isOnline && !_syncingThread,
+                      child: const Text('Sync Thread network'),
+                    ),
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: _HubAction.remove,
+                      child: Text('Remove hub', style: TextStyle(color: cs.error)),
+                    ),
+                  ],
                 ),
-              ]),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _rzvId == null ? null : _saveRendezvous,
-                    child: const Text('Save'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    onPressed: (_rzvId == null || _connectingRemote)
-                        ? null
-                        : _connectRemote,
-                    icon: _connectingRemote
-                        ? const SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.wifi_tethering, size: 18),
-                    label: const Text('Connect remotely'),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
+          Divider(height: 1, color: cs.outlineVariant),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              title: Text('Details',
+                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_info?.ethernetIp.isNotEmpty ?? false)
+                      _detailRow('IP address', _info!.ethernetIp),
+                    if (version.isNotEmpty) _detailRow('Firmware', version),
+                    if ((_info?.uptimeSeconds ?? 0) > 0)
+                      _detailRow('Uptime', _formatUptime(_info!.uptimeSeconds)),
+                    _detailRow('Fabric',
+                        fabricProvisioned ? '0x${_info!.fabricId.toHexString()}' : 'none'),
+                    _detailRow('Thread network',
+                        _activeDataset != null && !_activeDataset!.isEmpty
+                            ? _activeDataset!.label : 'none'),
+                    if (_storedPsk != null)
+                      _detailRow('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: ListTile(
+        leading: Icon(icon, color: cs.primary),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
         ),
-      );
+        onTap: onTap,
+      ),
+    );
+  }
 }
