@@ -164,7 +164,7 @@ class DeviceProvider extends ChangeNotifier {
   EnergyHistoryData? get energyHistory => _energyHistory;
   bool get energyHistoryLoading => _energyHistoryLoading;
 
-  /// Fetch the last 24 hours of energy history from the controller (15-min
+  /// Fetch the last 12 hours of energy history from the controller (1-hour
   /// buckets). No-op without a controller. Concurrent calls are coalesced; a
   /// transient failure leaves any previously-loaded history in place.
   Future<void> fetchEnergyHistory() {
@@ -179,11 +179,10 @@ class DeviceProvider extends ChangeNotifier {
     final f = () async {
       final now = DateTime.now();
       final to = now.millisecondsSinceEpoch ~/ 1000;
-      final from = to - 24 * 3600;
-      // The history chart plots aggregate consumption only, so skip the
-      // per-device series — it's the bulk of the payload.
-      final h = await svc.getEnergyHistory(
-          from: from, to: to, includeDeviceSeries: false);
+      final from = to - 12 * 3600;   // last 12 hours
+      // 1-hour buckets keep the payload small (≈12 buckets) even with the
+      // per-device series included — the controller re-aggregates server-side.
+      final h = await svc.getEnergyHistory(from: from, to: to, bucketSeconds: 3600);
       if (_disposed) return;
       if (h != null) _energyHistory = EnergyHistoryData.fromProto(h);
     }();
