@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
@@ -54,6 +53,7 @@ class HubConnection extends ChangeNotifier {
     _wire(_service);
     unawaited(refreshConfiguredState());
     startHealthMonitoring();
+    _startConnectivityWatch();
   }
 
   static const _heartbeat = Duration(seconds: 15);
@@ -69,20 +69,30 @@ class HubConnection extends ChangeNotifier {
   /// but no explicit port (the Google default above uses a non-standard port).
   static const _stunStandardPort = 3478;
 
-  /// Default TURN provider (metered.ca). Credentials are ephemeral, so they're
-  /// fetched fresh at connect time from this API rather than hard-coded. Used
-  /// only when no TURN relay is configured manually in settings.
-  /// NOTE: test key — for production, issue TURN creds from a backend instead
-  /// of shipping an API key in the app.
-  static const _meteredTurnApi =
-      'https://fluxcontrol.metered.live/api/v1/turn/credentials'
-      '?apiKey=9da12fdc3b0bf3b0e1539b6ab18969f79963';
+  /// Default rendezvous mailbox (ADR-0006). Non-secret and shared by all users,
+  /// so it's a plain baked constant (public builds included); the controller
+  /// carries the same default. A hub's RemoteConfig.rendezvous_url learned on
+  /// the LAN, or the Remote-access settings override, still takes precedence.
+  static const defaultRendezvousUrl = 'https://flux.fluxbox.workers.dev';
+
+  /// Built-in default TURN relay, injected at build time via --dart-define and
+  /// EMPTY in public builds. A private/personal build can bake in a relay
+  /// (`--dart-define=FLUX_TURN_HOST=… FLUX_TURN_USER=… FLUX_TURN_PASS=…`) so it
+  /// works out of the box; public builds ship no credentials and users
+  /// configure their own relay in Remote-access settings (which always wins).
+  /// Public so the settings screen can display the effective defaults.
+  static const defaultTurnHost = String.fromEnvironment('FLUX_TURN_HOST');
+  static const defaultTurnUser = String.fromEnvironment('FLUX_TURN_USER');
+  static const defaultTurnPass = String.fromEnvironment('FLUX_TURN_PASS');
 
   FluxCoapService? _service;
   bool _hasStoredPsk = false;
   bool _reachable    = false;
   bool _probing      = false;
   Timer? _heartbeatTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
+  Timer? _connDebounce;
+  bool?  _lastMobileOnly;
 
   FluxCoapService? get service => _service;
   bool get isConnected => _service != null;
@@ -133,6 +143,56 @@ class HubConnection extends ChangeNotifier {
     _wire(svc);
     notifyListeners();
     unawaited(_probe());
+  }
+
+  /// Connectivity-aware entry to the connect FSM (app ADR-0003). On a
+  /// cellular-only network the home LAN is unreachable, so skip mDNS discovery
+  /// (which otherwise blocks up to ~20s) and go straight to the remote tunnel.
+  /// Wi-Fi/ethernet/VPN are ambiguous (could be a foreign network), so there we
+  /// still try LAN-first via [reconnect].
+  Future<bool> connect() async {
+    if (await _isMobileOnly()) {
+      _log('cellular-only network → skipping LAN discovery, going remote');
+      return tryRemote();
+    }
+    return reconnect();
+  }
+
+  /// True when the only active transport is cellular. Wi-Fi/ethernet/VPN count
+  /// as "LAN-capable" even if foreign — the LAN probe is what disambiguates
+  /// those. Unknown/empty → false (fall back to LAN-first, the safe default).
+  bool _classifyMobileOnly(List<ConnectivityResult> types) {
+    final hasLan = types.any((t) =>
+        t == ConnectivityResult.wifi ||
+        t == ConnectivityResult.ethernet ||
+        t == ConnectivityResult.vpn);
+    return types.contains(ConnectivityResult.mobile) && !hasLan;
+  }
+
+  Future<bool> _isMobileOnly() async {
+    try {
+      return _classifyMobileOnly(await Connectivity().checkConnectivity());
+    } on Object catch (e) {
+      _log('connectivity check failed: $e');
+      return false;
+    }
+  }
+
+  /// Re-run the FSM when the network class flips between cellular-only and
+  /// LAN-capable (leave home Wi-Fi → remote; return → LAN). Debounced, and only
+  /// fires on a meaningful class change so Wi-Fi→Wi-Fi hops don't churn.
+  void _startConnectivityWatch() {
+    _connSub = Connectivity().onConnectivityChanged.listen((types) {
+      final mobileOnly = _classifyMobileOnly(types);
+      if (mobileOnly == _lastMobileOnly) return;
+      _lastMobileOnly = mobileOnly;
+      _connDebounce?.cancel();
+      _connDebounce = Timer(const Duration(seconds: 2), () {
+        if (!hasConfiguredHub) return;
+        _log('network class changed (mobileOnly=$mobileOnly) → reconnecting');
+        unawaited(connect());
+      });
+    });
   }
 
   /// LAN-first / remote-fallback connect (app ADR-0003). Tries mDNS discovery on
@@ -186,24 +246,30 @@ class HubConnection extends ChangeNotifier {
       return false;
     }
     final psk = await ControllerSettings.loadPsk(id);
-    final url = await ControllerSettings.loadRendezvousUrl(id);
-    if (psk == null || url == null) {
+    if (psk == null) {
       _setStatusFlags(reachable: false, probing: false);
       return false;
     }
+    // Rendezvous: a URL learned from the hub / set as an override wins; else the
+    // built-in default (the controller falls back to the same one).
+    final url = await ControllerSettings.loadRendezvousUrl(id) ?? defaultRendezvousUrl;
     final rzv = FluxRendezvous(baseUrl: url, psk: psk, onLog: _log);
     final (stunHost, stunPort) = _resolveStun(await ControllerSettings.loadStunServer(id));
 
-    // TURN: a manually-configured relay wins; otherwise fall back to the
-    // built-in metered.ca default (fresh ephemeral creds fetched per connect).
+    // TURN: a user-configured relay wins; otherwise the build-time default,
+    // which is empty in public builds → STUN-only (fails on CGNAT, expected
+    // until the user sets up their own relay). ADR-0004.
     final (turnServer, mUser, mPass) = await ControllerSettings.loadTurn(id);
     String? turnHost; var turnPort = 0; String? turnUser; String? turnPass;
     if (turnServer != null) {
       (turnHost, turnPort) = _resolveHostPort(turnServer, _stunStandardPort);
       turnUser = mUser;
       turnPass = mPass;
-    } else {
-      (turnHost, turnPort, turnUser, turnPass) = await _fetchDefaultTurn();
+    } else if (defaultTurnHost.isNotEmpty) {
+      (turnHost, turnPort) = _resolveHostPort(defaultTurnHost, _stunStandardPort);
+      turnUser = defaultTurnUser.isEmpty ? null : defaultTurnUser;
+      turnPass = defaultTurnPass.isEmpty ? null : defaultTurnPass;
+      _log('default TURN: $turnHost:$turnPort (built-in)');
     }
 
     return connectViaRemoteTunnel(
@@ -219,33 +285,6 @@ class HubConnection extends ChangeNotifier {
     );
   }
 
-  /// Fetch fresh TURN credentials from the default provider (metered.ca).
-  /// Returns (host, port, user, pass); host is null on any failure (falls back
-  /// to STUN-only). Picks the first plain-UDP `turn:` entry.
-  Future<(String?, int, String?, String?)> _fetchDefaultTurn() async {
-    try {
-      final r = await http.get(Uri.parse(_meteredTurnApi))
-          .timeout(const Duration(seconds: 10));
-      if (r.statusCode != 200) {
-        _log('default TURN fetch: HTTP ${r.statusCode}');
-        return (null, 0, null, null);
-      }
-      final list = jsonDecode(r.body) as List<dynamic>;
-      for (final e in list) {
-        final m = e as Map<String, dynamic>;
-        final urls = (m['urls'] as String?) ?? '';
-        if (urls.startsWith('turn:') && !urls.contains('transport=tcp')) {
-          final (h, p) = _resolveHostPort(urls, _stunStandardPort);
-          _log('default TURN: $h:$p (metered.ca)');
-          return (h, p, m['username'] as String?, m['credential'] as String?);
-        }
-      }
-      _log('default TURN: no usable turn: entry in response');
-    } on Object catch (e) {
-      _log('default TURN fetch failed: $e');
-    }
-    return (null, 0, null, null);
-  }
 
   /// Resolve a stored STUN setting ("host" or "host:port") to (host, port),
   /// falling back to the built-in Google default when unset. A host without an
@@ -401,6 +440,8 @@ class HubConnection extends ChangeNotifier {
   @override
   void dispose() {
     _heartbeatTimer?.cancel();
+    _connDebounce?.cancel();
+    unawaited(_connSub?.cancel());
     _service?.dispose();
     super.dispose();
   }

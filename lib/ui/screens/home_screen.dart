@@ -69,7 +69,7 @@ class HomeScreen extends StatelessWidget {
             onRefresh: () async {
               final hub = context.read<HubConnection>();
               if (!hub.isOnline && hub.hasConfiguredHub) {
-                await hub.reconnect();
+                await hub.connect();
               }
               await provider.syncWithController();
             },

@@ -93,13 +93,13 @@ Future<void> main() async {
   );
 
   // ── Background controller connect ─────────────────────────────────────────
-  // Runs concurrently with the first frame. Goes through HubConnection.reconnect
-  // so the same remote-first / LAN-fallback FSM is used at launch: the off-LAN
-  // ICE tunnel is the default, falling back to LAN discovery. reconnect() swaps
-  // in the service and notifies listeners, so DeviceProvider (attached above)
-  // adopts hub mode seamlessly.
+  // Runs concurrently with the first frame. Goes through HubConnection.connect
+  // so the connectivity-aware FSM is used at launch: cellular-only skips LAN
+  // discovery and goes straight to the off-LAN ICE tunnel, otherwise LAN-first
+  // with remote fallback. It swaps in the service and notifies listeners, so
+  // DeviceProvider (attached above) adopts hub mode seamlessly.
   unawaited(() async {
-    final connected = await hubConn.reconnect();
+    final connected = await hubConn.connect();
     if (!connected) {
       debugPrint('main: no controller reachable (remote or LAN) — '
           'no device control until one connects');

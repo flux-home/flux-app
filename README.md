@@ -76,6 +76,34 @@ flutter build apk --release
 adb -s 192.168.1.123:5555 install -r build/app/outputs/flutter-apk/app-release.apk
 ```
 
+### Remote-access relay (TURN) — private builds only
+
+Public builds ship **no** relay credentials: off-LAN access works over STUN and
+users configure their own relay in **Settings → Remote access (beta)** (any TURN
+provider; the screen guides a free metered.ca setup). See flux-interface
+ADR-0004/0006/0007.
+
+To bake a default relay into your **own** build so it works out of the box —
+without committing any secret to the repo — pass the credentials at build time:
+
+```bash
+flutter build apk --release \
+  --dart-define=FLUX_TURN_HOST=standard.relay.metered.ca:80 \
+  --dart-define=FLUX_TURN_USER=<your-metered-username> \
+  --dart-define=FLUX_TURN_PASS=<your-metered-credential>
+```
+
+> The TURN host is the one shown on your metered.ca dashboard's "TURN Server
+> credentials" page (e.g. `standard.relay.metered.ca:80`) — **not**
+> `relay.metered.ca`, which does not answer.
+
+These map to `HubConnection._defaultTurnHost/User/Pass` via
+`String.fromEnvironment`; when absent (public builds) they are empty strings and
+no default relay is used. A user-configured relay in settings always wins. Keep
+these in your CI secret store, not in source. The rendezvous URL is **not** a
+secret — it defaults to `https://flux.fluxbox.workers.dev` in every build (app
+and firmware) and only needs overriding in the settings screen.
+
 ---
 
 ## Legal notices

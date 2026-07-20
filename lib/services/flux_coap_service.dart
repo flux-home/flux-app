@@ -127,40 +127,36 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) { debugPrint('FluxCoapService getInfo: $e'); return null; }
   }
 
-  /// The controller's configured rendezvous URL (RemoteConfig.rendezvous_url,
-  /// field 4) read over the LAN. Lets the app auto-learn where to signal for
-  /// off-LAN access instead of the user typing it. Null if unset/unreachable.
-  /// RemoteConfig isn't in the app's generated proto yet, so field 4 (a
-  /// length-delimited string) is decoded by hand.
-  Future<String?> getRendezvousUrl() async {
+  /// The hub's remote-access config (GET /remote/config → RemoteConfig).
+  /// Null if unset/unreachable or on a decode error.
+  Future<$proto.RemoteConfig?> getRemoteConfig() async {
     final b = await _get('/remote/config');
     if (b == null) return null;
-    var i = 0;
-    while (i < b.length) {
-      final key  = b[i++];
-      final wire = key & 7;
-      final tag  = key >> 3;
-      if (wire == 2) {
-        var len = 0, shift = 0;
-        while (i < b.length) {
-          final x = b[i++];
-          len |= (x & 0x7f) << shift;
-          shift += 7;
-          if (x & 0x80 == 0) break;
-        }
-        final val = b.sublist(i, i + len);
-        i += len;
-        if (tag == 4) return String.fromCharCodes(val); // rendezvous_url
-      } else if (wire == 0) {
-        while (i < b.length && b[i] & 0x80 != 0) { i++; }
-        i++;
-      } else if (wire == 5) {
-        i += 4;
-      } else if (wire == 1) {
-        i += 8;
-      }
+    try { return $proto.RemoteConfig.fromBuffer(b); }
+    on Exception catch (e) { debugPrint('FluxCoapService getRemoteConfig: $e'); return null; }
+  }
+
+  /// The controller's configured rendezvous URL (RemoteConfig.rendezvous_url)
+  /// read over the LAN. Lets the app auto-learn where to signal for off-LAN
+  /// access instead of the user typing it. Null if unset/unreachable.
+  Future<String?> getRendezvousUrl() async {
+    final u = (await getRemoteConfig())?.rendezvousUrl ?? '';
+    return u.isEmpty ? null : u;
+  }
+
+  /// Enable/disable off-LAN remote access on the hub, optionally seeding the
+  /// rendezvous URL. Read-modify-write, because the controller's PUT is a full
+  /// replace — so the hub's existing STUN/TURN/proto fields must be preserved.
+  /// LAN-only: the controller rejects relayed writes (ADR-0012), so this
+  /// returns false when attempted off-LAN. Returns true on success.
+  Future<bool> setRemoteEnabled(bool enabled, {String? rendezvousUrl}) async {
+    final cfg = await getRemoteConfig() ?? $proto.RemoteConfig();
+    cfg.enabled = enabled;
+    if (rendezvousUrl != null && rendezvousUrl.isNotEmpty) {
+      cfg.rendezvousUrl = rendezvousUrl;
     }
-    return null;
+    final resp = await _put('/remote/config', cfg.writeToBuffer());
+    return resp != null;
   }
 
   Future<$proto.ThreadDataset?> getThreadDataset() async {

@@ -3428,6 +3428,382 @@ class PricingConfig extends $pb.GeneratedMessage {
   void clearFeedInUeurPerKwh() => $_clearField(9);
 }
 
+class StunServer extends $pb.GeneratedMessage {
+  factory StunServer({
+    $core.String? host,
+    $core.int? port,
+  }) {
+    final result = create();
+    if (host != null) result.host = host;
+    if (port != null) result.port = port;
+    return result;
+  }
+
+  StunServer._();
+
+  factory StunServer.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory StunServer.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'StunServer',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'host')
+    ..aI(2, _omitFieldNames ? '' : 'port', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  StunServer clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  StunServer copyWith(void Function(StunServer) updates) =>
+      super.copyWith((message) => updates(message as StunServer)) as StunServer;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static StunServer create() => StunServer._();
+  @$core.override
+  StunServer createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static StunServer getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<StunServer>(create);
+  static StunServer? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get host => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set host($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasHost() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearHost() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get port => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set port($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPort() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPort() => $_clearField(2);
+}
+
+class TurnServer extends $pb.GeneratedMessage {
+  factory TurnServer({
+    $core.String? host,
+    $core.int? port,
+    $core.String? username,
+    $core.String? credential,
+  }) {
+    final result = create();
+    if (host != null) result.host = host;
+    if (port != null) result.port = port;
+    if (username != null) result.username = username;
+    if (credential != null) result.credential = credential;
+    return result;
+  }
+
+  TurnServer._();
+
+  factory TurnServer.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory TurnServer.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'TurnServer',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'host')
+    ..aI(2, _omitFieldNames ? '' : 'port', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(3, _omitFieldNames ? '' : 'username')
+    ..aOS(4, _omitFieldNames ? '' : 'credential')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TurnServer clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TurnServer copyWith(void Function(TurnServer) updates) =>
+      super.copyWith((message) => updates(message as TurnServer)) as TurnServer;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static TurnServer create() => TurnServer._();
+  @$core.override
+  TurnServer createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static TurnServer getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<TurnServer>(create);
+  static TurnServer? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get host => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set host($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasHost() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearHost() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get port => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set port($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPort() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPort() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get username => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set username($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasUsername() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearUsername() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get credential => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set credential($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasCredential() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCredential() => $_clearField(4);
+}
+
+/// GET/PUT /remote/config — user-owned STUN/TURN/rendezvous + master enable.
+/// Persisted in NVS (ns "flux_remote"); writes are LAN-only (ADR-0012).
+class RemoteConfig extends $pb.GeneratedMessage {
+  factory RemoteConfig({
+    $core.bool? enabled,
+    $core.Iterable<StunServer>? stun,
+    $core.Iterable<TurnServer>? turn,
+    $core.String? rendezvousUrl,
+    $core.String? rendezvousCertPin,
+    $core.int? cfgGen,
+    $core.int? protoMin,
+    $core.int? protoMax,
+  }) {
+    final result = create();
+    if (enabled != null) result.enabled = enabled;
+    if (stun != null) result.stun.addAll(stun);
+    if (turn != null) result.turn.addAll(turn);
+    if (rendezvousUrl != null) result.rendezvousUrl = rendezvousUrl;
+    if (rendezvousCertPin != null) result.rendezvousCertPin = rendezvousCertPin;
+    if (cfgGen != null) result.cfgGen = cfgGen;
+    if (protoMin != null) result.protoMin = protoMin;
+    if (protoMax != null) result.protoMax = protoMax;
+    return result;
+  }
+
+  RemoteConfig._();
+
+  factory RemoteConfig.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RemoteConfig.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RemoteConfig',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..pPM<StunServer>(2, _omitFieldNames ? '' : 'stun',
+        subBuilder: StunServer.create)
+    ..pPM<TurnServer>(3, _omitFieldNames ? '' : 'turn',
+        subBuilder: TurnServer.create)
+    ..aOS(4, _omitFieldNames ? '' : 'rendezvousUrl')
+    ..aOS(5, _omitFieldNames ? '' : 'rendezvousCertPin')
+    ..aI(6, _omitFieldNames ? '' : 'cfgGen', fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'protoMin', fieldType: $pb.PbFieldType.OU3)
+    ..aI(8, _omitFieldNames ? '' : 'protoMax', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RemoteConfig clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RemoteConfig copyWith(void Function(RemoteConfig) updates) =>
+      super.copyWith((message) => updates(message as RemoteConfig))
+          as RemoteConfig;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RemoteConfig create() => RemoteConfig._();
+  @$core.override
+  RemoteConfig createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static RemoteConfig getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<RemoteConfig>(create);
+  static RemoteConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $pb.PbList<StunServer> get stun => $_getList(1);
+
+  @$pb.TagNumber(3)
+  $pb.PbList<TurnServer> get turn => $_getList(2);
+
+  @$pb.TagNumber(4)
+  $core.String get rendezvousUrl => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set rendezvousUrl($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRendezvousUrl() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRendezvousUrl() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get rendezvousCertPin => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set rendezvousCertPin($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasRendezvousCertPin() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearRendezvousCertPin() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get cfgGen => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set cfgGen($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasCfgGen() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearCfgGen() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get protoMin => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set protoMin($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasProtoMin() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearProtoMin() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get protoMax => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set protoMax($core.int value) => $_setUnsignedInt32(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasProtoMax() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearProtoMax() => $_clearField(8);
+}
+
+class IceSignal extends $pb.GeneratedMessage {
+  factory IceSignal({
+    IceSignalKind? kind,
+    $core.String? sdp,
+    $core.List<$core.int>? mac,
+    $core.int? protoVersion,
+  }) {
+    final result = create();
+    if (kind != null) result.kind = kind;
+    if (sdp != null) result.sdp = sdp;
+    if (mac != null) result.mac = mac;
+    if (protoVersion != null) result.protoVersion = protoVersion;
+    return result;
+  }
+
+  IceSignal._();
+
+  factory IceSignal.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory IceSignal.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'IceSignal',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aE<IceSignalKind>(1, _omitFieldNames ? '' : 'kind',
+        enumValues: IceSignalKind.values)
+    ..aOS(2, _omitFieldNames ? '' : 'sdp')
+    ..a<$core.List<$core.int>>(
+        3, _omitFieldNames ? '' : 'mac', $pb.PbFieldType.OY)
+    ..aI(4, _omitFieldNames ? '' : 'protoVersion',
+        fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  IceSignal clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  IceSignal copyWith(void Function(IceSignal) updates) =>
+      super.copyWith((message) => updates(message as IceSignal)) as IceSignal;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static IceSignal create() => IceSignal._();
+  @$core.override
+  IceSignal createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static IceSignal getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<IceSignal>(create);
+  static IceSignal? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  IceSignalKind get kind => $_getN(0);
+  @$pb.TagNumber(1)
+  set kind(IceSignalKind value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasKind() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearKind() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get sdp => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sdp($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSdp() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSdp() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get mac => $_getN(2);
+  @$pb.TagNumber(3)
+  set mac($core.List<$core.int> value) => $_setBytes(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasMac() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearMac() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get protoVersion => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set protoVersion($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasProtoVersion() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearProtoVersion() => $_clearField(4);
+}
+
 const $core.bool _omitFieldNames =
     $core.bool.fromEnvironment('protobuf.omit_field_names');
 const $core.bool _omitMessageNames =

@@ -111,6 +111,21 @@ final $typed_data.Uint8List priceUnitDescriptor = $convert.base64Decode(
     'CglQcmljZVVuaXQSGwoXUFJJQ0VfVU5JVF9VRVVSX1BFUl9LV0gQABIaChZQUklDRV9VTklUX0'
     'VVUl9QRVJfTVdIEAE=');
 
+@$core.Deprecated('Use iceSignalKindDescriptor instead')
+const IceSignalKind$json = {
+  '1': 'IceSignalKind',
+  '2': [
+    {'1': 'ICE_OFFER', '2': 0},
+    {'1': 'ICE_ANSWER', '2': 1},
+    {'1': 'ICE_CANDIDATE', '2': 2},
+  ],
+};
+
+/// Descriptor for `IceSignalKind`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List iceSignalKindDescriptor = $convert.base64Decode(
+    'Cg1JY2VTaWduYWxLaW5kEg0KCUlDRV9PRkZFUhAAEg4KCklDRV9BTlNXRVIQARIRCg1JQ0VfQ0'
+    'FORElEQVRFEAI=');
+
 @$core.Deprecated('Use controllerInfoDescriptor instead')
 const ControllerInfo$json = {
   '1': 'ControllerInfo',
@@ -872,3 +887,101 @@ final $typed_data.Uint8List pricingConfigDescriptor = $convert.base64Decode(
     'YgASgNUg5mZXRjaEhvdXJMb2NhbBItChNtYXJrdXBfdWV1cl9wZXJfa3doGAcgASgRUhBtYXJr'
     'dXBVZXVyUGVyS3doEh8KC3ZhdF9wZXJjZW50GAggASgNUgp2YXRQZXJjZW50Ei4KFGZlZWRfaW'
     '5fdWV1cl9wZXJfa3doGAkgASgRUhBmZWVkSW5VZXVyUGVyS3do');
+
+@$core.Deprecated('Use stunServerDescriptor instead')
+const StunServer$json = {
+  '1': 'StunServer',
+  '2': [
+    {'1': 'host', '3': 1, '4': 1, '5': 9, '10': 'host'},
+    {'1': 'port', '3': 2, '4': 1, '5': 13, '10': 'port'},
+  ],
+};
+
+/// Descriptor for `StunServer`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List stunServerDescriptor = $convert.base64Decode(
+    'CgpTdHVuU2VydmVyEhIKBGhvc3QYASABKAlSBGhvc3QSEgoEcG9ydBgCIAEoDVIEcG9ydA==');
+
+@$core.Deprecated('Use turnServerDescriptor instead')
+const TurnServer$json = {
+  '1': 'TurnServer',
+  '2': [
+    {'1': 'host', '3': 1, '4': 1, '5': 9, '10': 'host'},
+    {'1': 'port', '3': 2, '4': 1, '5': 13, '10': 'port'},
+    {'1': 'username', '3': 3, '4': 1, '5': 9, '10': 'username'},
+    {'1': 'credential', '3': 4, '4': 1, '5': 9, '10': 'credential'},
+  ],
+};
+
+/// Descriptor for `TurnServer`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List turnServerDescriptor = $convert.base64Decode(
+    'CgpUdXJuU2VydmVyEhIKBGhvc3QYASABKAlSBGhvc3QSEgoEcG9ydBgCIAEoDVIEcG9ydBIaCg'
+    'h1c2VybmFtZRgDIAEoCVIIdXNlcm5hbWUSHgoKY3JlZGVudGlhbBgEIAEoCVIKY3JlZGVudGlh'
+    'bA==');
+
+@$core.Deprecated('Use remoteConfigDescriptor instead')
+const RemoteConfig$json = {
+  '1': 'RemoteConfig',
+  '2': [
+    {'1': 'enabled', '3': 1, '4': 1, '5': 8, '10': 'enabled'},
+    {
+      '1': 'stun',
+      '3': 2,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.StunServer',
+      '10': 'stun'
+    },
+    {
+      '1': 'turn',
+      '3': 3,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.TurnServer',
+      '10': 'turn'
+    },
+    {'1': 'rendezvous_url', '3': 4, '4': 1, '5': 9, '10': 'rendezvousUrl'},
+    {
+      '1': 'rendezvous_cert_pin',
+      '3': 5,
+      '4': 1,
+      '5': 9,
+      '10': 'rendezvousCertPin'
+    },
+    {'1': 'cfg_gen', '3': 6, '4': 1, '5': 13, '10': 'cfgGen'},
+    {'1': 'proto_min', '3': 7, '4': 1, '5': 13, '10': 'protoMin'},
+    {'1': 'proto_max', '3': 8, '4': 1, '5': 13, '10': 'protoMax'},
+  ],
+};
+
+/// Descriptor for `RemoteConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List remoteConfigDescriptor = $convert.base64Decode(
+    'CgxSZW1vdGVDb25maWcSGAoHZW5hYmxlZBgBIAEoCFIHZW5hYmxlZBIkCgRzdHVuGAIgAygLMh'
+    'AuZmx1eC5TdHVuU2VydmVyUgRzdHVuEiQKBHR1cm4YAyADKAsyEC5mbHV4LlR1cm5TZXJ2ZXJS'
+    'BHR1cm4SJQoOcmVuZGV6dm91c191cmwYBCABKAlSDXJlbmRlenZvdXNVcmwSLgoTcmVuZGV6dm'
+    '91c19jZXJ0X3BpbhgFIAEoCVIRcmVuZGV6dm91c0NlcnRQaW4SFwoHY2ZnX2dlbhgGIAEoDVIG'
+    'Y2ZnR2VuEhsKCXByb3RvX21pbhgHIAEoDVIIcHJvdG9NaW4SGwoJcHJvdG9fbWF4GAggASgNUg'
+    'hwcm90b01heA==');
+
+@$core.Deprecated('Use iceSignalDescriptor instead')
+const IceSignal$json = {
+  '1': 'IceSignal',
+  '2': [
+    {
+      '1': 'kind',
+      '3': 1,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.IceSignalKind',
+      '10': 'kind'
+    },
+    {'1': 'sdp', '3': 2, '4': 1, '5': 9, '10': 'sdp'},
+    {'1': 'mac', '3': 3, '4': 1, '5': 12, '10': 'mac'},
+    {'1': 'proto_version', '3': 4, '4': 1, '5': 13, '10': 'protoVersion'},
+  ],
+};
+
+/// Descriptor for `IceSignal`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List iceSignalDescriptor = $convert.base64Decode(
+    'CglJY2VTaWduYWwSJwoEa2luZBgBIAEoDjITLmZsdXguSWNlU2lnbmFsS2luZFIEa2luZBIQCg'
+    'NzZHAYAiABKAlSA3NkcBIQCgNtYWMYAyABKAxSA21hYxIjCg1wcm90b192ZXJzaW9uGAQgASgN'
+    'Ugxwcm90b1ZlcnNpb24=');

@@ -173,5 +173,29 @@ class PriceUnit extends $pb.ProtobufEnum {
   const PriceUnit._(super.value, super.name);
 }
 
+/// POST /remote/signal — one MAC'd offer/answer/candidate (ADR-0003/0005/0006).
+/// Our impl (libjuice, ADR-0013) carries the opaque SDP description/candidate.
+class IceSignalKind extends $pb.ProtobufEnum {
+  static const IceSignalKind ICE_OFFER =
+      IceSignalKind._(0, _omitEnumNames ? '' : 'ICE_OFFER');
+  static const IceSignalKind ICE_ANSWER =
+      IceSignalKind._(1, _omitEnumNames ? '' : 'ICE_ANSWER');
+  static const IceSignalKind ICE_CANDIDATE =
+      IceSignalKind._(2, _omitEnumNames ? '' : 'ICE_CANDIDATE');
+
+  static const $core.List<IceSignalKind> values = <IceSignalKind>[
+    ICE_OFFER,
+    ICE_ANSWER,
+    ICE_CANDIDATE,
+  ];
+
+  static final $core.List<IceSignalKind?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static IceSignalKind? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const IceSignalKind._(super.value, super.name);
+}
+
 const $core.bool _omitEnumNames =
     $core.bool.fromEnvironment('protobuf.omit_enum_names');
