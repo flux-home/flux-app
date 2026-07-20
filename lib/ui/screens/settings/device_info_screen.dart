@@ -11,9 +11,10 @@ import 'package:provider/provider.dart';
 /// Read-only identity/health for one controller, plus the destructive
 /// "Remove controller" action at the bottom (moved off the old dots menu).
 class DeviceInfoScreen extends StatefulWidget {
-  const DeviceInfoScreen({super.key, required this.controllerId});
+  const DeviceInfoScreen({super.key, this.controllerId});
 
-  final String controllerId;
+  /// Optional hint for the PSK lookup; falls back to the live service identity.
+  final String? controllerId;
 
   @override
   State<DeviceInfoScreen> createState() => _DeviceInfoScreenState();
@@ -32,7 +33,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   String _idFor(HubConnection hub) =>
-      hub.service?.endpoint.dtlsIdentity ?? widget.controllerId;
+      hub.service?.endpoint.dtlsIdentity ?? widget.controllerId ?? '';
 
   Future<void> _load() async {
     final hub = context.read<HubConnection>();
@@ -68,8 +69,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
     await ControllerSettings.clearPsk(_idFor(hub));
     await hub.connect();
     if (!mounted) return;
-    // Pop back past the controller detail to the controllers list.
-    Navigator.of(context)..pop()..pop();
+    Navigator.of(context).pop();   // back to Settings
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Controller removed')));
   }
@@ -122,7 +122,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _row('Name', _info?.hostname.isNotEmpty ?? false
-                            ? _info!.hostname : widget.controllerId),
+                            ? _info!.hostname : (widget.controllerId ?? 'Controller')),
                         if (_info?.ethernetIp.isNotEmpty ?? false)
                           _row('IP address', _info!.ethernetIp),
                         if (version.isNotEmpty) _row('Firmware', version),
