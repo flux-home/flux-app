@@ -136,6 +136,20 @@ class ControllerSettings {
     return key.isEmpty ? null : key.substring('${_kPsk}_'.length);
   }
 
+  /// Every controller ID that has a stored PSK — i.e. every hub paired at some
+  /// point. Backs the Settings → Controllers list (UI is multi-controller-ready
+  /// even though the live connection is single-active for now).
+  static Future<List<String>> allControllerIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pfx = '${_kPsk}_';
+    final ids = prefs.getKeys()
+        .where((k) => k.startsWith(pfx))
+        .map((k) => k.substring(pfx.length))
+        .toList()
+      ..sort();
+    return ids;
+  }
+
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kHost, host);

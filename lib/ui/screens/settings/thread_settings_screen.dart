@@ -6,6 +6,7 @@ import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
+import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/ui/widgets/info_row.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
@@ -39,6 +40,9 @@ class ThreadSettingsScreen extends StatefulWidget {
 class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
   bool _loading = true;
   bool _scanning = false;
+  bool _syncing = false;
+  bool _hubThreadLoaded = false;
+  bool _hubThreadConfigured = false;  // does the hub run a Thread network?
   ThreadDataset? _active;
   List<ThreadDataset> _datasets = [];
   List<_ThreadNetwork> _networks = [];
@@ -49,6 +53,20 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
   void initState() {
     super.initState();
     _loadThenScan();
+    _loadHubThread();
+  }
+
+  /// Read whether the hub is running its own operational Thread network (it's
+  /// the border router). Distinct from the phone-side scanned/saved networks.
+  Future<void> _loadHubThread() async {
+    final svc = context.read<HubConnection>().service;
+    final ds  = svc == null ? null : await svc.getThreadDataset();
+    if (mounted) {
+      setState(() {
+        _hubThreadConfigured = ds != null && ds.tlv.isNotEmpty;
+        _hubThreadLoaded     = true;
+      });
+    }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -201,6 +219,67 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
+  /// Reconcile the app's active Thread network with the hub (hub is source of
+  /// truth). Moved here from the old Flux Hub dots menu.
+  Future<void> _syncThread() async {
+    final svc = context.read<HubConnection>().service;
+    if (svc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't reach the hub — try again")));
+      return;
+    }
+    setState(() => _syncing = true);
+    try {
+      final result = await ThreadSyncService(svc).ensureInSync();
+      if (!mounted) return;
+      final message = switch (result.status) {
+        ThreadSyncStatus.adopted     => "Using the hub's Thread network ✓",
+        ThreadSyncStatus.pushed      => 'Thread network sent to the hub ✓',
+        ThreadSyncStatus.inSync      => 'Thread network already in sync ✓',
+        ThreadSyncStatus.nothingToDo => 'No Thread network configured yet',
+        ThreadSyncStatus.unreachable => "Couldn't reach the hub — try again",
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      if (result.status == ThreadSyncStatus.adopted) _loadThenScan();
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  /// Top-of-screen "Hub" section: the controller's own operational Thread
+  /// network (it is the border router) + Sync. Everything below is "This phone"
+  /// — the networks this phone can see/scan and the credentials it holds.
+  Widget _hubSection(ColorScheme cs) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
+              child: SectionLabel('Hub')),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListTile(
+              leading: Icon(Icons.hub_outlined, color: cs.primary),
+              title: const Text('Hub Thread network'),
+              subtitle: Text(!_hubThreadLoaded
+                  ? '…'
+                  : _hubThreadConfigured
+                      ? 'Running on the hub (border router)'
+                      : 'Not configured on the hub'),
+              trailing: _syncing
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : TextButton.icon(
+                      onPressed: _syncThread,
+                      icon: const Icon(Icons.sync, size: 18),
+                      label: const Text('Sync')),
+            ),
+          ),
+          const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+              child: SectionLabel('This phone')),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     final cs      = Theme.of(context).colorScheme;
@@ -227,7 +306,11 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
         label: const Text('Add credentials'),
         onPressed: () => _showAddCredentials(context),
       ),
-      body: _loading
+      body: Column(
+        children: [
+          _hubSection(cs),
+          Expanded(
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _datasets.isEmpty
           ? _NoCredentialsHint(onAdd: () => _showAddCredentials(context))
@@ -282,6 +365,9 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                 );
               },
             ),
+          ),
+        ],
+      ),
     );
   }
 

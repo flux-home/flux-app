@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
@@ -19,7 +20,8 @@ class MatterSettingsScreen extends StatefulWidget {
 }
 
 class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
-  String? _fabricId;
+  String? _hubFabricId;    // the controller's fabric (via CoAP)
+  String? _phoneFabricId;  // this phone's own CHIP admin fabric
   bool _scanning = false;
   List<CommissionableDevice> _found = const [];
   String? _scanError;
@@ -27,22 +29,35 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // Hub fabric: MatterFabricPort is proxied from the controller.
     context.read<MatterFabricPort>().getFabricId().then((id) {
-      if (mounted) setState(() => _fabricId = id ?? 'N/A');
+      if (mounted) setState(() => _hubFabricId = id ?? 'N/A');
+    });
+    // This phone's own Matter fabric: the on-device CHIP stack.
+    context.read<MatterChannel>().getFabricId().then((id) {
+      if (mounted) setState(() => _phoneFabricId = id ?? 'N/A');
     });
     _scan();
   }
 
+  /// Commissionable-device scan is a *phone* capability (BLE / on-network),
+  /// so it goes through MatterChannel — the controller can't scan for these.
   Future<void> _scan() async {
     setState(() { _scanning = true; _scanError = null; });
     try {
-      final devices = await context
-          .read<MatterFabricPort>()
-          .discoverCommissionableNodes();
+      final devices =
+          await context.read<MatterChannel>().discoverCommissionableNodes();
       if (mounted) setState(() { _found = devices; _scanning = false; });
     } on Exception catch (e) {
       if (mounted) setState(() { _scanError = e.toString(); _scanning = false; });
     }
+  }
+
+  void _copy(String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label copied'), duration: const Duration(seconds: 1)),
+    );
   }
 
   Future<void> _clearAll() async {
@@ -102,46 +117,63 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
       body: ListView(
         children: [
           const SizedBox(height: 8),
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Fabric')),
+
+          // ── Hub — the home's real Matter fabric ──────────────────────────
+          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Hub')),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
-                  title: const Text('Fabric ID'),
-                  subtitle: Text(
-                    _fabricId ?? '…',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  ),
-                  trailing: _fabricId != null && _fabricId != 'N/A'
-                      ? IconButton(
-                          icon: const Icon(Icons.copy_outlined),
-                          tooltip: 'Copy',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _fabricId!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Fabric ID copied'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                        )
-                      : null,
-                ),
-                Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-              ],
-            ),
+            child: Column(children: [
+              ListTile(
+                leading: Icon(Icons.hub_outlined, color: cs.primary),
+                title: const Text('Fabric ID'),
+                subtitle: Text(_hubFabricId ?? '…',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                trailing: (_hubFabricId != null && _hubFabricId != 'N/A')
+                    ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
+                        onPressed: () => _copy(_hubFabricId!, 'Fabric ID'))
+                    : null,
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+              ListTile(
+                dense: true,
+                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+                title: Text("Your devices are commissioned onto the hub's fabric.",
+                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+              ),
+            ]),
           ),
 
           const SizedBox(height: 24),
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Nearby devices')),
-          _NearbyDevicesSection(
-            devices:  _found,
-            scanning: _scanning,
-            error:    _scanError,
+
+          // ── This phone — its own admin identity + commissioning ──────────
+          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('This phone')),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(children: [
+              ListTile(
+                leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
+                title: const Text("This phone's fabric ID"),
+                subtitle: Text(_phoneFabricId ?? '…',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                trailing: (_phoneFabricId != null && _phoneFabricId != 'N/A')
+                    ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
+                        onPressed: () => _copy(_phoneFabricId!, "This phone's fabric ID"))
+                    : null,
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+              ListTile(
+                dense: true,
+                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+                title: Text(
+                    "This phone's Matter admin identity — used to commission new devices onto the hub.",
+                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+              ),
+            ]),
           ),
+
+          const Padding(padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+              child: SectionLabel('Commissionable devices nearby')),
+          _NearbyDevicesSection(devices: _found, scanning: _scanning, error: _scanError),
 
           const SizedBox(height: 24),
           const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
@@ -149,9 +181,8 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: ListTile(
               leading: Icon(Icons.delete_sweep_outlined, color: cs.error),
-              title: Text('Clear all devices',
-                  style: TextStyle(color: cs.error)),
-              subtitle: const Text('Remove from local storage only'),
+              title: Text('Clear local device cache', style: TextStyle(color: cs.error)),
+              subtitle: const Text("Removes this phone's copies only — devices stay on the hub"),
               onTap: _clearAll,
             ),
           ),
