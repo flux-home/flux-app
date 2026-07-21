@@ -40,7 +40,7 @@ class _ModbusDevicesScreenState extends State<ModbusDevicesScreen> {
         onPressed: (_busy || !online) ? null : _startAdd,
         backgroundColor: online ? null : cs.surfaceContainerHighest,
         icon: const Icon(Icons.add),
-        label: Text(online ? 'Add device' : 'Hub offline'),
+        label: Text(online ? 'Add device' : 'Controller offline'),
       ),
       body: devices.isEmpty
           ? const DotMatrixEmptyHint(
@@ -95,7 +95,7 @@ class _ModbusDevicesScreenState extends State<ModbusDevicesScreen> {
   Future<void> _startAdd() async {
     final svc = _svc;
     if (svc == null) {
-      _snack('Hub offline — reconnect to add devices.');
+      _snack('Controller offline — reconnect to add devices.');
       return;
     }
     // Discovery-first: scan, then let the user pick a candidate or add manually.

@@ -109,7 +109,7 @@ class _EnergySetupCard extends StatelessWidget {
                 Icon(Icons.info_outline, size: 14, color: cs.onSurfaceVariant),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text('Connect to your hub to change these.',
+                  child: Text('Connect to your controller to change these.',
                       style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                 ),
               ]),

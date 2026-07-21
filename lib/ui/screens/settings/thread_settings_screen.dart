@@ -30,14 +30,22 @@ class _ThreadNetwork {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
+/// Which device this Thread screen is about — the controller's operational
+/// network (it is the border router), or the credentials this phone holds.
+enum ThreadScope { controller, phone }
+
 class ThreadSettingsScreen extends StatefulWidget {
-  const ThreadSettingsScreen({super.key});
+  const ThreadSettingsScreen({super.key, this.scope = ThreadScope.controller});
+
+  final ThreadScope scope;
 
   @override
   State<ThreadSettingsScreen> createState() => _ThreadSettingsScreenState();
 }
 
 class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
+  bool get _isController => widget.scope == ThreadScope.controller;
+
   bool _loading = true;
   bool _scanning = false;
   bool _syncing = false;
@@ -52,12 +60,15 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadThenScan();
-    _loadHubThread();
+    if (_isController) {
+      _loadHubThread();
+    } else {
+      _loadThenScan();
+    }
   }
 
-  /// Read whether the hub is running its own operational Thread network (it's
-  /// the border router). Distinct from the phone-side scanned/saved networks.
+  /// Read whether the controller is running its own operational Thread network
+  /// (it's the border router). Distinct from the phone-side scanned/saved nets.
   Future<void> _loadHubThread() async {
     final svc = context.read<HubConnection>().service;
     final ds  = svc == null ? null : await svc.getThreadDataset();
@@ -219,13 +230,13 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
-  /// Reconcile the app's active Thread network with the hub (hub is source of
-  /// truth). Moved here from the old Flux Hub dots menu.
+  /// Reconcile the app's active Thread network with the controller (the
+  /// controller is source of truth).
   Future<void> _syncThread() async {
     final svc = context.read<HubConnection>().service;
     if (svc == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't reach the hub — try again")));
+          const SnackBar(content: Text("Couldn't reach the controller — try again")));
       return;
     }
     setState(() => _syncing = true);
@@ -233,11 +244,11 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
       final result = await ThreadSyncService(svc).ensureInSync();
       if (!mounted) return;
       final message = switch (result.status) {
-        ThreadSyncStatus.adopted     => "Using the hub's Thread network ✓",
-        ThreadSyncStatus.pushed      => 'Thread network sent to the hub ✓',
+        ThreadSyncStatus.adopted     => "Using the controller's Thread network ✓",
+        ThreadSyncStatus.pushed      => 'Thread network sent to the controller ✓',
         ThreadSyncStatus.inSync      => 'Thread network already in sync ✓',
         ThreadSyncStatus.nothingToDo => 'No Thread network configured yet',
-        ThreadSyncStatus.unreachable => "Couldn't reach the hub — try again",
+        ThreadSyncStatus.unreachable => "Couldn't reach the controller — try again",
       };
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       if (result.status == ThreadSyncStatus.adopted) _loadThenScan();
@@ -246,48 +257,62 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
     }
   }
 
-  /// Top-of-screen "Hub" section: the controller's own operational Thread
-  /// network (it is the border router) + Sync. Everything below is "This phone"
-  /// — the networks this phone can see/scan and the credentials it holds.
-  Widget _hubSection(ColorScheme cs) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+  @override
+  Widget build(BuildContext context) =>
+      _isController ? _buildController(context) : _buildPhone(context);
+
+  // ── CONTROLLER: its own operational Thread network + Sync ─────────────────
+  Widget _buildController(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Thread · network')),
+      body: ListView(
         children: [
-          const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
-              child: SectionLabel('Hub')),
+          const SizedBox(height: 8),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListTile(
-              leading: Icon(Icons.hub_outlined, color: cs.primary),
-              title: const Text('Hub Thread network'),
-              subtitle: Text(!_hubThreadLoaded
-                  ? '…'
-                  : _hubThreadConfigured
-                      ? 'Running on the hub (border router)'
-                      : 'Not configured on the hub'),
-              trailing: _syncing
-                  ? const SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : TextButton.icon(
-                      onPressed: _syncThread,
-                      icon: const Icon(Icons.sync, size: 18),
-                      label: const Text('Sync')),
-            ),
+            child: Column(children: [
+              ListTile(
+                leading: Icon(Icons.lan_outlined, color: cs.primary),
+                title: const Text('Operational network'),
+                subtitle: Text(!_hubThreadLoaded
+                    ? '…'
+                    : _hubThreadConfigured
+                        ? 'Running on the controller (border router)'
+                        : 'Not configured on the controller'),
+                trailing: _syncing
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : TextButton.icon(
+                        onPressed: _syncThread,
+                        icon: const Icon(Icons.sync, size: 18),
+                        label: const Text('Sync')),
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+              ListTile(
+                dense: true,
+                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+                title: Text(
+                    'Sync reconciles this phone with the controller — the '
+                    "controller's network is the source of truth.",
+                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+              ),
+            ]),
           ),
-          const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-              child: SectionLabel('This phone')),
+          const SizedBox(height: 40),
         ],
-      );
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
+  // ── THIS PHONE: scanned networks + saved credentials ──────────────────────
+  Widget _buildPhone(BuildContext context) {
     final cs      = Theme.of(context).colorScheme;
     final allNets = _networks;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thread'),
+        title: const Text('Thread · credentials'),
         actions: [
           IconButton(
             icon: _scanning
@@ -306,11 +331,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
         label: const Text('Add credentials'),
         onPressed: () => _showAddCredentials(context),
       ),
-      body: Column(
-        children: [
-          _hubSection(cs),
-          Expanded(
-            child: _loading
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _datasets.isEmpty
           ? _NoCredentialsHint(onAdd: () => _showAddCredentials(context))
@@ -365,9 +386,6 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
                 );
               },
             ),
-          ),
-        ],
-      ),
     );
   }
 

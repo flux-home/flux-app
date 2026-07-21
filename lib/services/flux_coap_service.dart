@@ -778,11 +778,11 @@ class FluxCoapService implements MatterPort {
   Future<CommissionResult> commissionViaIp({
     required String ipAddress, required int discriminator,
     required int setupPinCode, int port = 5540,
-  }) async => CommissionResult.err('Hub does not commission — use local MatterChannel');
+  }) async => CommissionResult.err('Controller does not commission — use local MatterChannel');
 
   @override
   Future<CommissionResult> commissionViaCode({required String setupCode}) async =>
-      CommissionResult.err('Hub does not commission — use local MatterChannel');
+      CommissionResult.err('Controller does not commission — use local MatterChannel');
 
   @override Future<List<WifiNetwork>> scanWifiNetworks() async => const [];
   @override Future<void> provideCredentials({

@@ -147,7 +147,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
     setState(() { _busyToggle = false; if (!ok) _enabled = !v; });
     _snack(ok
         ? (v ? 'Remote access enabled' : 'Remote access disabled')
-        : "Couldn't update the hub — connect on your home network and try again.");
+        : "Couldn't update the controller — connect on your home network and try again.");
   }
 
   Future<void> _copySignupLink() async {
@@ -216,9 +216,9 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
                   ]),
                   const SizedBox(height: 8),
                   Text(
-                    'Reach your hub when you are away from home. Flux runs no '
+                    'Reach your controller when you are away from home. Flux runs no '
                     'cloud and keeps no account of yours — your phone connects '
-                    'straight to your hub through an encrypted tunnel secured by '
+                    'straight to your controller through an encrypted tunnel secured by '
                     'the same key as on your home Wi-Fi.\n\n'
                     'A lightweight “rendezvous” only helps the two find each '
                     'other; it can’t read or change your data. On mobile '
@@ -310,7 +310,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
               children: [
                 _field(_rzvCtrl, enabled,
                     label: 'Rendezvous server',
-                    helper: 'Where your phone and hub find each other. '
+                    helper: 'Where your phone and controller find each other. '
                             'Default shown — edit only to override.'),
                 const SizedBox(height: 14),
                 _field(_stunCtrl, enabled,
@@ -346,9 +346,9 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
 
   String _statusText(HubConnection hub) {
     switch (hub.status) {
-      case ControllerStatus.noHub:      return 'No hub paired yet.';
+      case ControllerStatus.noHub:      return 'No controller paired yet.';
       case ControllerStatus.connecting: return 'Connecting…';
-      case ControllerStatus.offline:    return 'Hub offline.';
+      case ControllerStatus.offline:    return 'Controller offline.';
       case ControllerStatus.online:
         return hub.connectionKind == ConnectionKind.remote
             ? 'Connected remotely (via the tunnel).'

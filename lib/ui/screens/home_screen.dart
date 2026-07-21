@@ -44,12 +44,12 @@ class HomeScreen extends StatelessWidget {
             : online
                 ? () => _addDevice(context)
                 : () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text("Can't reach your hub — check it's powered "
+                    content: Text("Can't reach your controller — check it's powered "
                         'and on your network.'))),
         elevation: 2,
         shape: const CircleBorder(),
         backgroundColor: (!noHub && !online) ? Theme.of(context).disabledColor : null,
-        tooltip: noHub ? 'Add hub' : 'Add device',
+        tooltip: noHub ? 'Add controller' : 'Add device',
         child: Icon(noHub ? Icons.router_outlined : Icons.add, size: 28),
       ),
       body: Consumer<DeviceProvider>(
@@ -84,7 +84,7 @@ class HomeScreen extends StatelessWidget {
                         child: DotMatrixEmptyHint(
                           headline: online
                               ? 'NO DEVICES'
-                              : noHub ? 'NO HUB YET' : 'HUB OFFLINE',
+                              : noHub ? 'NO CONTROLLER' : 'CONTROLLER OFFLINE',
                           subline: online
                               ? 'TAP + TO ADD'
                               : noHub ? 'TAP + TO PAIR' : 'PULL TO RECONNECT',

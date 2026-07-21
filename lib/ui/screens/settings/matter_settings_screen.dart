@@ -12,8 +12,14 @@ import 'package:provider/provider.dart';
 // Matter sub-screen
 // ---------------------------------------------------------------------------
 
+/// Which device this Matter screen is about — the controller's fabric, or this
+/// phone's own admin identity + commissioning.
+enum MatterScope { controller, phone }
+
 class MatterSettingsScreen extends StatefulWidget {
-  const MatterSettingsScreen({super.key});
+  const MatterSettingsScreen({super.key, this.scope = MatterScope.controller});
+
+  final MatterScope scope;
 
   @override
   State<MatterSettingsScreen> createState() => _MatterSettingsScreenState();
@@ -26,18 +32,23 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
   List<CommissionableDevice> _found = const [];
   String? _scanError;
 
+  bool get _isController => widget.scope == MatterScope.controller;
+
   @override
   void initState() {
     super.initState();
-    // Hub fabric: MatterFabricPort is proxied from the controller.
-    context.read<MatterFabricPort>().getFabricId().then((id) {
-      if (mounted) setState(() => _hubFabricId = id ?? 'N/A');
-    });
-    // This phone's own Matter fabric: the on-device CHIP stack.
-    context.read<MatterChannel>().getFabricId().then((id) {
-      if (mounted) setState(() => _phoneFabricId = id ?? 'N/A');
-    });
-    _scan();
+    if (_isController) {
+      // Hub fabric: MatterFabricPort is proxied from the controller.
+      context.read<MatterFabricPort>().getFabricId().then((id) {
+        if (mounted) setState(() => _hubFabricId = id ?? 'N/A');
+      });
+    } else {
+      // This phone's own Matter fabric + commissionable scan (on-device CHIP).
+      context.read<MatterChannel>().getFabricId().then((id) {
+        if (mounted) setState(() => _phoneFabricId = id ?? 'N/A');
+      });
+      _scan();
+    }
   }
 
   /// Commissionable-device scan is a *phone* capability (BLE / on-network),
@@ -101,96 +112,94 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Matter'),
-        actions: [
-          IconButton(
-            icon: _scanning
-                ? const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.refresh_outlined),
-            tooltip: 'Scan for devices',
-            onPressed: _scanning ? null : _scan,
-          ),
-        ],
+        title: Text(_isController ? 'Matter · fabric' : 'Matter · identity'),
+        actions: _isController
+            ? null
+            : [
+                IconButton(
+                  icon: _scanning
+                      ? const SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.refresh_outlined),
+                  tooltip: 'Scan for devices',
+                  onPressed: _scanning ? null : _scan,
+                ),
+              ],
       ),
-      body: ListView(
-        children: [
-          const SizedBox(height: 8),
-
-          // ── Hub — the home's real Matter fabric ──────────────────────────
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Hub')),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: [
-              ListTile(
-                leading: Icon(Icons.hub_outlined, color: cs.primary),
-                title: const Text('Fabric ID'),
-                subtitle: Text(_hubFabricId ?? '…',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
-                trailing: (_hubFabricId != null && _hubFabricId != 'N/A')
-                    ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
-                        onPressed: () => _copy(_hubFabricId!, 'Fabric ID'))
-                    : null,
-              ),
-              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-              ListTile(
-                dense: true,
-                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
-                title: Text("Your devices are commissioned onto the hub's fabric.",
-                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
-              ),
-            ]),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ── This phone — its own admin identity + commissioning ──────────
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('This phone')),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: [
-              ListTile(
-                leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
-                title: const Text("This phone's fabric ID"),
-                subtitle: Text(_phoneFabricId ?? '…',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
-                trailing: (_phoneFabricId != null && _phoneFabricId != 'N/A')
-                    ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
-                        onPressed: () => _copy(_phoneFabricId!, "This phone's fabric ID"))
-                    : null,
-              ),
-              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-              ListTile(
-                dense: true,
-                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
-                title: Text(
-                    "This phone's Matter admin identity — used to commission new devices onto the hub.",
-                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
-              ),
-            ]),
-          ),
-
-          const Padding(padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
-              child: SectionLabel('Commissionable devices nearby')),
-          _NearbyDevicesSection(devices: _found, scanning: _scanning, error: _scanError),
-
-          const SizedBox(height: 24),
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListTile(
-              leading: Icon(Icons.delete_sweep_outlined, color: cs.error),
-              title: Text('Clear local device cache', style: TextStyle(color: cs.error)),
-              subtitle: const Text("Removes this phone's copies only — devices stay on the hub"),
-              onTap: _clearAll,
-            ),
-          ),
-          const SizedBox(height: 40),
-        ],
-      ),
+      body: ListView(children: _isController ? _controllerBody(cs) : _phoneBody(cs)),
     );
   }
+
+  // ── CONTROLLER: the home's real Matter fabric ─────────────────────────────
+  List<Widget> _controllerBody(ColorScheme cs) => [
+        const SizedBox(height: 8),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: [
+            ListTile(
+              leading: Icon(Icons.memory, color: cs.primary),
+              title: const Text('Fabric ID'),
+              subtitle: Text(_hubFabricId ?? '…',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+              trailing: (_hubFabricId != null && _hubFabricId != 'N/A')
+                  ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
+                      onPressed: () => _copy(_hubFabricId!, 'Fabric ID'))
+                  : null,
+            ),
+            Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+              title: Text("Your devices are commissioned onto the controller's fabric.",
+                  style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 40),
+      ];
+
+  // ── THIS PHONE: its own admin identity + commissioning ────────────────────
+  List<Widget> _phoneBody(ColorScheme cs) => [
+        const SizedBox(height: 8),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: [
+            ListTile(
+              leading: Icon(Icons.vpn_key_outlined, color: cs.primary),
+              title: const Text('Fabric ID'),
+              subtitle: Text(_phoneFabricId ?? '…',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+              trailing: (_phoneFabricId != null && _phoneFabricId != 'N/A')
+                  ? IconButton(icon: const Icon(Icons.copy_outlined), tooltip: 'Copy',
+                      onPressed: () => _copy(_phoneFabricId!, 'Fabric ID'))
+                  : null,
+            ),
+            Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+              title: Text(
+                  "This phone's Matter admin identity — used to commission new devices onto the controller.",
+                  style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+            ),
+          ]),
+        ),
+        const Padding(padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+            child: SectionLabel('Commissionable devices nearby')),
+        _NearbyDevicesSection(devices: _found, scanning: _scanning, error: _scanError),
+        const SizedBox(height: 24),
+        const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 6), child: SectionLabel('Device management')),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          child: ListTile(
+            leading: Icon(Icons.delete_sweep_outlined, color: cs.error),
+            title: Text('Clear local device cache', style: TextStyle(color: cs.error)),
+            subtitle: const Text("Removes this phone's copies only — devices stay on the controller"),
+            onTap: _clearAll,
+          ),
+        ),
+        const SizedBox(height: 40),
+      ];
 }
 
 // ---------------------------------------------------------------------------

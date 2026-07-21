@@ -68,7 +68,7 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
         );
     if (!mounted) return;
     setState(() => _saving = false);
-    _snack(ok ? 'Tariff saved' : 'Couldn\'t save — hub unreachable?');
+    _snack(ok ? 'Tariff saved' : 'Couldn\'t save — controller unreachable?');
     if (ok) Navigator.of(context).pop();
   }
 
@@ -152,7 +152,7 @@ class _TariffSettingsScreenState extends State<TariffSettingsScreen> {
                 ? const SizedBox(
                     width: 18, height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : Text(online ? 'Save' : 'Hub offline'),
+                : Text(online ? 'Save' : 'Controller offline'),
           ),
         ],
       ),

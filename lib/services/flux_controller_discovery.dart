@@ -105,7 +105,7 @@ class FluxControllerDiscovery {
     final psk = await ControllerSettings.loadPsk(controllerId);
     if (psk == null) {
       debugPrint('FluxControllerDiscovery: no PSK for "$controllerId" — '
-          'scan the QR code on the device label in Settings → Flux Hub');
+          'scan the QR code on the device label in Settings');
       return null;
     }
     debugPrint('FluxControllerDiscovery: probing coaps://$host:$port '

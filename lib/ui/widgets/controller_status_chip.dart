@@ -14,7 +14,7 @@ const _remoteColor     = Color(0xFFA9C7F2); // blue    — via remote tunnel
 /// small status dot and label. Reflects how the hub is reached:
 ///   • Local  — direct LAN connection (green)
 ///   • Remote — off-LAN via the ICE tunnel (blue)
-///   • Connecting… (grey) / Hub not connected (coral)
+///   • Connecting… (grey) / Controller not connected (coral)
 /// Hidden only when no hub is paired. Tapping (re)connects, except while a
 /// connection attempt is already in progress.
 class ControllerStatusChip extends StatelessWidget {
@@ -33,7 +33,7 @@ class ControllerStatusChip extends StatelessWidget {
           _                     => (_localColor,  'Local'),
         },
       ControllerStatus.connecting => (_connectingColor, 'Connecting…'),
-      _                           => (_offlineColor,    'Hub not connected'),
+      _                           => (_offlineColor,    'Controller not connected'),
     };
     final connecting = status == ControllerStatus.connecting;
 

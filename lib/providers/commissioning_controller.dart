@@ -283,7 +283,7 @@ class CommissioningController extends ChangeNotifier {
     // throwaway phone fabric, then handed to the controller.  Without a hub
     // there is nothing to hand off to, so fail fast (no standalone path).
     if (controllerService == null) {
-      error = 'No Flux hub connected — join a hub before adding devices';
+      error = 'No Flux controller connected — connect a controller before adding devices';
       phase = CommissionPhase.failed;
       notifyListeners();
       return;
@@ -354,14 +354,14 @@ class CommissioningController extends ChangeNotifier {
       var threadHex = cfg.threadDatasetHex.replaceAll(RegExp(r'\s'), '');
 
       if (threadHex.isEmpty && controllerService != null && cfg.netType == 0) {
-        _appendRaw('▶ Using the hub\'s Thread network…', level: LogLevel.step);
+        _appendRaw('▶ Using the controller\'s Thread network…', level: LogLevel.step);
         final fetched = await controllerService!.getThreadDatasetHex();
         if (fetched != null && fetched.isNotEmpty) {
           threadHex = fetched;
-          _appendRaw('✓ Hub Thread network (${fetched.length ~/ 2} bytes)',
+          _appendRaw('✓ Controller Thread network (${fetched.length ~/ 2} bytes)',
               level: LogLevel.success);
         } else {
-          _appendRaw('⚠ Hub has no Thread network — using app dataset if set',
+          _appendRaw('⚠ Controller has no Thread network — using app dataset if set',
               level: LogLevel.info);
         }
       }
@@ -430,8 +430,8 @@ class CommissioningController extends ChangeNotifier {
 
     // 2. Hand the device to the controller — it commissions onto its OWN fabric
     //    with its own CA and registers + subscribes it itself.
-    _appendRaw('▶ Handing the device to the hub…', level: LogLevel.step);
-    _appendHuman('HUB COMMISSIONING');
+    _appendRaw('▶ Handing the device to the controller…', level: LogLevel.step);
+    _appendHuman('CONTROLLER COMMISSIONING');
     // Pass nodeId 0 so the controller assigns the device's node ID on its own
     // fabric. The controller owns id assignment there, and this avoids feeding
     // the phone-fabric node ID through the wire (the proto field is uint64; a
@@ -455,22 +455,22 @@ class CommissioningController extends ChangeNotifier {
       // stays recoverable on the phone's throwaway fabric.
       final why = (handoff?.error.isNotEmpty ?? false)
           ? handoff!.error
-          : 'the hub could not commission the device';
+          : 'the controller could not commission the device';
       _failHandoff('Handoff failed — $why');
       return;
     }
 
     final controllerFabricHex =
         handoff.fabricId.toHexString().toUpperCase().padLeft(16, '0');
-    _appendRaw('✓ Hub commissioned the device (fabric 0x$controllerFabricHex)',
+    _appendRaw('✓ Controller commissioned the device (fabric 0x$controllerFabricHex)',
         level: LogLevel.success);
-    _appendHuman('HUB COMMISSIONED');
+    _appendHuman('CONTROLLER COMMISSIONED');
     managedBy = ManagedBy.controller;
 
     // 3. Safety gate + 4. RemoveFabric.  The controller's fabric MUST be present
     //    on the device before we remove our own; on any doubt we keep our fabric
     //    (the device stays recoverable, never orphaned).
-    _appendRaw('▶ Verifying the hub fabric on the device…', level: LogLevel.step);
+    _appendRaw('▶ Verifying the controller fabric on the device…', level: LogLevel.step);
     _appendHuman('VERIFYING');
     final fabrics = await _port.readFabrics(nodeId) ?? const <FabricDescriptor>[];
     if (sessionId != _sessionId) return;
@@ -482,7 +482,7 @@ class CommissioningController extends ChangeNotifier {
 
     if (!fabrics.any((f) => isControllerFabric(f.fabricId))) {
       _appendRaw(
-          '⚠ Hub fabric not yet visible on the device — leaving this phone\'s '
+          '⚠ Controller fabric not yet visible on the device — leaving this phone\'s '
           'fabric in place (the device stays recoverable)',
           level: LogLevel.info);
     } else {
@@ -493,8 +493,8 @@ class CommissioningController extends ChangeNotifier {
         if (sessionId != _sessionId) return;
         _appendRaw(
             removed
-                ? '✓ Device is now on the hub fabric only'
-                : '⚠ Could not remove this phone\'s fabric — the hub still controls the device',
+                ? '✓ Device is now on the controller fabric only'
+                : '⚠ Could not remove this phone\'s fabric — the controller still controls the device',
             level: removed ? LogLevel.success : LogLevel.info);
       } else {
         _appendRaw(
@@ -674,7 +674,7 @@ class CommissioningController extends ChangeNotifier {
     // The phone's Pass-1 completion is NOT the end of the flow — the controller
     // handoff follows. Label it as a handoff step, not "COMPLETE" (which is
     // reserved for phase == done, after the hub has commissioned the device).
-    if (event.startsWith('🎉')) return 'HANDING TO HUB';
+    if (event.startsWith('🎉')) return 'HANDING TO CONTROLLER';
     if (event.startsWith('✗')) return 'FAILED';
     return null;
   }

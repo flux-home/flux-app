@@ -45,7 +45,7 @@ enum ManagedBy {
 
   String get label => switch (this) {
     ManagedBy.phone      => 'Phone',
-    ManagedBy.controller => 'Hub',
+    ManagedBy.controller => 'Controller',
   };
 
   IconData get icon => switch (this) {
