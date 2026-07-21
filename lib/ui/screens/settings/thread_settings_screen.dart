@@ -265,7 +265,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
   Widget _buildController(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Thread · network')),
+      appBar: AppBar(title: const Text('Thread')),
       body: ListView(
         children: [
           const SizedBox(height: 8),
@@ -312,7 +312,7 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thread · credentials'),
+        title: const Text('Thread'),
         actions: [
           IconButton(
             icon: _scanning

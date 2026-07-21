@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/app_info_screen.dart';
+import 'package:matter_home/ui/screens/settings/connection_screen.dart';
 import 'package:matter_home/ui/screens/settings/device_info_screen.dart';
 import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/remote_access_screen.dart';
@@ -24,17 +25,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs  = Theme.of(context).colorScheme;
     final hub = context.watch<HubConnection>();
-
-    final (Color dot, String statusLabel) = switch (hub.status) {
-      ControllerStatus.online => hub.connectionKind == ConnectionKind.remote
-          ? (_remoteColor, 'REMOTE')
-          : (_onlineColor, 'ONLINE'),
-      ControllerStatus.connecting => (_connectingColor, 'CONNECTING'),
-      ControllerStatus.offline    => (_offlineColor, 'OFFLINE'),
-      ControllerStatus.noHub      => (_connectingColor, 'NOT SET UP'),
-    };
     final configured = hub.hasConfiguredHub;
-    final host = hub.service?.endpoint.host;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -43,28 +34,25 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ══ CONTROLLER ══ the Flux hardware ══════════════════════════════
-          _panelHeader(cs,
-              icon: Icons.memory,
-              label: 'CONTROLLER',
-              status: _statusReadout(cs, dot, statusLabel)),
+          _label(cs, 'CONTROLLER'),
           if (configured)
             _card(cs, [
-              _navTile(context, Icons.info_outline, 'Device info',
-                  subtitle: host, page: () => const DeviceInfoScreen()),
+              _ConnectionWidget(hub: hub),
               _divider(cs),
-              _navTile(context, Icons.hub_outlined, 'Matter', qualifier: 'fabric',
-                  page: () => const MatterSettingsScreen(scope: MatterScope.controller)),
+              _navTile(context, 'Device info', () => const DeviceInfoScreen()),
               _divider(cs),
-              _navTile(context, Icons.lan_outlined, 'Thread', qualifier: 'network',
-                  page: () => const ThreadSettingsScreen(scope: ThreadScope.controller)),
+              _navTile(context, 'Matter',
+                  () => const MatterSettingsScreen(scope: MatterScope.controller)),
+              _divider(cs),
+              _navTile(context, 'Thread',
+                  () => const ThreadSettingsScreen(scope: ThreadScope.controller)),
             ])
           else
             _card(cs, [
               ListTile(
-                leading: Icon(Icons.add, color: cs.primary),
                 title: const Text('Add a controller'),
                 subtitle: const Text('Pair this phone with your Flux controller'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Icon(Icons.chevron_right, color: cs.primary),
                 onTap: () => runAddControllerFlow(context),
               ),
             ]),
@@ -72,26 +60,23 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 28),
 
           // ══ THIS PHONE ══ the device in your hand ════════════════════════
-          _panelHeader(cs, icon: Icons.smartphone, label: 'THIS PHONE'),
+          _label(cs, 'THIS PHONE'),
           _card(cs, [
-            _navTile(context, Icons.hub_outlined, 'Matter', qualifier: 'identity',
-                page: () => const MatterSettingsScreen(scope: MatterScope.phone)),
+            _navTile(context, 'Matter',
+                () => const MatterSettingsScreen(scope: MatterScope.phone)),
             _divider(cs),
-            _navTile(context, Icons.lan_outlined, 'Thread', qualifier: 'credentials',
-                page: () => const ThreadSettingsScreen(scope: ThreadScope.phone)),
+            _navTile(context, 'Thread',
+                () => const ThreadSettingsScreen(scope: ThreadScope.phone)),
             _divider(cs),
-            _navTile(context, Icons.cloud_outlined, 'Remote access',
-                subtitle: 'Reach the controller when away from home',
-                page: () => const RemoteAccessScreen()),
+            _navTile(context, 'Remote access', () => const RemoteAccessScreen()),
           ]),
 
           const SizedBox(height: 28),
 
           // ══ ABOUT ════════════════════════════════════════════════════════
-          _panelHeader(cs, label: 'ABOUT'),
+          _label(cs, 'ABOUT'),
           _card(cs, [
-            _navTile(context, Icons.info_outline, 'App info',
-                page: () => const AppInfoScreen()),
+            _navTile(context, 'App info', () => const AppInfoScreen()),
           ]),
 
           const SizedBox(height: 40),
@@ -100,54 +85,13 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // ── TE-styled panel header: glyph + wide-tracked mono label + status ──────
-  Widget _panelHeader(ColorScheme cs,
-      {required String label, IconData? icon, Widget? status}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: cs.onSurfaceVariant),
-            const SizedBox(width: 8),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2.4,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          if (status != null) status,
-        ],
-      ),
-    );
-  }
-
-  // ── TE-styled status readout: dot + wide-tracked mono state ───────────────
-  Widget _statusReadout(ColorScheme cs, Color dot, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 8, height: 8,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: dot)),
-        const SizedBox(width: 7),
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.6,
-          ),
-        ),
-      ],
-    );
-  }
+  // ── TE-styled panel label: wide-tracked monospace, no glyph ───────────────
+  Widget _label(ColorScheme cs, String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+        child: Text(text, style: TextStyle(
+            fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w700,
+            letterSpacing: 2.4, color: cs.onSurfaceVariant)),
+      );
 
   Widget _card(ColorScheme cs, List<Widget> children) => Card(
         margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -155,31 +99,47 @@ class SettingsScreen extends StatelessWidget {
         child: Column(children: children),
       );
 
-  /// A nav row. [qualifier] renders the TE "Label · qualifier" form (e.g.
-  /// "Matter · fabric"); [subtitle] renders a plain second line instead.
-  Widget _navTile(BuildContext context, IconData icon, String label,
-      {String? qualifier, String? subtitle, required Widget Function() page}) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon, color: cs.primary),
-      title: qualifier == null
-          ? Text(label)
-          : Text.rich(TextSpan(children: [
-              TextSpan(text: label),
-              TextSpan(
-                text: '   ·   $qualifier',
-                style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w400),
-              ),
-            ])),
-      subtitle: (subtitle != null && subtitle.isNotEmpty)
-          ? Text(subtitle, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant))
-          : null,
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute<void>(builder: (_) => page())),
-    );
-  }
+  Widget _navTile(BuildContext context, String label, Widget Function() page) =>
+      ListTile(
+        title: Text(label),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute<void>(builder: (_) => page())),
+      );
 
   Widget _divider(ColorScheme cs) =>
       Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant);
+}
+
+/// Dedicated connection-state widget at the top of the CONTROLLER panel: a
+/// coloured dot + plain-language state, tapping through to the full local /
+/// remote breakdown in [ConnectionScreen].
+class _ConnectionWidget extends StatelessWidget {
+  const _ConnectionWidget({required this.hub});
+  final HubConnection hub;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final (Color dot, String title, String subtitle) = switch (hub.status) {
+      ControllerStatus.online => hub.connectionKind == ConnectionKind.remote
+          ? (_remoteColor, 'Connected', 'Remote · encrypted tunnel')
+          : (_onlineColor, 'Connected', 'Local network'),
+      ControllerStatus.connecting => (_connectingColor, 'Connecting…', ''),
+      ControllerStatus.offline    => (_offlineColor, 'Offline', 'Controller unreachable'),
+      ControllerStatus.noHub      => (_connectingColor, 'Not set up', ''),
+    };
+
+    return ListTile(
+      leading: Container(width: 12, height: 12,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: dot)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(subtitle, style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute<void>(builder: (_) => const ConnectionScreen())),
+    );
+  }
 }

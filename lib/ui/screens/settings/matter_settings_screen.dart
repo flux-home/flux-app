@@ -112,7 +112,7 @@ class _MatterSettingsScreenState extends State<MatterSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isController ? 'Matter · fabric' : 'Matter · identity'),
+        title: const Text('Matter'),
         actions: _isController
             ? null
             : [
