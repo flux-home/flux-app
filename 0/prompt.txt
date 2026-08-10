@@ -1,0 +1,1 @@
+a few things. I have my balcony PV at the Matter eve plug, i think this is not logged in the FW, additional there are some transient problems, e.g. if i rename th einverter in the app it's not synced in the graph, i think the controller logging needs to abstract names and the name of a device should be stored on the controller, agree, please challenge me if necessary
