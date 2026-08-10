@@ -1,0 +1,1 @@
+in the controller view, if a controller cannot be found, but is added through the PSK, the view should never show "No hub yet"
