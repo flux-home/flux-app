@@ -1,0 +1,161 @@
+<task-notification>
+<task-id>a0b4bf62d3b9a4dbd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/56a2eb51-b243-41df-95fa-4ad926fcec3d/tasks/a0b4bf62d3b9a4dbd.output</output-file>
+<status>completed</status>
+<summary>Agent "Map controller CoAP API + proto" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have a complete picture. Here is my report.
+
+---
+
+# Flux App ↔ Controller CoAP Communication Map
+
+## Bottom line for your Modbus feature
+
+**There is zero existing Modbus / RS485 / slave / peripheral support.** A strict repo-wide grep for `modbus|rs485|slave|peripheral` returns **no hits** in any `.dart`, `.proto`, or `.md` file. There are **no `.proto` source files** in the repo at all — only the pre-generated Dart bindings under `lib/services/proto/`. The keyword hits for `meter`/`inverter`/`register`/`discover`/`scan` are all unrelated (see section 4). The entire device model is **Matter/Thread**-based, addressed purely by a 64-bit Matter `nodeId`. You will be extending a Matter-shaped API, not a fieldbus one.
+
+---
+
+## 1. FluxCoapService — `lib/services/flux_coap_service.dart`
+
+### Transport
+- CoAP over DTLS-PSK. `coaps://host:port` when a 16-byte PSK is present, else plain `coap://` (`FluxControllerEndpoint.coapUri`, lines 47-53; `hasDtls`, line 45).
+- DTLS PSK identity = QR `id=` field (e.g. `flux-controller-e25311`), fallback to host IP (lines 109-112).
+- Custom cipher config `_DtlsConfig` forcing PSK suites + `openSslSecurityLevel = 0` (lines 820-834).
+
+### Payload encoding
+- **All request/response bodies are binary protobuf**, Content-Format `application/octet-stream` (CoAP media type 42): `static const _proto = CoapMediaType.applicationOctetStream;` (line 167). Encoded via `msg.writeToBuffer()`, decoded via `Type.fromBuffer(bytes)`.
+- **One exception**: `GET /devices/clusters` returns a **UTF-8 JSON string** (cluster dump), decoded with `utf8.decode` (lines 698-711), shaped `[{endpoint, clusterId, attributes:[{id, value}]}]`.
+
+### CoAP request helpers (verbatim signatures)
+- `Future&lt;Uint8List?&gt; _get(String path, {Map&lt;String,String&gt;? query, Duration? timeout})` — line 173. Returns payload on `resp.code.isSuccess`, else null.
+- `Future&lt;Uint8List?&gt; _put(String path, Uint8List body, {Duration timeout = _timeout5})` — line 191.
+- `Future&lt;Uint8List?&gt; _post(String path, Uint8List body, {Duration timeout = _timeout30, bool retryOnConnError = true})` — line 205.
+- `Future&lt;bool&gt; _delete(String path, {Map&lt;String,String&gt;? query})` — line 219.
+- Core send with reconnect: `Future&lt;CoapResponse&gt; _send(CoapRequest req, Duration timeout, {bool retryOnConnError = true})` — line 142.
+
+### CoAP resource map (verbatim, from the class doc comment lines 62-76)
+```
+GET  /info                         → ControllerInfo
+GET  /thread/dataset               → ThreadDataset
+PUT  /thread/dataset               ← ThreadDataset
+GET  /devices                      → DeviceList
+POST /devices                      ← RenameDeviceRequest → StatusResponse
+DEL  /devices?id=&lt;hex&gt;             → StatusResponse
+POST /commission                   ← CommissionRequest → CommissionResult
+GET  /events?id=&lt;hex&gt;    Observe   → DeviceStateEvent
+POST /command                      ← DeviceCommand → BoolResult
+POST /write                        ← WriteAttrRequest → BoolResult
+POST /read                         ← ReadRequest → BoolResult (data via Observe)
+```
+Actual path strings used in code:
+- `/info` (line 233), `/thread/dataset` (lines 241, 254), `/devices` (lines 259, 722 DELETE), `/devices/clusters` with query `{id, full}` (line 702), `/commission` (line 304), `/events` query `{id}` (line 322), `/command` (line 425), `/write` (line 531), `/read` (line 589).
+- Node ids are formatted as 16-char zero-padded hex: `nodeId.toRadixString(16).padLeft(16, '0')` (lines 320, 704, 722).
+- Note a minor doc discrepancy: the proto comment at `flux.pb.dart:1329` says rename is `POST /devices/{id}/name`, while the service doc says `POST /devices`. Rename isn't actually wired in the service (no method sends `RenameDeviceRequest`).
+
+### Public API (methods on `FluxCoapService`)
+- `getInfo() → ControllerInfo?` (232), `getThreadDataset()` (239), `getThreadDatasetHex()` (246), `postThreadDataset(Uint8List tlv)` (252).
+- `getDeviceList() → List&lt;Device&gt;?` (258) — decodes `DeviceList.fromBuffer(b).devices`.
+- `commission({required int passcode, required int discriminator, int nodeId=0, String name='', int vendorId=0, int productId=0, int deviceType=0, String deviceAddress='', int devicePort=0}) → CommissionResult?` (277). 150s timeout, `retryOnConnError: false` (non-idempotent).
+- Full `MatterPort` implementation (see section 2). Control commands built via `_sendCmd(nodeId, clusterId, commandId, args, {endpoint=1})` → `POST /command` (415); attribute writes via `_writeAttr(...)` → `POST /write` (514); reads via `_readAttrs(...)` → `POST /read` then await Observe event (564).
+- `static Future&lt;FluxControllerEndpoint?&gt; probe(host, port, {psk, dtlsIdentity})` (779) — connectivity check via `GET /info`.
+- `dispose()` (801).
+
+### Error / timeout handling
+- Timeout constants: `_timeout5/15/30/45` (168-171); DTLS handshake headroom uses 15s on first GET (line 179).
+- `_send` (142): on `TimeoutException` → schedule reconnect + rethrow (no resend). On other Exception → if `retryOnConnError` reconnect+retry once, else reconnect+rethrow. `_reconnect()` (126) is single-flighted, rebuilds the dead DTLS client.
+- Every high-level helper wraps in try/catch, `debugPrint`s, and returns null/false on failure (never throws to callers).
+
+### Observe / subscription / streaming
+- `startSubscription(int nodeId)` (317): issues `_client.observe(GET /events?id=&lt;hex&gt;)`, stores `CoapObserveClientRelation` in `_subscriptions` map keyed by nodeId. Listener decodes `DeviceStateEvent.fromBuffer` → app event via `_toAppEvent` (381) and pushes to `_deviceStateCtrl` broadcast stream.
+- Auto-resubscribe: `onError` and `onDone` both re-arm after a 5s delay if not disposed (327-353).
+- `stopSubscription` (362) → `cancelObserveProactive`. Exposed streams: `deviceStateUpdates` (96) and `commissionEvents` (99).
+- `_readAttrs` (564) is the streaming/RPC bridge: POST `/read` returns immediately with `BoolResult`; actual values arrive asynchronously on the `/events` Observe stream, so it registers a stream listener **before** POSTing and waits on a `Completer` with a 10s timeout.
+
+---
+
+## 2. MatterPort abstraction — `lib/services/matter_port.dart` &amp; `null_matter_port.dart`
+
+`MatterPort` (matter_port.dart:142) composes four narrow interfaces:
+- **MatterSubscriptionPort** (17): `deviceStateUpdates` stream, `startSubscription(nodeId)`, `stopSubscription(nodeId)`.
+- **MatterCommissionPort** (28): `commissionEvents`, `parsePayload`, `commissionDevice`, `commissionViaIp`, `commissionViaCode`, `scanWifiNetworks`, `provideCredentials`, `openCommissioningWindow(nodeId)`, `readFabrics(nodeId)`, `removeFabric(nodeId, fabricIndex)`.
+- **MatterClusterPort** (81): reads (`readDeviceState`, `readDeviceTypeId`, `readBasicInfo`, `readThermostat`, `readServerClusterList`, `readPartsList`, `readClusters`) and control commands (`toggleDevice`, `setLevel`, covering, fan, color, thermostat setpoint/mode, `identify`, lock/unlock).
+- **MatterFabricPort** (113): **`removeDevice(int nodeId)`** (115), `shareDevice`, `downloadAndFlash`/`cancelOta`, `getFabricId`, `discoverCommissionableNodes`, `discoverThreadNetworks`, `readSystemThreadCredentials`, `readThreadNetworkDiagnostics`.
+
+Two implementations: `FluxCoapService` (controller-proxied, the real one) and `MatterChannel` (local platform-channel CHIP, used for BLE commissioning). `NullMatterPort` is the inert placeholder — every method is a no-op returning false/null/empty (null_matter_port.dart).
+
+**Key gap for your feature:** the abstraction has **no "add device", "list peripherals", "scan bus", or "read register" concept** beyond Matter commissioning (`commissionXxx`) + `removeDevice(nodeId)` + `getDeviceList()`. There is no dedicated add/list/subscribe for non-Matter peripherals.
+
+---
+
+## 3. Proto bindings — `lib/services/proto/flux.pb.dart` (+ `.pbenum.dart`, `.pbjson.dart`)
+
+Generated from a `flux.proto` that is **not in this repo** (package `flux`). Message types (each carries a doc comment naming its endpoint):
+
+| Message (line) | Endpoint | Notes |
+|---|---|---|
+| `ControllerInfo` (25) | GET `/info` | firmwareVersion, hostname, ethernetIp, ethernetUp, fabricId(Int64)… |
+| `ThreadDataset` (155) | GET/POST `/thread/dataset` | `tlv` bytes |
+| `ThreadEphemeralKeyRequest` (304) | POST/DEL `/thread/epskc` | |
+| `ThreadEphemeralKeyResult` (360) | | |
+| `FabricProvision` (468) / `FabricProvisionResult` (628) | POST `/fabric/provision` | |
+| `MfgProvision` (726) / `MfgProvisionResult` (822) | POST `/mfg/provision` | |
+| `CommissionRequest` (901) / `CommissionResult` (1058) | POST `/commission` | passcode, discriminator, nodeId, vendor/product/deviceType, deviceAddress, devicePort |
+| **`Device`** (1153) | element of DeviceList | fields: `nodeId:Int64(1)`, `name(2)`, `reachable:bool(3)`, `vendorId(4)`, `productId(5)`, `deviceType(6)`, `connectivity:ConnectivityState(7)` |
+| **`DeviceList`** (1281) | GET `/devices` | `repeated Device devices` |
+| `RenameDeviceRequest` (1330) | POST `/devices/{id}/name` | nodeId, name |
+| **`RegisterNodeRequest`** (1402) | POST `/node/register` | fabricId, nodeId, name, vendorId, productId, deviceType — app tells controller about a device it commissioned into the shared fabric (not used by FluxCoapService directly) |
+| `Attr` (1523) / `AttrsUpdate` (1630) / `DeviceStateEvent` (1692) | GET `/events` Observe | typed attr values (bool/int/long) |
+| `CommandArg` (1792) / `DeviceCommand` (1926) | POST `/command` | |
+| `WriteAttrRequest` (2027) | POST `/write` | |
+| `ReadRequest` (2170) | POST `/read` | endpointIds, clusterIds, attrIds |
+| `BoolResult` (2244) / `StatusResponse` (2310) | responses | |
+
+Enums (`flux.pbenum.dart`): `ConnectivityState { UNKNOWN, DISCOVERING, SUBSCRIBED, RETRYING }` and `DeviceEventType { ESTABLISHED, ATTRS_UPDATE, ERROR, RESUBSCRIBING, DISCOVERING }`.
+
+**Nothing modbus/peripheral/meter/inverter/register(bus)/discover(bus)-related exists** in the proto. `RegisterNodeRequest` is Matter node registration, not a Modbus register.
+
+---
+
+## 4. Full-repo keyword grep results (case-insensitive)
+
+- **modbus** — 0 hits.
+- **rs485** — 0 hits.
+- **slave** — 0 hits.
+- **peripheral** — 0 hits (matched some docs as filenames only in file-list, but no code).
+- **register** — all hits are Matter: `RegisterNodeRequest` (flux.pb.dart:1397+, flux.pbjson.dart:312-326), `registerCommissionedDevice` (device_provider.dart:717), `registerNodeRequestDescriptor`. Not fieldbus registers.
+- **meter** — `lib/models/device_type.dart:167` `electricalSensor =&gt; Icons.electric_meter_outlined` (an icon); `energy_card.dart` "Ferraris-meter" UI. Cosmetic/energy-UI only.
+- **inverter** — `lib/models/energy_role.dart:11` doc comment ("two PV inverters"); energy role modelling only.
+- **discover** — Matter/Thread/mDNS discovery: `FluxControllerDiscovery`, `discoverCommissionableNodes`, `discoverThreadNetworks`, `ConnectivityState.CONNECTIVITY_DISCOVERING`, `DeviceEventType.DEVICE_EVENT_DISCOVERING` (flux.pbenum.dart:21,52). No bus scanning.
+- **scan** — QR scanner (`qr_scanner_screen.dart`), WiFi scanning (`wifi_scan_service.dart`, `scanWifiNetworks`), BLE scanning logs. No Modbus bus scan.
+
+---
+
+## 5. Device list fetch + add/remove over CoAP
+
+**Fetch / reconcile** — `DeviceProvider._reconcileWithController()` (`lib/providers/device_provider.dart:223`):
+- Calls `svc.getDeviceList()` → `GET /devices` → `DeviceList.fromBuffer`.
+- `null` (transient failure) leaves the local list untouched; empty-non-null is authoritative.
+- Controller devices missing locally are added as `MatterDevice(managedBy: ManagedBy.controller, networkType: NetworkType.thread, isOnline: cd.reachable)` and a subscription is started (lines 239-262).
+- Known devices re-seed `isOnline` from `Device.reachable` (265-268).
+- Controller-managed devices no longer reported are purged locally via `_purgeControllerDevice` (275-306). Public entry point `syncWithController()` (201).
+
+**Add** — There is no generic "add device" CoAP call. Two paths exist, both Matter-specific:
+1. BLE commission on the phone (`MatterChannel`), then hand off to controller via `FluxCoapService.commission(...)` → `POST /commission` (flux_coap_service.dart:277-312). On success the controller registers + subscribes the device itself.
+2. `registerCommissionedDevice(...)` in `device_provider.dart:717` persists locally; the `RegisterNodeRequest`/`POST /node/register` proto exists but is **not** invoked by `FluxCoapService` (no method sends it — an extension point).
+
+**Remove** — `FluxCoapService.removeDevice(int nodeId)` (flux_coap_service.dart:720-722):
+```dart
+Future&lt;bool&gt; removeDevice(int nodeId) =&gt;
+    _delete('/devices', query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
+```
+→ `DELETE /devices?id=&lt;16-hex&gt;`. Driven by `DeviceProvider.removeDevice(String deviceId)` (device_provider.dart:1035), which calls `_ctrlService?.removeDevice(device.nodeId)` (line 1043) and, for phone-fabric devices, also `_channel.removeDevice` (1049).
+
+---
+
+## Guidance for extending toward Modbus
+
+Everything is keyed by a Matter 64-bit `nodeId` and CoAP paths under `/devices`, `/commission`, `/command`, `/write`, `/read`, `/events`. To add Modbus discovery/add/remove you would likely: (a) add new proto messages + a regenerated `flux.pb.dart` (the `.proto` source lives in the firmware repo, not here), (b) add new CoAP paths (e.g. `/modbus/scan`, `/modbus/devices`) using the existing `_get/_post/_delete` helpers, and (c) extend `MatterPort`/`MatterFabricPort` (or add a new port interface) plus `NullMatterPort` no-op stubs and the `DeviceProvider` reconcile loop. The `Device` proto message currently has no bus-address/register fields, so it would need extension or a parallel `Peripheral`/`ModbusDevice` message.</result>
+<usage><subagent_tokens>56826</subagent_tokens><tool_uses>13</tool_uses><duration_ms>118272</duration_ms></usage>
+</task-notification>
