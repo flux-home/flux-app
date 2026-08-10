@@ -1,0 +1,1 @@
+instead of showing consumption in the graph show export and import, the euro numebr on top for the einspeseverguetung should be green and same font size as cost
