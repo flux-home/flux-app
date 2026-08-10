@@ -1,0 +1,1 @@
+the energy graph should update automatically faster, self sufficiency calculation should be based on cosnumed energy vs imported, correct?
