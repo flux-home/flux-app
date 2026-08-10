@@ -1,0 +1,1 @@
+the app cannot find the controller anymore although it's available
