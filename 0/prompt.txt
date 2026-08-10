@@ -1,0 +1,1 @@
+i just tried to add a wifi device but commissioning fails on the controller, app states searching network
