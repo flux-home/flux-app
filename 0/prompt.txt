@@ -1,0 +1,1 @@
+the overlays should be pastel outline, no icon, short description, for grid, please add export/import status
