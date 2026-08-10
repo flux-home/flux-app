@@ -1,0 +1,1 @@
+if a device is not accessible, the app shows the alst cached value, this should be invalidated. for controller not connected please show hub not connected instead of offline, please use also a pastel style button like for the menu below, no icon please
