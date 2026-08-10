@@ -1,0 +1,1 @@
+can you not fill the bars of the price forecast but rather show a line with steps
