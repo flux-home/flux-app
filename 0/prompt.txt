@@ -1,0 +1,37 @@
+I want to get more information in the app about why connecting to the hub failed and in where
+
+---
+
+can you check if the rendevous server is running?
+
+---
+
+can you test
+
+---
+
+is an app update needed?
+
+---
+
+201:38283
+
+---
+
+i don't get a remote connection up with just 5g enabled, can you decouple lan and remote for diagnosis and add stun/turn connection?
+
+---
+
+can you double check both implementations about TURN
+
+---
+
+yes, go ahead
+
+---
+
+i'm failing on Tunnel probe
+
+---
+
+can you commit and push flux-inetrface flux-controller and app

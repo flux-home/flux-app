@@ -1,0 +1,250 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZNZFJP4YZRPPQA4HMYK0GG4",
+  "session_id": "9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-10T13:58:39.637314848Z",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 9,
+  "save_step_count": 9,
+  "files_touched": [
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/DeviceInfoBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/DiagnosticsBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/MatterBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/NetworkBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/OtaBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/AppFabricManager.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/MatterCommissionableScanner.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/NetworkDiagnosticsRunner.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/ThreadBorderRouterScanner.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/clusters/ThreadDiagCluster.kt",
+    "lib/models/commissionable_device.dart",
+    "lib/models/device_live_data.dart",
+    "lib/models/device_state_event.dart",
+    "lib/models/device_view.dart",
+    "lib/models/ota_progress.dart",
+    "lib/models/share_result.dart",
+    "lib/services/dcl_service.dart",
+    "lib/services/matter_channel.dart",
+    "lib/services/matter_port.dart",
+    "lib/services/null_matter_port.dart",
+    "lib/ui/screens/thread_diag_screen.dart",
+    "test/support/matter_fakes.dart"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5[1m]",
+  "turn_id": "d4cb0a67e3af",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 9025,
+    "cache_creation_tokens": 8832758,
+    "cache_read_tokens": 467230774,
+    "output_tokens": 878919,
+    "api_call_count": 1039
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-10T13:58:38.994383432Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 2562,
+    "total_committed": 0,
+    "total_lines_changed": 2562,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 3037,
+      "user_lines_removed": 5752,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272,
+        "android/app/src/main/kotlin/com/fluxhome/app/MainActivity.kt": 1,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/CommissioningBridge.kt": 5,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/MatterBridge.kt": 2,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/MatterCommissioner.kt": 5,
+        "lib/models/device_live_data.dart": 3,
+        "lib/models/device_view.dart": 1,
+        "lib/models/energy_history.dart": 15,
+        "lib/models/energy_prices.dart": 49,
+        "lib/providers/commissioning_controller.dart": 161,
+        "lib/providers/device_provider.dart": 29,
+        "lib/services/controller_settings.dart": 27,
+        "lib/services/controller_transport/isolate_transport.dart": 49,
+        "lib/services/flux_coap_service.dart": 212,
+        "lib/services/hub_connection.dart": 258,
+        "lib/services/matter_channel.dart": 6,
+        "lib/services/matter_port.dart": 6,
+        "lib/services/proto/flux.pb.dart": 352,
+        "lib/services/proto/flux.pbjson.dart": 67,
+        "lib/services/thread_sync_service.dart": 26,
+        "lib/ui/screens/commission_screen.dart": 11,
+        "lib/ui/screens/device_settings_screen.dart": 2,
+        "lib/ui/screens/home/energy_history_card.dart": 4,
+        "lib/ui/screens/home/energy_price_card.dart": 165,
+        "lib/ui/screens/settings/connection_screen.dart": 55,
+        "lib/ui/screens/settings/device_info_screen.dart": 18,
+        "lib/ui/screens/settings/matter_settings_screen.dart": 8,
+        "lib/ui/screens/settings/thread_settings_screen.dart": 647,
+        "lib/ui/screens/settings_screen.dart": 7,
+        "test/models/energy_history_test.dart": 45,
+        "test/models/energy_prices_test.dart": 96,
+        "test/providers/commissioning_controller_test.dart": 121,
+        "test/providers/device_provider_test.dart": 25,
+        "test/services/controller_settings_test.dart": 53,
+        "test/services/thread_sync_service_test.dart": 19,
+        "test/support/commissioning_fakes.dart": 25,
+        "test_live/conn_reliability_test.dart": 190
+      },
+      "user_removed_per_file": {
+        "android/app/src/main/kotlin/com/fluxhome/app/MainActivity.kt": 52,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/CommissioningBridge.kt": 85,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/DeviceInfoBridge.kt": 58,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/DiagnosticsBridge.kt": 82,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/MatterBridge.kt": 39,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/NetworkBridge.kt": 28,
+        "android/app/src/main/kotlin/com/fluxhome/app/bridge/OtaBridge.kt": 196,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/AppFabricManager.kt": 44,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/MatterCommissionableScanner.kt": 154,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/MatterCommissioner.kt": 158,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/NetworkDiagnosticsRunner.kt": 480,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/ThreadBorderRouterScanner.kt": 103,
+        "android/app/src/main/kotlin/com/fluxhome/app/chip/clusters/ThreadDiagCluster.kt": 212,
+        "lib/models/commissionable_device.dart": 98,
+        "lib/models/device_live_data.dart": 27,
+        "lib/models/device_state_event.dart": 17,
+        "lib/models/device_view.dart": 4,
+        "lib/models/energy_history.dart": 1,
+        "lib/models/ota_progress.dart": 28,
+        "lib/models/share_result.dart": 13,
+        "lib/models/thread_models.dart": 166,
+        "lib/providers/commissioning_controller.dart": 36,
+        "lib/providers/device_provider.dart": 112,
+        "lib/services/controller_settings.dart": 43,
+        "lib/services/controller_transport/isolate_transport.dart": 3,
+        "lib/services/dcl_service.dart": 166,
+        "lib/services/flux_coap_service.dart": 64,
+        "lib/services/flux_controller_discovery.dart": 14,
+        "lib/services/hub_connection.dart": 23,
+        "lib/services/matter_channel.dart": 122,
+        "lib/services/matter_port.dart": 28,
+        "lib/services/null_matter_port.dart": 38,
+        "lib/services/proto/flux.pb.dart": 39,
+        "lib/services/proto/flux.pbjson.dart": 4,
+        "lib/services/thread_settings_service.dart": 85,
+        "lib/services/thread_sync_service.dart": 52,
+        "lib/ui/screens/commission_screen.dart": 65,
+        "lib/ui/screens/device_detail_screen.dart": 1,
+        "lib/ui/screens/device_settings_screen.dart": 699,
+        "lib/ui/screens/home/energy_history_card.dart": 4,
+        "lib/ui/screens/home/energy_price_card.dart": 69,
+        "lib/ui/screens/settings/device_info_screen.dart": 14,
+        "lib/ui/screens/settings/matter_settings_screen.dart": 294,
+        "lib/ui/screens/settings/thread_settings_screen.dart": 999,
+        "lib/ui/screens/settings_screen.dart": 21,
+        "lib/ui/screens/thread_diag_screen.dart": 582,
+        "test/providers/commissioning_controller_test.dart": 17,
+        "test/services/thread_sync_service_test.dart": 39,
+        "test/support/commissioning_fakes.dart": 31,
+        "test/support/matter_fakes.dart": 43
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3134,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3138,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3138,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 272,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3138,
+      "agent_lines_removed": 5767,
+      "user_added_per_file": {
+        ".opencode/plugins/entire.ts": 272
+      }
+    }
+  ]
+}
