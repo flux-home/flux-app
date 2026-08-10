@@ -1,0 +1,1 @@
+flux is mainly a energy management app, I want to be able to assign electrical sensor devices to either grid, PV, car charger, heatpump, home battery, in the end I want to show an overview about my home on the main screen
