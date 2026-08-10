@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>bb1z2ucyn</task-id>
+<summary>Monitor event: "commissioning attempts + crash markers in controller serial log"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
