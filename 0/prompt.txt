@@ -1,0 +1,1 @@
+i meant show it waiting for device on network -> waiting for device on <thread network name>
