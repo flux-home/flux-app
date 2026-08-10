@@ -135,7 +135,6 @@ class ThreadTlvDecoder {
 /// is never stored in `thread_datasets_v2`.
 class ThreadSettingsService {
   static const _keyDataset  = 'thread_dataset_hex'; // legacy
-  static const _keyRouters  = 'thread_discovered_routers';
   static const _keyDatasets = 'thread_datasets_v2';
   static const _keyActiveHex = 'thread_active_hex_v2';
 
@@ -158,17 +157,6 @@ class ThreadSettingsService {
     return '';
   }
 
-  /// True if the user has explicitly chosen an active dataset (even empty).
-  static Future<bool> hasActiveSelection() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.containsKey(_keyActiveHex)) return true;
-    if (prefs.containsKey(_keyDataset)) {
-      final hex = prefs.getString(_keyDataset) ?? '';
-      if (hex.isNotEmpty) await _migrate(prefs, hex);
-      return hex.isNotEmpty;
-    }
-    return false;
-  }
 
   /// Returns the active [ThreadDataset], or null if nothing is configured.
   static Future<ThreadDataset?> loadActive() async {
@@ -243,42 +231,6 @@ class ThreadSettingsService {
     }
   }
 
-  /// Removes the dataset with [hex] from the list.
-  /// If it was the active dataset, the active selection is cleared.
-  static Future<void> removeDataset(String hex) async {
-    final datasets = await loadDatasets();
-    datasets.removeWhere((d) => d.hex == hex);
-    await saveDatasets(datasets);
-    // Clear active if it was pointing at this dataset.
-    final prefs = await SharedPreferences.getInstance();
-    if ((prefs.getString(_keyActiveHex) ?? '') == hex) {
-      await prefs.remove(_keyActiveHex);
-    }
-  }
-
-  /// Updates an existing dataset in place (matched by [originalHex]).
-  /// If [originalHex] was the active dataset, the active hex is updated to
-  /// `updated.hex`.
-  static Future<void> updateDataset(String originalHex, ThreadDataset updated) async {
-    final datasets = await loadDatasets();
-    final idx = datasets.indexWhere((d) => d.hex == originalHex);
-    if (idx == -1) {
-      // Not found — add as new.
-      if (!updated.isEmpty) datasets.add(updated);
-    } else {
-      datasets[idx] = updated;
-    }
-    await saveDatasets(datasets);
-    // If this was the active dataset, update the active hex.
-    final prefs = await SharedPreferences.getInstance();
-    if ((prefs.getString(_keyActiveHex) ?? '') == originalHex) {
-      await prefs.setString(_keyActiveHex, updated.hex);
-    }
-  }
-
-  // ── Backward-compatible save ────────────────────────────────────────────────
-
-  /// Saves [hex] as the active dataset and adds it to the list if not already
   /// present.  Strips whitespace before saving.
   static Future<void> save(String hex) async {
     final clean = hex.replaceAll(RegExp(r'\s'), '');
@@ -292,43 +244,6 @@ class ThreadSettingsService {
     }
     await setActive(clean);
   }
-
-  // ── Border routers ──────────────────────────────────────────────────────────
-
-  static Future<void> saveRouters(List<ThreadBorderRouter> routers) async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = json.encode(
-      routers
-          .map(
-            (r) => {
-              'serviceName': r.serviceName,
-              'networkName': r.networkName,
-              'extPanId': r.extPanId,
-              'vendorName': r.vendorName,
-              'modelName': r.modelName,
-              'host': r.host,
-              'port': r.port,
-              'txt': r.txt,
-            },
-          )
-          .toList(),
-    );
-    await prefs.setString(_keyRouters, encoded);
-  }
-
-  static Future<List<ThreadBorderRouter>> loadRouters() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyRouters);
-    if (raw == null) return [];
-    try {
-      final list = json.decode(raw) as List<dynamic>;
-      return list.map((e) => ThreadBorderRouter.fromJson(e as Map<String, dynamic>)).toList();
-    } on Exception catch (_) {
-      return [];
-    }
-  }
-
-  // ── Migration ───────────────────────────────────────────────────────────────
 
   static Future<void> _migrate(SharedPreferences prefs, String hex) async {
     final clean = hex.replaceAll(RegExp(r'\s'), '');

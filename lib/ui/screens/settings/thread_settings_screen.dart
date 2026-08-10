@@ -1,301 +1,168 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:matter_home/models/thread_models.dart';
+import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/hub_connection.dart';
-import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/thread_settings_service.dart';
-import 'package:matter_home/services/thread_sync_service.dart';
 import 'package:matter_home/ui/widgets/info_row.dart';
 import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
 
-// ── Data model ────────────────────────────────────────────────────────────────
-
-class _ThreadNetwork {
-  const _ThreadNetwork({
-    required this.networkName,
-    required this.extPanId,
-    required this.borderRouters,
-    required this.isConfigured,
-    this.configuredHex,
-  });
-  final String networkName;
-  final String extPanId;
-  final List<ThreadBorderRouter> borderRouters;
-  final bool isConfigured;
-  final String? configuredHex;
-}
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
-/// Which device this Thread screen is about — the controller's operational
-/// network (it is the border router), or the credentials this phone holds.
-enum ThreadScope { controller, phone }
-
+/// The controller's Thread network: what it runs (read-only — the controller is
+/// the source of truth) plus the Thread 1.4 credential-sharing flows.
 class ThreadSettingsScreen extends StatefulWidget {
-  const ThreadSettingsScreen({super.key, this.scope = ThreadScope.controller});
-
-  final ThreadScope scope;
+  const ThreadSettingsScreen({super.key});
 
   @override
   State<ThreadSettingsScreen> createState() => _ThreadSettingsScreenState();
 }
 
 class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
-  bool get _isController => widget.scope == ThreadScope.controller;
-
-  bool _loading = true;
-  bool _scanning = false;
-  bool _syncing = false;
   bool _hubThreadLoaded = false;
-  bool _hubThreadConfigured = false;  // does the hub run a Thread network?
-  ThreadDataset? _active;
-  List<ThreadDataset> _datasets = [];
-  List<_ThreadNetwork> _networks = [];
-  List<ThreadBorderRouter> _routersCache = [];
-  String? _error;
+  bool _hubThreadConfigured = false;  // does the controller run a Thread network?
+  String? _hubDatasetHex;             // active dataset TLV hex (for detail rows)
+  String? _hubRole;                   // live OT role: Leader / Router / Child …
+  int?    _hubNeighborCount;
 
   @override
   void initState() {
     super.initState();
-    if (_isController) {
-      _loadHubThread();
-    } else {
-      _loadThenScan();
-    }
+    _loadHubThread();
   }
 
-  /// Read whether the controller is running its own operational Thread network
-  /// (it's the border router). Distinct from the phone-side scanned/saved nets.
+  /// Read the controller's live operational Thread network (it's the border
+  /// router) for display. The controller is the single source of truth — the
+  /// app just shows what it's running; there is no phone→controller sync here.
   Future<void> _loadHubThread() async {
     final svc = context.read<HubConnection>().service;
     final ds  = svc == null ? null : await svc.getThreadDataset();
-    if (mounted) {
-      setState(() {
-        _hubThreadConfigured = ds != null && ds.tlv.isNotEmpty;
-        _hubThreadLoaded     = true;
-      });
-    }
-  }
-
-  // ── Data loading ──────────────────────────────────────────────────────────
-
-  /// Loads persisted data instantly, then fires a background scan.
-  Future<void> _loadThenScan() async {
-    setState(() { _loading = true; _error = null; });
-
-    final datasets = await ThreadSettingsService.loadDatasets();
-    final active   = await ThreadSettingsService.loadActive();
-    final savedHex = await ThreadSettingsService.load();
-    final cached   = await ThreadSettingsService.loadRouters();
-
-    if (mounted) {
-      setState(() {
-        _datasets      = datasets;
-        _active        = active;
-        _routersCache  = cached;
-        _networks      = _buildNetworks(savedHex, cached);
-        _loading       = false;
-        _scanning      = true;
-      });
-    }
-
-    await _runScan();
-  }
-
-  Future<void> _runScan() async {
-    setState(() { _scanning = true; _error = null; });
-    try {
-      final results = await Future.wait([
-        ThreadSettingsService.load(),
-        // Thread border router discovery is local phone mDNS (_meshcop._udp)
-        // — always use MatterChannel regardless of controller mode.
-        context.read<MatterChannel>().discoverThreadNetworks(),
-      ]);
-      final savedHex = results[0] as String;
-      final routers  = results[1] as List<ThreadBorderRouter>;
-      await ThreadSettingsService.saveRouters(routers);
-      if (mounted) {
-        setState(() {
-          _routersCache = routers;
-          _networks     = _buildNetworks(savedHex, routers);
-          _scanning     = false;
-        });
-      }
-    } on Exception catch (e) {
-      if (mounted) setState(() { _scanning = false; _error = e.toString(); });
-    }
-  }
-
-  Future<void> _reload() async {
-    final datasets = await ThreadSettingsService.loadDatasets();
-    final active   = await ThreadSettingsService.loadActive();
-    final savedHex = await ThreadSettingsService.load();
     if (!mounted) return;
+    final hex = (ds != null && ds.tlv.isNotEmpty)
+        ? ds.tlv.map((b) => b.toRadixString(16).padLeft(2, '0')).join()
+        : null;
     setState(() {
-      _datasets = datasets;
-      _active   = active;
-      _networks = _buildNetworks(savedHex, _routersCache);
+      _hubThreadConfigured = hex != null;
+      _hubDatasetHex       = hex;
+      _hubRole             = (ds?.role.isNotEmpty ?? false) ? ds!.role : null;
+      _hubNeighborCount    = ds?.neighborCount;
+      _hubThreadLoaded     = true;
     });
-  }
-
-  List<_ThreadNetwork> _buildNetworks(String savedHex, List<ThreadBorderRouter> routers) {
-    final savedClean = savedHex.replaceAll(RegExp(r'\s'), '');
-    final savedFields = ThreadTlvDecoder.decode(savedClean);
-    String? savedName;
-    String? savedXp;
-    for (final f in savedFields) {
-      if (f.label == 'Network Name') savedName = f.value;
-      if (f.label == 'Ext PAN ID')   savedXp   = f.value;
-    }
-
-    final byName = <String, List<ThreadBorderRouter>>{};
-    for (final r in routers) {
-      byName.putIfAbsent(r.networkName, () => []).add(r);
-    }
-
-    final networks = <_ThreadNetwork>[];
-
-    if (savedName != null) {
-      final matchingRouters = byName.remove(savedName) ?? [];
-      networks.add(_ThreadNetwork(
-        networkName:    savedName,
-        extPanId:       savedXp ?? '',
-        borderRouters:  matchingRouters,
-        isConfigured:   true,
-        configuredHex:  savedHex,
-      ));
-    }
-
-    for (final entry in byName.entries) {
-      networks.add(_ThreadNetwork(
-        networkName:   entry.key,
-        extPanId:      entry.value.first.extPanId,
-        borderRouters: entry.value,
-        isConfigured:  false,
-      ));
-    }
-
-    return networks;
-  }
-
-  // ── Dataset actions ───────────────────────────────────────────────────────
-
-  Future<void> _selectDataset(ThreadDataset ds) async {
-    await ThreadSettingsService.setActive(ds.hex);
-    await _reload();
-  }
-
-
-  // ── OS import ─────────────────────────────────────────────────────────────
-
-  Future<void> _importFromOs() async {
-    try {
-      final hex = await context.read<MatterChannel>().readSystemThreadCredentials();
-      if (!mounted || hex == null || hex.isEmpty) return;
-      final name = ThreadTlvDecoder.networkName(hex) ?? hex.substring(0, 8.clamp(0, hex.length));
-      final ds   = ThreadDataset(label: name, hex: hex);
-      await ThreadSettingsService.addDataset(ds);
-      await ThreadSettingsService.setActive(ds.hex);
-      await _reload();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"$name" imported and set as active')),
-        );
-      }
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      final msg = e.code == 'PLAY_SERVICES_UNAVAILABLE'
-          ? 'Google Play Services is not available. Enter your Thread dataset manually.'
-          : 'Import failed: ${e.message}';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } on Exception catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Import failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
-  /// Reconcile the app's active Thread network with the controller (the
-  /// controller is source of truth).
-  Future<void> _syncThread() async {
-    final svc = context.read<HubConnection>().service;
-    if (svc == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't reach the controller — try again")));
-      return;
-    }
-    setState(() => _syncing = true);
-    try {
-      final result = await ThreadSyncService(svc).ensureInSync();
-      if (!mounted) return;
-      final message = switch (result.status) {
-        ThreadSyncStatus.adopted     => "Using the controller's Thread network ✓",
-        ThreadSyncStatus.pushed      => 'Thread network sent to the controller ✓',
-        ThreadSyncStatus.inSync      => 'Thread network already in sync ✓',
-        ThreadSyncStatus.nothingToDo => 'No Thread network configured yet',
-        ThreadSyncStatus.unreachable => "Couldn't reach the controller — try again",
-      };
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      if (result.status == ThreadSyncStatus.adopted) _loadThenScan();
-    } finally {
-      if (mounted) setState(() => _syncing = false);
-    }
-  }
-
   @override
-  Widget build(BuildContext context) =>
-      _isController ? _buildController(context) : _buildPhone(context);
+  Widget build(BuildContext context) => _buildController(context);
 
-  // ── CONTROLLER: its own operational Thread network + Sync ─────────────────
+  // ── CONTROLLER: the Thread network it runs (read-only) + sharing ──────────
   Widget _buildController(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // Live network details. Identity (PAN ID / extended PAN ID) is deliberately
+    // not shown — it means nothing to a user and only adds noise; what matters
+    // is which network it is, its role, its radio channel and how big the mesh is.
+    final channel = _hubDatasetHex == null
+        ? null
+        : ThreadTlvDecoder.decode(_hubDatasetHex!)
+            .where((f) => f.label == 'Channel')
+            .map((f) => f.value)
+            .firstOrNull;
+    final name = _hubDatasetHex == null
+        ? null
+        : ThreadTlvDecoder.networkName(_hubDatasetHex!);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Thread')),
+      appBar: AppBar(
+        title: const Text('Thread'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _hubThreadLoaded ? () {
+              setState(() => _hubThreadLoaded = false);
+              _loadHubThread();
+            } : null,
+          ),
+        ],
+      ),
       body: ListView(
         children: [
           const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: SectionLabel('Current network'),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: !_hubThreadLoaded
+                ? const ListTile(
+                    leading: SizedBox(width: 24, height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    title: Text('Reading the controller…'),
+                  )
+                : !_hubThreadConfigured
+                    ? ListTile(
+                        leading: Icon(Icons.lan_outlined, color: cs.onSurfaceVariant),
+                        title: const Text('No Thread network'),
+                        subtitle: const Text(
+                            'The controller is not running a Thread network yet. '
+                            'Create one, or join an existing network below.'),
+                      )
+                    : Column(children: [
+                        ListTile(
+                          leading: Icon(Icons.lan_outlined, color: cs.primary),
+                          title: Text(name?.isNotEmpty ?? false
+                              ? name! : 'Thread network'),
+                          subtitle: const Text(
+                              'Running on the controller (border router)'),
+                        ),
+                        Divider(height: 1, indent: 16, endIndent: 16,
+                            color: cs.outlineVariant),
+                        if (_hubRole != null)
+                          InfoRow(label: 'Role', value: _hubRole!),
+                        if (channel != null)
+                          InfoRow(label: 'Channel', value: channel),
+                        if (_hubNeighborCount != null)
+                          InfoRow(
+                              label: 'Devices on mesh',
+                              value: '$_hubNeighborCount'),
+                      ]),
+          ),
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: SectionLabel('Credential sharing'),
+          ),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(children: [
+              // Plain title-only rows — the ecosystem explanation lives on the
+              // screen each one opens, not stacked up in the menu.
               ListTile(
-                leading: Icon(Icons.lan_outlined, color: cs.primary),
-                title: const Text('Operational network'),
-                subtitle: Text(!_hubThreadLoaded
-                    ? '…'
-                    : _hubThreadConfigured
-                        ? 'Running on the controller (border router)'
-                        : 'Not configured on the controller'),
-                trailing: _syncing
-                    ? const SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : TextButton.icon(
-                        onPressed: _syncThread,
-                        icon: const Icon(Icons.sync, size: 18),
-                        label: const Text('Sync')),
+                title: const Text('Join an existing network'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _joinExistingNetwork,
               ),
               Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
               ListTile(
-                dense: true,
-                leading: Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
-                title: Text(
-                    'Sync reconciles this phone with the controller — the '
-                    "controller's network is the source of truth.",
-                    style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant)),
+                enabled: _hubThreadConfigured,
+                title: const Text('Share this network'),
+                subtitle: _hubThreadConfigured
+                    ? null
+                    : const Text('No Thread network to share yet'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _hubThreadConfigured ? _shareNetwork : null,
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
+              // Always available: it bootstraps a mesh when there is none, and
+              // is also the way back out of a network shared with another
+              // ecosystem.
+              ListTile(
+                title: const Text('Create a new network'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _createNetwork,
               ),
             ]),
           ),
@@ -305,839 +172,620 @@ class _ThreadSettingsScreenState extends State<ThreadSettingsScreen> {
     );
   }
 
+  Future<void> _joinExistingNetwork() async {
+    final svc = context.read<HubConnection>().service;
+    if (svc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Controller not connected')));
+      return;
+    }
+    final joined = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => _JoinThreadNetworkScreen(
+          service: svc, hubHasNetwork: _hubThreadConfigured),
+    ));
+    if ((joined ?? false) && mounted) {
+      await _loadHubThread(); // controller now reports the adopted network
+    }
+  }
+
+  Future<void> _shareNetwork() async {
+    final svc = context.read<HubConnection>().service;
+    if (svc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Controller not connected')));
+      return;
+    }
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => _ShareThreadNetworkScreen(service: svc),
+    ));
+  }
+
+  Future<void> _createNetwork() async {
+    final svc = context.read<HubConnection>().service;
+    if (svc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Controller not connected')));
+      return;
+    }
+    final created = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => _CreateThreadNetworkScreen(
+          service: svc, currentName: _hubDatasetHex == null
+              ? null
+              : ThreadTlvDecoder.networkName(_hubDatasetHex!)),
+    ));
+    if ((created ?? false) && mounted) {
+      await _loadHubThread(); // controller now reports its new network
+    }
+  }
+
   // ── THIS PHONE: scanned networks + saved credentials ──────────────────────
-  Widget _buildPhone(BuildContext context) {
-    final cs      = Theme.of(context).colorScheme;
-    final allNets = _networks;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Thread'),
-        actions: [
-          IconButton(
-            icon: _scanning
-                ? const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_outlined),
-            tooltip: 'Scan',
-            onPressed: _scanning ? null : _runScan,
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon:  const Icon(Icons.add),
-        label: const Text('Add credentials'),
-        onPressed: () => _showAddCredentials(context),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _datasets.isEmpty
-          ? _NoCredentialsHint(onAdd: () => _showAddCredentials(context))
-          : allNets.isEmpty
-          ? Center(
-              child: Text(
-                _error != null
-                    ? 'Scan failed: $_error'
-                    : _scanning
-                    ? 'Scanning for Thread networks…'
-                    : 'No Thread networks found.\nTap ↻ to scan.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              itemCount: allNets.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 4),
-              itemBuilder: (ctx, i) {
-                final net = allNets[i];
-                return Card(
-                  child: ListTile(
-                    leading: net.isConfigured
-                        ? const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853))
-                        : Icon(Icons.router_outlined, color: cs.onSurfaceVariant),
-                    title: Text(
-                      net.networkName,
-                      style: TextStyle(
-                        fontWeight: net.isConfigured ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                    subtitle: Text(
-                      '${net.borderRouters.length} border router'
-                      '${net.borderRouters.length == 1 ? '' : 's'}',
-                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.push(
-                      ctx,
-                      MaterialPageRoute<void>(
-                        builder: (_) => net.isConfigured
-                            ? _ActiveNetworkDetailScreen(
-                                active:   _active!,
-                                network:  net,
-                                scanning: _scanning,
-                              )
-                            : _ThreadNetworkScreen(network: net),
-                      ),
-                    ).then((_) => _reload()),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-
-  // ── Add credentials bottom sheet ────────────────────────────────────────────
-
-  Future<void> _showAddCredentials(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(4, 0, 4, 16),
-                child: SectionLabel('Add Thread Credentials'),
-              ),
-              FilledButton.icon(
-                icon:  const Icon(Icons.download_rounded, size: 18),
-                label: const Text('Import from OS Thread Network'),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _importFromOs();
-                },
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                icon:  const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Add manually'),
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const _ThreadDatasetDetailScreen(
-                        initialHex:   '',
-                        initialLabel: '',
-                        isNew:        true,
-                      ),
-                    ),
-                  ).then((_) => _reload());
-                },
-              ),
-              if (_datasets.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
-                  child: SectionLabel('Saved datasets'),
-                ),
-                ..._datasets.map(
-                  (ds) => ListTile(
-                    dense: true,
-                    leading: Icon(
-                      _active == ds
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_off,
-                      color: _active == ds
-                          ? const Color(0xFF34A853)
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      size: 20,
-                    ),
-                    title: Text(ds.label, style: const TextStyle(fontSize: 14)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectDataset(ds);
-                    },
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// ── No-credentials empty state ───────────────────────────────────────────────
+// ── Join an existing (foreign) Thread network — POST /thread/join ─────────────
 
-class _NoCredentialsHint extends StatelessWidget {
-  const _NoCredentialsHint({required this.onAdd});
-  final VoidCallback onAdd;
+/// Collects the ephemeral sharing code and asks the controller to join an
+/// existing Thread network. The controller browses `_meshcop-e._udp` itself
+/// (Option A), so this screen never touches an address — the user only opens
+/// the other ecosystem's share sheet and types the code it shows.
+class _JoinThreadNetworkScreen extends StatefulWidget {
+  const _JoinThreadNetworkScreen({
+    required this.service,
+    required this.hubHasNetwork,
+  });
+
+  final FluxCoapService service;
+
+  /// Whether the controller already runs its own mesh. When it does, a live
+  /// switch would orphan commissioned devices, so migrate is the default.
+  final bool hubHasNetwork;
+
+  @override
+  State<_JoinThreadNetworkScreen> createState() => _JoinThreadNetworkScreenState();
+}
+
+class _JoinThreadNetworkScreenState extends State<_JoinThreadNetworkScreen> {
+  final _codeCtrl = TextEditingController();
+  late bool _migrate = widget.hubHasNetwork;
+  bool    _busy = false;
+  String? _error;
+  String? _joinedName;   // non-null once the join succeeds
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _join() async {
+    final code = _codeCtrl.text.trim();
+    if (code.length < 6) {
+      setState(() => _error = 'Enter the code shown by the other app (6–32 characters).');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() { _busy = true; _error = null; });
+
+    final res = await widget.service.joinThreadNetwork(
+        ephemeralKey: code, migrate: _migrate);
+    if (!mounted) return;
+
+    if (res == null) {
+      setState(() { _busy = false; _error = 'Could not reach the controller. Try again.'; });
+      return;
+    }
+    if (!res.success) {
+      setState(() {
+        _busy = false;
+        _error = res.error.isNotEmpty
+            ? res.error
+            : 'The controller could not join that network.';
+      });
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _joinedName = res.networkName.isNotEmpty ? res.networkName : 'the network';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.memory_outlined, size: 56,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
-            const SizedBox(height: 20),
-            Text(
-              'No Thread credentials',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add your Thread network credentials before commissioning '
-              'Thread devices. You can import them from Android or enter '
-              'the dataset hex manually.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              icon:  const Icon(Icons.add),
-              label: const Text('Add credentials'),
-              onPressed: onAdd,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Active network detail ────────────────────────────────────────────────────
-
-/// Detail screen for the active Thread network — shows Dataset and Border Routers.
-class _ActiveNetworkDetailScreen extends StatefulWidget {
-  const _ActiveNetworkDetailScreen({
-    required this.active,
-    required this.scanning,
-    this.network,
-  });
-  final ThreadDataset    active;
-  final _ThreadNetwork?  network;
-  final bool             scanning;
-
-  @override
-  State<_ActiveNetworkDetailScreen> createState() =>
-      _ActiveNetworkDetailScreenState();
-}
-
-class _ActiveNetworkDetailScreenState
-    extends State<_ActiveNetworkDetailScreen> {
-  bool _pushing = false;
-
-  Future<void> _pushToController() async {
-    final svc = context.read<HubConnection>().service;
-    if (svc == null) return;
-
-    final hex = widget.active.hex.replaceAll(RegExp(r'\s'), '');
-    if (hex.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No dataset to push (empty dataset)')),
-      );
-      return;
-    }
-
-    setState(() => _pushing = true);
-    try {
-      final bytes = List.generate(
-        hex.length ~/ 2,
-        (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16),
-      );
-      final ok = await svc.postThreadDataset(
-        Uint8List.fromList(bytes),
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok
-            ? 'Thread dataset pushed to controller ✓'
-            : 'Push failed — check controller logs'),
-      ));
-    } on Exception catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      if (mounted) setState(() => _pushing = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs  = Theme.of(context).colorScheme;
-    final svc = context.watch<HubConnection>().service;
-    final active  = widget.active;
-    final network  = widget.network;
-    final scanning  = widget.scanning;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(active.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-
-          // ── Dataset — nav tile ───────────────────────────────────────────
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.key_outlined, color: cs.onSurfaceVariant),
-              title: const Text('Dataset'),
-              subtitle: Text(
-                active.label,
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => _ThreadDatasetDetailScreen(
-                    initialHex:   active.hex,
-                    initialLabel: active.label,
-                    isActive:     true,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Push to Controller ──────────────────────────────────────────
-          if (svc != null && !active.isEmpty) ...[  // only in controller mode
-            const SizedBox(height: 4),
-            Card(
-              child: ListTile(
-                leading: _pushing
-                    ? const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(Icons.upload_outlined, color: cs.primary),
-                title: const Text('Push to Controller'),
-                subtitle: const Text(
-                    'Store this dataset on the Flux Controller'),
-                onTap: _pushing ? null : _pushToController,
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 4),
-
-          // ── Border Routers ───────────────────────────────────────────────
-          Card(
-            child: network == null || network!.borderRouters.isEmpty
-                ? ListTile(
-                    leading: Icon(
-                      scanning ? Icons.sync : Icons.wifi_find_outlined,
-                      color: cs.onSurfaceVariant,
-                    ),
-                    title: Text(
-                      scanning ? 'Scanning…' : 'Not detected on local network',
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
-                  )
-                : Column(
-                    children: network!.borderRouters.asMap().entries.map((e) {
-                      final r    = e.value;
-                      final last = e.key == network!.borderRouters.length - 1;
-                      final name = r.vendorName.isNotEmpty && r.modelName.isNotEmpty
-                          ? '${r.vendorName} ${r.modelName}'
-                          : r.serviceName;
-                      return Column(
-                        children: [
-                          ListTile(
-                            leading: Icon(Icons.device_hub, color: cs.primary),
-                            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                            subtitle: r.txt['tv'] != null
-                                ? Text(
-                                    'Thread ${r.txt['tv']}',
-                                    style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
-                                  )
-                                : null,
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute<void>(
-                                builder: (_) => _BorderRouterDetailScreen(router: r),
-                              ),
-                            ),
-                          ),
-                          if (!last)
-                            Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-          ),
-
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Thread network detail ─────────────────────────────────────────────────────
-
-class _ThreadNetworkScreen extends StatelessWidget {
-  const _ThreadNetworkScreen({required this.network});
-  final _ThreadNetwork network;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs     = Theme.of(context).colorScheme;
-    final fields = network.isConfigured && network.configuredHex != null
-        ? ThreadTlvDecoder.decode(network.configuredHex!.replaceAll(RegExp(r'\s'), ''))
-        : <({String label, String value})>[];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(network.networkName, style: const TextStyle(fontWeight: FontWeight.bold)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-
-          // ── Border routers ─────────────────────────────────────────
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 12, 4, 10),
-            child: SectionLabel('Border routers'),
-          ),
-          if (network.borderRouters.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Text(
-                'No border routers discovered on this network',
-                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-              ),
-            )
-          else
-            Card(
-              child: Column(
-                children: network.borderRouters.asMap().entries.map((e) {
-                  final r    = e.value;
-                  final last = e.key == network.borderRouters.length - 1;
-                  return Column(
-                    children: [
-                      ListTile(
-                        leading: Icon(Icons.device_hub, color: cs.primary),
-                        title: Text(
-                          r.vendorName.isNotEmpty && r.modelName.isNotEmpty
-                              ? '${r.vendorName} ${r.modelName}'
-                              : r.serviceName,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        subtitle: r.host.isNotEmpty || r.txt['tv'] != null
-                            ? Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (r.host.isNotEmpty)
-                                    Text(
-                                      '${r.host}:${r.port}',
-                                      style: const TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  if (r.txt['tv'] != null)
-                                    Text(
-                                      'Thread ${r.txt['tv']}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                    ),
-                                ],
-                              )
-                            : null,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => _BorderRouterDetailScreen(router: r),
-                          ),
-                        ),
-                      ),
-                      if (!last)
-                        Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-
-          // ── Dataset fields ─────────────────────────────────────────
-          if (fields.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
-              child: SectionLabel('Dataset'),
-            ),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Column(
-                  children: fields.map((f) => InfoRow(label: f.label, value: f.value)).toList(),
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Border router detail ──────────────────────────────────────────────────────
-
-const _kTxtFieldInfo = <String, ({String name, String description})>{
-  'rv': (name: 'Revision',         description: 'The Thread version. Usually 1 or higher.'),
-  'nn': (name: 'Network Name',     description: 'Human-readable name of the Thread mesh.'),
-  'xp': (name: 'Extended PAN ID',  description: '64-bit hex ID that uniquely identifies this mesh.'),
-  'tv': (name: 'Thread Version',   description: 'Specific stack version (e.g. 1.3.0).'),
-  'vn': (name: 'Vendor Name',      description: 'Manufacturer of the border router device.'),
-  'mn': (name: 'Model Name',       description: 'Model of the border router device.'),
-  'at': (name: 'Active Timestamp', description: '64-bit value ensuring all devices have the latest settings.'),
-  'sq': (name: 'Sequence Number',  description: 'Increments every time the network configuration changes.'),
-  'sb': (name: 'State Bitmap',     description: 'Connectivity and service flags for this border router.'),
-  'bb': (name: 'BBR Sequence',     description: 'Backbone Border Router sequence number.'),
-  'dn': (name: 'Domain Name',      description: 'Thread domain name (Thread 1.2+).'),
-  'id': (name: 'Border Agent ID',  description: '128-bit unique identifier for this border agent.'),
-};
-
-class _BorderRouterDetailScreen extends StatelessWidget {
-  const _BorderRouterDetailScreen({required this.router});
-  final ThreadBorderRouter router;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs    = Theme.of(context).colorScheme;
-    final title = router.vendorName.isNotEmpty && router.modelName.isNotEmpty
-        ? '${router.vendorName} ${router.modelName}'
-        : router.serviceName;
-
-    final knownKeys   = _kTxtFieldInfo.keys.toList();
-    final unknownKeys = router.txt.keys.where((k) => !knownKeys.contains(k)).toList()..sort();
-    final orderedKeys = [...knownKeys.where(router.txt.containsKey), ...unknownKeys];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(20),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                router.host.isNotEmpty ? '${router.host}:${router.port}' : router.serviceName,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-      body: orderedKeys.isEmpty
-          ? const Center(child: Text('No TXT record data available'))
-          : ListView.separated(
+      appBar: AppBar(title: const Text('Join Thread network')),
+      body: _joinedName != null
+          ? _success(cs)
+          : ListView(
               padding: const EdgeInsets.all(16),
-              itemCount: orderedKeys.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (ctx, i) {
-                final key  = orderedKeys[i];
-                final val  = router.txt[key] ?? '';
-                final info = _kTxtFieldInfo[key];
-                return Card(
+              children: [
+                Card(
+                  color: cs.surfaceContainerHighest,
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color:        cs.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            key,
+                        Text('Adopt another ecosystem\'s network',
+                            style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: 6),
+                        Text(
+                            'Joins the controller to your Apple, Google or '
+                            'SmartThings Thread network so it and your other '
+                            'hubs share one mesh instead of running separate ones.',
                             style: TextStyle(
-                              fontFamily:  'monospace',
-                              fontSize:    12,
-                              fontWeight:  FontWeight.bold,
-                              color:       cs.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (info != null) ...[
-                                Text(info.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                const SizedBox(height: 2),
-                                Text(info.description, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                                const SizedBox(height: 6),
-                              ],
-                              SelectableText(
-                                val.isNotEmpty ? val : '(empty)',
-                                style: TextStyle(
-                                  fontFamily:  'monospace',
-                                  fontSize:    13,
-                                  fontWeight:  FontWeight.w500,
-                                  color: val.isNotEmpty ? cs.primary : cs.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                                fontSize: 13, color: cs.onSurfaceVariant)),
+                        const SizedBox(height: 14),
+                        Text('How it works',
+                            style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: 8),
+                        _step(cs, 1, 'Open your other smart-home app (Apple Home, '
+                            'Google Home, SmartThings…).'),
+                        _step(cs, 2, 'Start "Share Thread credentials" (often under '
+                            'the home / hub settings). It shows a short code.'),
+                        _step(cs, 3, 'Type that code below while its sharing screen '
+                            'stays open, then Join.'),
                       ],
                     ),
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _codeCtrl,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Sharing code',
+                    hintText: 'e.g. 123-456-789',
+                    prefixIcon: Icon(Icons.key_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _migrate,
+                  onChanged: _busy ? null : (v) => setState(() => _migrate = v),
+                  title: const Text('Migrate existing devices'),
+                  subtitle: Text(_migrate
+                      ? 'The controller moves its whole mesh onto the new network '
+                        '(~30s); already-added devices follow.'
+                      : 'Switch immediately. Only safe if the controller has no '
+                        'devices yet — others would be orphaned.'),
+                  isThreeLine: true,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: cs.error, fontSize: 13)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _join,
+                  icon: _busy
+                      ? const SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.hub_outlined),
+                  label: Text(_busy ? 'Joining…' : 'Join network'),
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48)),
+                ),
+              ],
             ),
     );
   }
+
+  Widget _success(ColorScheme cs) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle_rounded, size: 56, color: Color(0xFF34A853)),
+            const SizedBox(height: 16),
+            Text(
+              _migrate
+                  ? 'Migrating onto "$_joinedName"'
+                  : 'Joined "$_joinedName"',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _migrate
+                  ? 'The controller and its devices are moving to the new mesh '
+                    'over the next ~30 seconds.'
+                  : 'The controller is now on the shared Thread network.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+            ),
+            const SizedBox(height: 28),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+
+  Widget _step(ColorScheme cs, int n, String text) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 11,
+              backgroundColor: cs.primary,
+              child: Text('$n', style: TextStyle(
+                  fontSize: 12, color: cs.onPrimary, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: 13.5))),
+          ],
+        ),
+      );
 }
 
-// ── Thread dataset detail ─────────────────────────────────────────────────────
+// ── Share this network with another app — /thread/epskc ───────────────────────
 
-class _ThreadDatasetDetailScreen extends StatefulWidget {
-  const _ThreadDatasetDetailScreen({
-    required this.initialHex,
-    required this.initialLabel,
-    this.isNew    = false,
-    this.isActive = false,
-  });
-  final String initialHex;
-  final String initialLabel;
-  final bool   isNew;
-  final bool   isActive;
+/// Starts the controller's ephemeral-key (`_meshcop-e._udp`) session and shows
+/// the one-time code another ecosystem's app enters to join flux's Thread
+/// network. Polls the session state until the other app is accepted, or the
+/// session times out / is cancelled.
+class _ShareThreadNetworkScreen extends StatefulWidget {
+  const _ShareThreadNetworkScreen({required this.service});
+
+  final FluxCoapService service;
 
   @override
-  State<_ThreadDatasetDetailScreen> createState() => _ThreadDatasetDetailScreenState();
+  State<_ShareThreadNetworkScreen> createState() => _ShareThreadNetworkScreenState();
 }
 
-class _ThreadDatasetDetailScreenState extends State<_ThreadDatasetDetailScreen> {
-  late TextEditingController _hexCtrl;
-  late TextEditingController _labelCtrl;
-  bool _saved = false;
+class _ShareThreadNetworkScreenState extends State<_ShareThreadNetworkScreen> {
+  static const _sessionSeconds = 300; // 5 min window
+
+  bool    _starting = true;
+  String? _otpc;
+  String  _state = '';
+  String? _error;
+  bool    _succeeded = false;   // saw "Accepted"
+  bool    _ended = false;       // "Stopped"/"Disabled" without success
+  Timer?  _poll;
 
   @override
   void initState() {
     super.initState();
-    _hexCtrl   = TextEditingController(text: widget.initialHex);
-    _labelCtrl = TextEditingController(text: widget.initialLabel);
-    _hexCtrl.addListener(() => setState(() {}));
+    _start();
   }
 
   @override
   void dispose() {
-    _hexCtrl.dispose();
-    _labelCtrl.dispose();
+    _poll?.cancel();
+    // Best-effort stop if the user leaves before the other app is accepted.
+    if (!_succeeded) unawaited(widget.service.stopThreadShare());
     super.dispose();
   }
 
-  Future<void> _confirmDelete() async {
-    final cs = Theme.of(context).colorScheme;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete dataset?'),
-        content: Text(
-          widget.isActive
-              ? '"${widget.initialLabel}" is your active dataset. '
-                'Deleting it will clear the active selection and '
-                'Thread commissioning will require new credentials.'
-              : 'Delete "${widget.initialLabel}"? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: cs.error,
-              foregroundColor: cs.onError,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if ((confirmed ?? false) && mounted) {
-      await ThreadSettingsService.removeDataset(
-          widget.initialHex.replaceAll(RegExp(r'\s'), ''));
-      if (mounted) Navigator.pop(context);
+  Future<void> _start() async {
+    setState(() { _starting = true; _error = null; _ended = false; _succeeded = false; });
+    final res = await widget.service.startThreadShare(timeoutSeconds: _sessionSeconds);
+    if (!mounted) return;
+    if (res == null || !res.success) {
+      setState(() {
+        _starting = false;
+        _error = (res?.error.isNotEmpty ?? false)
+            ? res!.error
+            : 'Could not start credential sharing on the controller.';
+      });
+      return;
+    }
+    setState(() { _starting = false; _otpc = res.otpc; _state = res.state; });
+    _evaluate(res.state);
+    _poll = Timer.periodic(const Duration(seconds: 2), (_) => _tick());
+  }
+
+  Future<void> _tick() async {
+    final res = await widget.service.getThreadShareState();
+    if (!mounted || res == null) return; // transient read failure → keep polling
+    setState(() => _state = res.state);
+    _evaluate(res.state);
+  }
+
+  void _evaluate(String state) {
+    if (state == 'Accepted') {
+      _succeeded = true;
+      _poll?.cancel();
+    } else if (state == 'Stopped' || state == 'Disabled') {
+      _ended = true;
+      _poll?.cancel();
     }
   }
 
-  Future<void> _save() async {
-    final clean = _hexCtrl.text.replaceAll(RegExp(r'\s'), '');
-    final name  = _labelCtrl.text.trim().isNotEmpty
-        ? _labelCtrl.text.trim()
-        : ThreadTlvDecoder.networkName(clean) ??
-              (clean.isNotEmpty ? clean.substring(0, 8.clamp(0, clean.length)) : 'Unnamed dataset');
-    final updated = ThreadDataset(label: name, hex: clean);
-
-    if (widget.isNew) {
-      if (clean.isNotEmpty) await ThreadSettingsService.addDataset(updated);
-    } else {
-      await ThreadSettingsService.updateDataset(
-        widget.initialHex.replaceAll(RegExp(r'\s'), ''),
-        updated,
-      );
-    }
-
-    if (mounted) {
-      setState(() => _saved = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thread dataset saved'), duration: Duration(seconds: 2)),
-      );
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _saved = false);
-      });
-    }
+  String get _prettyOtpc {
+    final c = _otpc ?? '';
+    if (c.length != 9) return c;
+    return '${c.substring(0, 3)} ${c.substring(3, 6)} ${c.substring(6)}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs       = Theme.of(context).colorScheme;
-    final cleanHex = _hexCtrl.text.replaceAll(RegExp(r'\s'), '');
-    final fields   = ThreadTlvDecoder.decode(cleanHex);
-
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isNew ? 'Add dataset' : 'Edit dataset'),
-        actions: [
-          if (!widget.isNew)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete dataset',
-              onPressed: _confirmDelete,
-            ),
-          IconButton(
-            icon: Icon(_saved ? Icons.check : Icons.save_outlined),
-            tooltip: 'Save',
-            onPressed: _save,
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-
-          // ── Name ──────────────────────────────────────────────────
-          const Padding(padding: EdgeInsets.fromLTRB(4, 4, 4, 10), child: SectionLabel('Name')),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _labelCtrl,
-                decoration: InputDecoration(
-                  labelText:   'Dataset name',
-                  hintText:    'e.g. Home Thread Network',
-                  border:      OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  filled:      true,
-                  fillColor:   cs.surfaceContainerHighest,
-                  helperText:  'Leave blank to use the name decoded from the TLV',
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Decoded fields ─────────────────────────────────────────
-          if (fields.isNotEmpty) ...[
-            const Padding(padding: EdgeInsets.fromLTRB(4, 0, 4, 10), child: SectionLabel('Decoded fields')),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: fields.map((f) => InfoRow(label: f.label, value: f.value)).toList(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // ── Hex input ──────────────────────────────────────────────
-          const Padding(padding: EdgeInsets.fromLTRB(4, 0, 4, 10), child: SectionLabel('Hex (TLV)')),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Operational dataset',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.copy_outlined, size: 18),
-                        tooltip: 'Copy hex',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: cleanHex.isEmpty
-                            ? null
-                            : () {
-                                Clipboard.setData(ClipboardData(text: cleanHex));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content:  Text('Dataset copied'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _hexCtrl,
-                    maxLines:   null,
-                    style: const TextStyle(
-                      fontFamily:   'monospace',
-                      fontSize:     12,
-                      letterSpacing: 0.5,
-                    ),
-                    decoration: InputDecoration(
-                      border:    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      hintText:  'Paste hex dataset…',
-                      filled:    true,
-                      fillColor: cs.surfaceContainerHighest,
-                    ),
-                    keyboardType:      TextInputType.multiline,
-                    inputFormatters:   [FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F\s]'))],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          const SizedBox(height: 40),
-        ],
+      appBar: AppBar(title: const Text('Share Thread network')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: _body(cs),
       ),
     );
   }
+
+  Widget _body(ColorScheme cs) {
+    if (_starting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return _centered(cs, Icons.error_outline, cs.error, 'Sharing unavailable',
+          _error!, actionLabel: 'Try again', onAction: _start);
+    }
+    if (_succeeded) {
+      return _centered(cs, Icons.check_circle_rounded, const Color(0xFF34A853),
+          'Network shared',
+          'The other app joined the controller\'s Thread network.',
+          actionLabel: 'Done', onAction: () => Navigator.of(context).pop());
+    }
+    if (_ended) {
+      return _centered(cs, Icons.timer_off_outlined, cs.onSurfaceVariant,
+          'Sharing ended',
+          'The code expired before another app joined.',
+          actionLabel: 'Share again', onAction: _start);
+    }
+
+    // Active session: show the code + live status.
+    final connecting = _state == 'Connected';
+    return ListView(
+      children: [
+        Text('Enter this code in your other app',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        Text(
+            "Lets Apple, Google or SmartThings join the controller's Thread "
+            'network, so both ecosystems share one mesh. In that app, add a '
+            'Thread network or accessory, then type the code below while this '
+            'screen stays open.',
+            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+        const SizedBox(height: 28),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: SelectableText(
+              _prettyOtpc,
+              style: const TextStyle(
+                  fontSize: 34, fontWeight: FontWeight.w600,
+                  letterSpacing: 3, fontFeatures: [FontFeature.tabularFigures()]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 28),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: cs.primary)),
+            const SizedBox(width: 12),
+            Text(connecting ? 'Connecting…' : 'Waiting for the other app…',
+                style: TextStyle(color: cs.onSurfaceVariant)),
+          ],
+        ),
+        const SizedBox(height: 40),
+        OutlinedButton(
+          onPressed: () async {
+            _poll?.cancel();
+            await widget.service.stopThreadShare();
+            if (mounted) Navigator.of(context).pop();
+          },
+          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+          child: const Text('Cancel sharing'),
+        ),
+      ],
+    );
+  }
+
+  Widget _centered(ColorScheme cs, IconData icon, Color color, String title,
+          String body, {required String actionLabel, required VoidCallback onAction}) =>
+      Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 56, color: color),
+          const SizedBox(height: 16),
+          Text(title, textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(body, textAlign: TextAlign.center,
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+          const SizedBox(height: 28),
+          FilledButton(
+            onPressed: onAction,
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            child: Text(actionLabel),
+          ),
+        ],
+      );
+}
+
+// ── Create a new network — POST /thread/create ────────────────────────────────
+
+/// Explains and confirms forming a brand-new Thread network on the controller.
+/// Two uses: bootstrap a mesh when there is none, and — as the inverse of
+/// joining — leave a network shared with another ecosystem and go back to an
+/// independent mesh.
+class _CreateThreadNetworkScreen extends StatefulWidget {
+  const _CreateThreadNetworkScreen({required this.service, this.currentName});
+
+  final FluxCoapService service;
+
+  /// Name of the network the controller is on today (for the explanation).
+  final String? currentName;
+
+  @override
+  State<_CreateThreadNetworkScreen> createState() => _CreateThreadNetworkScreenState();
+}
+
+class _CreateThreadNetworkScreenState extends State<_CreateThreadNetworkScreen> {
+  bool    _busy = false;
+  String? _error;
+  bool    _done = false;
+
+  Future<void> _create() async {
+    setState(() { _busy = true; _error = null; });
+    final res = await widget.service.createThreadNetwork();
+    if (!mounted) return;
+    if (res == null) {
+      setState(() {
+        _busy = false;
+        _error = 'The controller did not create a network. It may not support '
+            'this yet — check the controller logs.';
+      });
+      return;
+    }
+    if (res.code != 0) {
+      setState(() {
+        _busy = false;
+        _error = res.message.isNotEmpty
+            ? res.message
+            : 'The controller could not form a new network.';
+      });
+      return;
+    }
+    setState(() { _busy = false; _done = true; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // The controller may have no network at all (first-time bootstrap), in which
+    // case there is nothing to leave and the copy must not imply otherwise.
+    final onNetwork = widget.currentName != null;
+    final from = (widget.currentName?.isNotEmpty ?? false)
+        ? '"${widget.currentName}"' : 'its current network';
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create network')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: _done
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle_rounded, size: 56,
+                      color: Color(0xFF34A853)),
+                  const SizedBox(height: 16),
+                  Text(onNetwork ? 'Moving to a new network'
+                                 : 'Network created',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                      onNetwork
+                          ? 'The controller is moving itself and its devices onto '
+                            'a fresh Thread network. This takes about 30 seconds.'
+                          : 'The controller is now the border router for its own '
+                            'Thread network.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                  const SizedBox(height: 28),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48)),
+                    child: const Text('Done'),
+                  ),
+                ],
+              )
+            : ListView(
+                children: [
+                  Text(onNetwork
+                          ? 'Run an independent mesh'
+                          : 'Start a Thread mesh',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 6),
+                  Text(
+                      onNetwork
+                          ? 'The controller leaves $from and forms a brand-new '
+                            'Thread network of its own, with fresh credentials. '
+                            'Use this to stop sharing a mesh with another '
+                            'ecosystem.'
+                          : 'The controller forms its own Thread network with '
+                            'fresh credentials, so Thread devices have a mesh to '
+                            'join. You can share it with other ecosystems, or '
+                            'join theirs instead, at any time.',
+                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                  const SizedBox(height: 20),
+                  Card(
+                    color: cs.surfaceContainerHighest,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('What happens',
+                              style: Theme.of(context).textTheme.titleSmall),
+                          const SizedBox(height: 8),
+                          if (onNetwork) ...[
+                            _bullet(cs, 'Devices commissioned to this controller '
+                                'migrate to the new network with it.'),
+                            _bullet(cs, "The other ecosystem's hubs and their own "
+                                'devices stay on the old network.'),
+                            _bullet(cs, 'The two meshes can no longer relay for '
+                                'each other, so range may drop.'),
+                            _bullet(cs, 'You can join a shared network again at '
+                                'any time.'),
+                          ] else ...[
+                            _bullet(cs, 'The controller becomes the border router '
+                                'for the new mesh.'),
+                            _bullet(cs, 'Thread devices you add from now on join '
+                                'this network.'),
+                            _bullet(cs, 'You can share it with another ecosystem, '
+                                'or join theirs, at any time.'),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(_error!,
+                        style: TextStyle(color: cs.error, fontSize: 13)),
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _busy ? null : _create,
+                    style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48)),
+                    child: Text(_busy ? 'Forming…' : 'Form a new network'),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _bullet(ColorScheme cs, String text) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 5, right: 10),
+              child: Container(width: 5, height: 5,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle, color: cs.onSurfaceVariant)),
+            ),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: 13.5))),
+          ],
+        ),
+      );
 }

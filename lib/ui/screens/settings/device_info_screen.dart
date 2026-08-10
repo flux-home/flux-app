@@ -1,15 +1,17 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/hub_connection.dart';
-import 'package:matter_home/services/thread_settings_service.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:provider/provider.dart';
 
 /// Read-only identity/health for one controller, plus the destructive
-/// "Remove controller" action at the bottom (moved off the old dots menu).
+/// "Remove controller" action at the bottom.
+///
+/// Deliberately no Matter or Thread detail — those have their own screens
+/// (Settings -> Controller -> Matter / Thread) and duplicating them here meant
+/// two places to keep in sync.
 class DeviceInfoScreen extends StatefulWidget {
   const DeviceInfoScreen({super.key, this.controllerId});
 
@@ -23,7 +25,6 @@ class DeviceInfoScreen extends StatefulWidget {
 class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   ControllerInfo? _info;
   Uint8List?      _storedPsk;
-  ThreadDataset?  _activeDataset;
   bool            _loaded = false;
 
   @override
@@ -39,12 +40,10 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
     final hub = context.read<HubConnection>();
     final svc = hub.service;
     final info = svc == null ? null : await svc.getInfo();
-    final ds   = await ThreadSettingsService.loadActive();
     final psk  = await ControllerSettings.loadPsk(_idFor(hub));
     if (!mounted) return;
     setState(() {
       _info          = info;
-      _activeDataset = ds;
       _storedPsk     = psk;
       _loaded        = true;
     });
@@ -66,8 +65,19 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
     );
     if (confirm != true || !mounted) return;
     final hub = context.read<HubConnection>();
-    await ControllerSettings.clearPsk(_idFor(hub));
-    await hub.connect();
+    final id = _idFor(hub);
+    if (id.isNotEmpty) {
+      await ControllerSettings.clearController(id);
+    } else {
+      // No live service and no id hint — the usual case when this screen is
+      // opened while the controller is unreachable. Clearing a single key here
+      // would miss the real ctrl_psk_<id> and leave the hub "configured", so
+      // forget every controller instead (there is only one active hub today).
+      await ControllerSettings.clearAllControllers();
+    }
+    // Tear the connection down; do NOT hub.connect() — that re-runs mDNS and
+    // would re-find the controller we just removed.
+    await hub.forget();
     if (!mounted) return;
     Navigator.of(context).pop();   // back to Settings
     ScaffoldMessenger.of(context)
@@ -105,7 +115,6 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   Widget build(BuildContext context) {
     final cs      = Theme.of(context).colorScheme;
     final version = _info?.firmwareVersion ?? '';
-    final fabricProvisioned = (_info?.fabricId.toInt() ?? 0) != 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Device info')),
@@ -128,11 +137,6 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         if (version.isNotEmpty) _row('Firmware', version),
                         if ((_info?.uptimeSeconds ?? 0) > 0)
                           _row('Uptime', _formatUptime(_info!.uptimeSeconds)),
-                        _row('Fabric', fabricProvisioned
-                            ? '0x${_info!.fabricId.toHexString()}' : 'none'),
-                        _row('Thread network',
-                            _activeDataset != null && !_activeDataset!.isEmpty
-                                ? _activeDataset!.label : 'none'),
                         if (_storedPsk != null)
                           _row('Pairing key', '${_pskSummary(_storedPsk!)} (stored)'),
                       ],

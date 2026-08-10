@@ -173,7 +173,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         uniqueId: BasicInfo.nonEmpty(info.uniqueId),
         swVersionNum: info.softwareVersionNum,
       );
-      await _provider.detectAndUpdateOtaSupport(widget.deviceId);
     }
   }
 

@@ -15,9 +15,9 @@ const _remoteColor     = Color(0xFFA9C7F2); // blue
 const _connectingColor = Color(0xFFBFC4CC); // grey
 const _offlineColor    = Color(0xFFF2A9A0); // coral
 
-/// Settings, arranged as two device panels so it's always clear which box a
-/// setting belongs to: the **controller** (the Flux hardware) and **this
-/// phone**. Terminology is unified on "controller" throughout the app.
+/// Settings, focused on the **controller** (the Flux hardware) — the phone
+/// itself has nothing the user needs to configure, so its panel was removed and
+/// controller-scoped connectivity (incl. remote access) lives in one place.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -41,11 +41,11 @@ class SettingsScreen extends StatelessWidget {
               _divider(cs),
               _navTile(context, 'Device info', () => const DeviceInfoScreen()),
               _divider(cs),
-              _navTile(context, 'Matter',
-                  () => const MatterSettingsScreen(scope: MatterScope.controller)),
+              _navTile(context, 'Matter', () => const MatterSettingsScreen()),
               _divider(cs),
-              _navTile(context, 'Thread',
-                  () => const ThreadSettingsScreen(scope: ThreadScope.controller)),
+              _navTile(context, 'Thread', () => const ThreadSettingsScreen()),
+              _divider(cs),
+              _navTile(context, 'Remote access', () => const RemoteAccessScreen()),
             ])
           else
             _card(cs, [
@@ -56,20 +56,6 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => runAddControllerFlow(context),
               ),
             ]),
-
-          const SizedBox(height: 28),
-
-          // ══ THIS PHONE ══ the device in your hand ════════════════════════
-          _label(cs, 'THIS PHONE'),
-          _card(cs, [
-            _navTile(context, 'Matter',
-                () => const MatterSettingsScreen(scope: MatterScope.phone)),
-            _divider(cs),
-            _navTile(context, 'Thread',
-                () => const ThreadSettingsScreen(scope: ThreadScope.phone)),
-            _divider(cs),
-            _navTile(context, 'Remote access', () => const RemoteAccessScreen()),
-          ]),
 
           const SizedBox(height: 28),
 

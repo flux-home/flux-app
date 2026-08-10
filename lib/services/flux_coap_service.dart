@@ -7,13 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:matter_home/services/controller_transport/controller_transport.dart';
 import 'package:matter_home/services/controller_transport/default_transport.dart';
 import 'package:matter_home/models/basic_info.dart';
-import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
-import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/services/cluster_parser.dart' show parseBasicInfo;
 import 'package:matter_home/services/matter_port.dart';
@@ -33,8 +31,14 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// **Resource map** (all payloads binary protobuf, Content-Format 42):
 /// ```
 /// GET  /info                         → ControllerInfo
-/// GET  /thread/dataset               → ThreadDataset
-/// PUT  /thread/dataset               ← ThreadDataset
+/// GET  /thread/dataset               → ThreadDataset  (read-only: the
+///                                      controller owns its mesh — the app
+///                                      never writes a dataset to it)
+/// POST /thread/join                  ← ThreadJoinRequest → ThreadJoinResult
+/// POST /thread/create                → StatusResponse (form a new network)
+/// POST /thread/epskc                 ← ThreadEphemeralKeyRequest → ThreadEphemeralKeyResult
+/// GET  /thread/epskc                 → ThreadEphemeralKeyResult
+/// DEL  /thread/epskc                 → (stop the ephemeral-key session)
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// DEL  /devices?id=<hex>             → StatusResponse
@@ -96,8 +100,18 @@ class FluxCoapService implements MatterPort {
       retryOnConnError: retryOnConnError,
     ));
     onReachability?.call(r.ok);
+    lastTransportError = r.ok
+        ? null
+        : (r.error ?? 'no response from ${endpoint.host}:${endpoint.port}');
     return r.success ? r.payload : null;
   }
+
+  /// Why the most recent request failed, or null if it succeeded.
+  ///
+  /// Requests deliberately return null rather than throwing, so this is the only
+  /// way for the connection FSM to tell a DTLS rejection from a timeout from an
+  /// unreachable host — all three used to surface as the same empty result.
+  String? lastTransportError;
 
   Future<Uint8List?> _get(String path, {Map<String, String>? query, Duration? timeout}) =>
       _request(TransportMethod.get, path, query: query, timeout: timeout);
@@ -172,10 +186,100 @@ class FluxCoapService implements MatterPort {
     return ds.tlv.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
   }
 
-  Future<bool> postThreadDataset(Uint8List tlv) async {
-    final ds   = $proto.ThreadDataset()..tlv = tlv;
-    final resp = await _put('/thread/dataset', ds.writeToBuffer());
-    return resp != null;
+
+  /// Joins the controller to an existing (foreign) Thread network via Thread 1.4
+  /// credential sharing — POST /thread/join.  The controller browses
+  /// `_meshcop-e._udp` itself and connects to the border agent whose ephemeral
+  /// session is live (the other ecosystem's share sheet must be open), so no
+  /// address is passed; [ephemeralKey] is the code that app shows.
+  ///
+  /// [migrate] moves the controller's existing mesh onto the new network via
+  /// MGMT_PENDING_SET after [delayMs] (whole mesh transitions together — safe
+  /// with commissioned devices).  With [migrate] false the controller adopts
+  /// immediately, only safe when it has no children.
+  ///
+  /// Long-running (foreign DTLS EC-JPAKE handshake + dataset fetch); not
+  /// idempotent, so no auto-retry.  Returns the [ThreadJoinResult] (check
+  /// `.success`), or null on transport failure.
+  Future<$proto.ThreadJoinResult?> joinThreadNetwork({
+    required String ephemeralKey,
+    bool   migrate = true,
+    int    delayMs = 0,
+  }) async {
+    final req = $proto.ThreadJoinRequest()
+      ..ephemeralKey = ephemeralKey
+      ..apply        = !migrate
+      ..migrate      = migrate
+      ..delayMs      = delayMs;
+    final b = await _post('/thread/join', req.writeToBuffer(),
+        timeout: const Duration(seconds: 45), retryOnConnError: false);
+    if (b == null) return null;
+    try { return $proto.ThreadJoinResult.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.joinThreadNetwork: $e');
+      return null;
+    }
+  }
+
+  /// Has the controller form a brand-new Thread network of its own — POST
+  /// /thread/create.  Generates fresh credentials (network key / PAN ID /
+  /// extended PAN ID) and migrates any existing mesh onto it.
+  ///
+  /// Two uses: bootstrap a mesh when the controller has none, and the inverse
+  /// of [joinThreadNetwork] — leave a network shared with another ecosystem and
+  /// go back to an independent mesh.  Devices commissioned to the controller
+  /// follow the migration; the other ecosystem's hubs stay on the old network.
+  ///
+  /// Empty request body — there is nothing to parameterise; the controller
+  /// generates the credentials.  Returns the [StatusResponse] (`code == 0` on
+  /// success), or null on transport failure / if the controller does not
+  /// implement the endpoint.
+  Future<$proto.StatusResponse?> createThreadNetwork() async {
+    final b = await _post('/thread/create', Uint8List(0),
+        timeout: const Duration(seconds: 45), retryOnConnError: false);
+    if (b == null) return null;
+    try { return $proto.StatusResponse.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.createThreadNetwork: $e');
+      return null;
+    }
+  }
+
+  /// Starts Thread 1.4 credential *sharing* (the SHARE side) — POST
+  /// /thread/epskc.  The controller (border router) generates a one-time
+  /// passcode, starts its ephemeral-key (`_meshcop-e._udp`) session, and
+  /// returns the [ThreadEphemeralKeyResult] with the `otpc` to show the user
+  /// and the current `state`.  Another ecosystem's app then joins using that
+  /// code.  [timeoutSeconds] bounds the session (0 = controller default 120s,
+  /// max 600). Returns null on transport failure.
+  Future<$proto.ThreadEphemeralKeyResult?> startThreadShare({
+    int timeoutSeconds = 300,
+  }) async {
+    final req = $proto.ThreadEphemeralKeyRequest()..timeoutSeconds = timeoutSeconds;
+    // Not idempotent: a retry after reconnect starts a SECOND ephemeral-key
+    // session, invalidating the code already shown to the user.
+    final b = await _post('/thread/epskc', req.writeToBuffer(),
+        retryOnConnError: false);
+    return _decodeEpskc(b, 'startThreadShare');
+  }
+
+  /// Current state of the ephemeral-key session — GET /thread/epskc. Poll this
+  /// to follow the join: "Started" (waiting) → "Connected" → "Accepted"
+  /// (the other ecosystem retrieved the credentials). "Stopped"/"Disabled"
+  /// means the session ended (timeout or cancelled).
+  Future<$proto.ThreadEphemeralKeyResult?> getThreadShareState() async =>
+      _decodeEpskc(await _get('/thread/epskc'), 'getThreadShareState');
+
+  /// Stops an active ephemeral-key session — DELETE /thread/epskc.
+  Future<bool> stopThreadShare() => _delete('/thread/epskc');
+
+  $proto.ThreadEphemeralKeyResult? _decodeEpskc(Uint8List? b, String where) {
+    if (b == null) return null;
+    try { return $proto.ThreadEphemeralKeyResult.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService.$where: $e');
+      return null;
+    }
   }
 
   Future<List<$proto.Device>?> getDeviceList() async {
@@ -287,39 +391,43 @@ class FluxCoapService implements MatterPort {
       _delete('/modbus/devices',
           query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
 
-  // ── Commission-then-handoff — POST /commission ───────────────────────────
+  // ── Commission — POST /commission ────────────────────────────────────────
 
-  /// Hands a device the phone has just BLE-commissioned (onto its throwaway
-  /// fabric) over to the controller.  The phone opened an ECM window and passes
-  /// the window's [passcode] + [discriminator]; the controller rediscovers the
-  /// device over Thread, performs PASE, and commissions it onto its OWN fabric
-  /// with its own CA — so no device CSR ever leaves the controller.  On success
-  /// the controller registers + subscribes the device itself.
+  /// Hands a commissionable device to the controller by [passcode] +
+  /// [discriminator] alone — the controller locates the device itself (its own
+  /// SRP server table for devices on its Thread mesh, plus a commissionable
+  /// DNS-SD browse on the LAN), performs PASE, and commissions it onto its OWN
+  /// fabric with its own CA — so no device CSR ever leaves the controller.  On
+  /// success the controller registers + subscribes the device itself.
+  ///
+  /// Two callers: direct handover (a shared/printed pairing code forwarded
+  /// verbatim — set [shortDiscriminator] when a manual 11-digit code only
+  /// carries the 4-bit short form) and commission-then-handoff (the ECM window
+  /// the phone opened after its Pass-1 BLE commissioning).
   ///
   /// [CommissionResult.fabricId] is the RAW (uncompressed) controller fabric id;
-  /// the caller matches it against the device's Fabrics attribute before
-  /// removing its throwaway fabric.  [nodeId] of 0 lets the controller assign one.
+  /// the commission-then-handoff caller matches it against the device's Fabrics
+  /// attribute before removing its throwaway fabric.  [nodeId] of 0 lets the
+  /// controller assign one.
   Future<$proto.CommissionResult?> commission({
     required int passcode,
     required int discriminator,
-    int          nodeId        = 0,
-    String       name          = '',
-    int          vendorId      = 0,
-    int          productId     = 0,
-    int          deviceType    = 0,
-    String       deviceAddress = '',
-    int          devicePort    = 0,
+    bool         shortDiscriminator = false,
+    int          nodeId     = 0,
+    String       name       = '',
+    int          vendorId   = 0,
+    int          productId  = 0,
+    int          deviceType = 0,
   }) async {
     final req = $proto.CommissionRequest()
-      ..passcode      = passcode
-      ..discriminator = discriminator
-      ..nodeId        = Int64(nodeId)
-      ..name          = name
-      ..vendorId      = vendorId
-      ..productId     = productId
-      ..deviceType    = deviceType
-      ..deviceAddress = deviceAddress
-      ..devicePort    = devicePort;
+      ..passcode           = passcode
+      ..discriminator      = discriminator
+      ..shortDiscriminator = shortDiscriminator
+      ..nodeId             = Int64(nodeId)
+      ..name               = name
+      ..vendorId           = vendorId
+      ..productId          = productId
+      ..deviceType         = deviceType;
     // /commission is non-idempotent and long-running (the controller blocks up
     // to ~120s). Keep it confirmable so the CoAP client reliably awaits the
     // reply; do NOT auto-retry on a connection error (a resend would be a second
@@ -338,15 +446,37 @@ class FluxCoapService implements MatterPort {
 
   // ── MatterSubscriptionPort — GET /events?id=<hex> ─────────────────────────
 
+  /// Pending re-subscribe timer per node — at most ONE in flight. A dropped
+  /// observe emits BOTH `error` and `done`, and a closed CoAP client emits `done`
+  /// for every live observe, so an unguarded retry per event doubled the number
+  /// of observes on every flap (2 -> 4 -> 8), duplicating device events.
+  final Map<int, Timer> _subRetryTimers = {};
+  final Map<int, int>   _subRetryAttempt = {};
+
+  static const _subRetryBase = Duration(seconds: 2);
+  static const _subRetryMax  = Duration(seconds: 60);
+
   @override
   Future<bool> startSubscription(int nodeId) async {
     await stopSubscription(nodeId);
     void scheduleRetry() {
       if (_disposed) return;
-      Future.delayed(const Duration(seconds: 5), () => startSubscription(nodeId))
-          .catchError((Object e) {
-        debugPrint('FluxCoapService sub $nodeId retry error: $e');
-        return false;
+      if (_subRetryTimers.containsKey(nodeId)) return; // already queued
+      final attempt = (_subRetryAttempt[nodeId] ?? 0) + 1;
+      _subRetryAttempt[nodeId] = attempt;
+      // Exponential backoff, capped — a permanently-failing hub (wrong PSK,
+      // powered off) must not be re-handshaked every 5s per device forever.
+      var delay = _subRetryBase * (1 << (attempt - 1).clamp(0, 5));
+      if (delay > _subRetryMax) delay = _subRetryMax;
+      _subRetryTimers[nodeId] = Timer(delay, () {
+        _subRetryTimers.remove(nodeId);
+        // Re-check at FIRE time: a retry armed before dispose() used to run on
+        // the dead service and add to a closed StreamController.
+        if (_disposed) return;
+        startSubscription(nodeId).catchError((Object e) {
+          debugPrint('FluxCoapService sub $nodeId retry error: $e');
+          return false;
+        });
       });
     }
 
@@ -357,6 +487,7 @@ class FluxCoapService implements MatterPort {
         switch (ev.kind) {
           case TransportEventKind.data:
             onReachability?.call(true);
+            _subRetryAttempt.remove(nodeId); // healthy again — reset backoff
             if (ev.payload != null) _handleStateBytes(nodeId, ev.payload!);
           case TransportEventKind.error:
             debugPrint('FluxCoapService sub $nodeId error: ${ev.error}');
@@ -380,8 +511,48 @@ class FluxCoapService implements MatterPort {
 
   @override
   Future<void> stopSubscription(int nodeId) async {
+    _subRetryTimers.remove(nodeId)?.cancel();
     final sub = _subscriptions.remove(nodeId);
     await sub?.cancel();
+  }
+
+  // ── Commission progress — GET /commission/events (Observe) ────────────────
+
+  /// Observes the controller's commissioning-progress stream.  Each event
+  /// carries the latest stage of the in-flight POST /commission (`seq` is
+  /// monotonic; seq 0 = nothing happened yet — filtered out here).  Advisory,
+  /// UI-only: transport errors end the stream silently; the [commission]
+  /// reply stays the source of truth for success/failure.  Cancel the
+  /// subscription once the commission completes.
+  Stream<$proto.CommissionEvent> observeCommissionEvents() {
+    late StreamController<$proto.CommissionEvent> ctrl;
+    StreamSubscription<TransportEvent>? sub;
+    var lastSeq = 0;
+    ctrl = StreamController(
+      onListen: () {
+        sub = _transport.observe('/commission/events').listen(
+          (ev) {
+            if (ev.kind != TransportEventKind.data || ev.payload == null) {
+              return;
+            }
+            try {
+              final e = $proto.CommissionEvent.fromBuffer(ev.payload!);
+              // seq 0 = idle snapshot on register; repeats = stale re-notify.
+              if (e.seq == 0 || e.seq == lastSeq) return;
+              lastSeq = e.seq;
+              if (!ctrl.isClosed) ctrl.add(e);
+            } on Exception catch (e) {
+              debugPrint('FluxCoapService.observeCommissionEvents: $e');
+            }
+          },
+          onError: (Object e) {
+            debugPrint('FluxCoapService.observeCommissionEvents: $e');
+          },
+        );
+      },
+      onCancel: () async => sub?.cancel(),
+    );
+    return ctrl.stream;
   }
 
   void _handleStateBytes(int nodeId, Uint8List bytes) {
@@ -438,7 +609,11 @@ class FluxCoapService implements MatterPort {
       ..clusterId  = clusterId
       ..commandId  = commandId
       ..args.addAll(args);
-    final body = await _post('/command', cmd.writeToBuffer(), timeout: timeout);
+    // Not idempotent: stepLevel / covering / lock commands would be applied
+    // twice if the request landed but its response was lost. The retry runs on a
+    // new DTLS session with a new token, so controller-side dedup can't suppress it.
+    final body = await _post('/command', cmd.writeToBuffer(), timeout: timeout,
+        retryOnConnError: false);
     if (body == null) return false;
     try { return $proto.BoolResult.fromBuffer(body).success; }
     on Exception catch (_) { return false; }
@@ -728,33 +903,18 @@ class FluxCoapService implements MatterPort {
 
   // ── MatterFabricPort ───────────────────────────────────────────────────────
 
-  @override
-  Future<ShareDeviceResult?> shareDevice(int nodeId,
-      {int vendorId = 0, int productId = 0}) async => null;
-
   /// Remove a device — DELETE /devices?id=<hex>
   @override
   Future<bool> removeDevice(int nodeId) =>
       _delete('/devices', query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
 
-  @override
-  Future<List<CommissionableDevice>> discoverCommissionableNodes() async => const [];
+  @override Future<String?> readSystemThreadCredentials() async => null;
 
   @override
   Future<String?> getFabricId() async {
     final info = await getInfo();
     return info != null ? info.fabricId.toHexString() : null;
   }
-
-  @override Future<bool> downloadAndFlash({
-    required int nodeId, required String otaUrl,
-    required int targetVersion, required String targetVersionString,
-    bool dryRun = false, int endpoint = 0,
-  }) async => false;
-  @override Future<bool> cancelOta() async => false;
-  @override Future<List<ThreadBorderRouter>> discoverThreadNetworks() async => const [];
-  @override Future<String?> readSystemThreadCredentials() async => null;
-  @override Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int n) async => null;
 
   // ── MatterCommissionPort — BLE stays on local MatterChannel ───────────────
 
@@ -773,16 +933,6 @@ class FluxCoapService implements MatterPort {
   Future<CommissionResult> commissionDevice(String payload,
       {String? wifiSsid, String? wifiPassword, String? threadDatasetHex}) async =>
       CommissionResult.err('BLE commissioning uses local MatterChannel');
-
-  @override
-  Future<CommissionResult> commissionViaIp({
-    required String ipAddress, required int discriminator,
-    required int setupPinCode, int port = 5540,
-  }) async => CommissionResult.err('Controller does not commission — use local MatterChannel');
-
-  @override
-  Future<CommissionResult> commissionViaCode({required String setupCode}) async =>
-      CommissionResult.err('Controller does not commission — use local MatterChannel');
 
   @override Future<List<WifiNetwork>> scanWifiNetworks() async => const [];
   @override Future<void> provideCredentials({
@@ -816,6 +966,14 @@ class FluxCoapService implements MatterPort {
 
   void dispose() {
     _disposed = true;
+    // Detach the reachability callback first: a late timeout on this (now dead)
+    // service must not write connection state for whatever replaced it.
+    onReachability = null;
+    for (final t in _subRetryTimers.values) {
+      t.cancel();
+    }
+    _subRetryTimers.clear();
+    _subRetryAttempt.clear();
     for (final sub in _subscriptions.values) {
       unawaited(sub.cancel());
     }
