@@ -1,0 +1,1 @@
+I just added thread credentials sharing to the controller, can you make a asuggestion how and where  to add it to the app
