@@ -1,0 +1,1 @@
+rebooted the controller, the app still spins
