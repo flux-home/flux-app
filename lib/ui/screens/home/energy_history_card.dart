@@ -18,7 +18,7 @@ const _pvPalette = <Color>[
   Color(0xFFCBB25E), Color(0xFFF2BFA0), Color(0xFFDCC77A),
 ];
 
-/// A "Last 12 hours" energy history card: overlaid **energy** lines (one per
+/// A "Last 24 hours" energy history card: overlaid **energy** lines (one per
 /// source / sink, kWh per 1-hour bucket) over the time axis, a scrubbable
 /// per-bucket readout, and window kWh totals.
 ///
@@ -104,7 +104,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
     final tt = Theme.of(context).textTheme;
     return Row(
       children: [
-        Text('LAST 12 HOURS',
+        Text('LAST 24 HOURS',
             style: tt.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant, letterSpacing: 1.4)),
         const Spacer(),
@@ -126,7 +126,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
         : null;
 
     if (sel == null) {
-      // Default: 12-hour consumption total.
+      // Default: whole-window consumption total.
       return Row(
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
@@ -135,7 +135,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
               fontWeight: FontWeight.w700, color: cs.onSurface)),
           Text(' kWh', style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant)),
           const SizedBox(width: 8),
-          Text('consumed · 12 h',
+          Text('consumed · 24 h',
               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
         ],
       );

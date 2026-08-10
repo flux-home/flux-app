@@ -93,6 +93,102 @@ void main() {
       expect(p.currentAt(t)!.ctPerKwh, closeTo(20, 0.001));
     });
 
+    test('self-consumption saving values pv−export at the hour it happened', () {
+      // Two priced hours: 10 ct then 40 ct. Same 1 kWh self-consumed in each,
+      // so the saving must be 10 + 40 = 50 ct — NOT 2 × the 25 ct mean applied
+      // uniformly. This is the whole reason it's priced per bucket.
+      const t0 = 1_000_000;
+      final prices = EnergyPrices.fromProto($proto.PriceCurve(
+        startEpoch: Int64(t0),
+        resolutionSeconds: 3600,
+        unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
+        prices: [100000, 400000], // 10, 40 ct/kWh
+      ));
+      // Hourly buckets: 1000 Wh pv, no export → 1 kWh self-consumed per hour.
+      final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        start: Int64(t0),
+        bucketSeconds: 3600,
+        buckets: [
+          $proto.EnergyBucket(index: 0, pvWh: 1000),
+          $proto.EnergyBucket(index: 1, pvWh: 1000),
+        ],
+      ));
+      expect(prices.selfConsumptionSavingCents(history), closeTo(50.0, 0.001));
+    });
+
+    test('self-consumption saving excludes exported energy', () {
+      const t0 = 1_000_000;
+      final prices = EnergyPrices.fromProto($proto.PriceCurve(
+        startEpoch: Int64(t0),
+        resolutionSeconds: 3600,
+        unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
+        prices: [200000], // 20 ct/kWh
+      ));
+      // 1000 Wh generated, 750 Wh exported → only 0.25 kWh was self-consumed.
+      final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        start: Int64(t0),
+        bucketSeconds: 3600,
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 1000, gridExportWh: 750)],
+      ));
+      expect(prices.selfConsumptionSavingCents(history), closeTo(5.0, 0.001));
+
+      // Exporting everything saves nothing, and must not go negative.
+      final allOut = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        start: Int64(t0),
+        bucketSeconds: 3600,
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 500, gridExportWh: 900)],
+      ));
+      expect(prices.selfConsumptionSavingCents(allOut), isNull);
+      expect(prices.selfConsumptionSavingCents(null), isNull);
+    });
+
+    test('self-consumption saving is worth more than feed-in for the same kWh',
+        () {
+      // The point of showing both: avoided purchase is valued at the gross
+      // consumer price, feed-in at the flat export rate.
+      const t0 = 1_000_000;
+      final prices = EnergyPrices.fromProto(
+        $proto.PriceCurve(
+          startEpoch: Int64(t0),
+          resolutionSeconds: 3600,
+          unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
+          prices: [113100], // 11.31 ct spot
+        ),
+        markupUeurPerKwh: 110400, // + 11.04 ct fees
+        vatPercent: 19,           // × 1.19  → 26.60 ct gross
+      );
+      final history = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        start: Int64(t0),
+        bucketSeconds: 3600,
+        buckets: [$proto.EnergyBucket(index: 0, pvWh: 1000)],
+      ));
+      final saved = prices.selfConsumptionSavingCents(history)!;
+      expect(saved, closeTo(26.60, 0.02));
+      // Same 1 kWh fed in at 8.2 ct would earn far less.
+      expect(saved, greaterThan(8.2 * 3));
+    });
+
+    test('avgCtIn averages only the intervals overlapping the window', () {
+      // Four hourly intervals: 10, 20, 30, 40 ct/kWh from T.
+      const t0 = 1_000_000;
+      final p = EnergyPrices.fromProto($proto.PriceCurve(
+        startEpoch: Int64(t0),
+        resolutionSeconds: 3600,
+        unit: $enum.PriceUnit.PRICE_UNIT_UEUR_PER_KWH,
+        prices: [100000, 200000, 300000, 400000],
+      ));
+      DateTime at(int offsetSeconds) =>
+          DateTime.fromMillisecondsSinceEpoch((t0 + offsetSeconds) * 1000);
+
+      // First two hours → Ø 15. Partial overlap counts the interval.
+      expect(p.avgCtIn(at(0), at(2 * 3600)), closeTo(15, 0.001));
+      expect(p.avgCtIn(at(1800), at(2 * 3600 + 60)), closeTo(20, 0.001));
+      // Whole curve.
+      expect(p.avgCtIn(at(-9999), at(99999)), closeTo(25, 0.001));
+      // No overlap → null, so callers can fall back instead of showing 0.
+      expect(p.avgCtIn(at(-7200), at(-3600)), isNull);
+    });
+
     test('empty curve is empty', () {
       final p = EnergyPrices.fromProto($proto.PriceCurve());
       expect(p.isEmpty, isTrue);

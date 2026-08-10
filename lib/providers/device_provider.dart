@@ -13,7 +13,6 @@ import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/models/matter_device.dart';
-import 'package:matter_home/models/ota_progress.dart';
 import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
@@ -66,7 +65,6 @@ class DeviceProvider extends ChangeNotifier {
   final _uuid = const Uuid();
 
   DeviceProviderState state = DeviceProviderState.idle;
-  String? errorMessage;
   List<MatterDevice> _devices = [];
 
   // ── Rooms ───────────────────────────────────────────────────────────────────
@@ -76,7 +74,6 @@ class DeviceProvider extends ChangeNotifier {
   // ── In-memory caches ──────────────────────────────────────────────────────
   final Map<String, DeviceLiveData>        _liveCache     = {};
   final Map<String, String>                _clusterCache  = {}; // deviceId → JSON
-  final Map<String, OtaProgressState>      _otaProgress   = {};
   final Map<String, PersistedSnapshot>     _snapshots     = {};
 
   // ── Automation rules ────────────────────────────────────────────────────
@@ -164,7 +161,7 @@ class DeviceProvider extends ChangeNotifier {
   EnergyHistoryData? get energyHistory => _energyHistory;
   bool get energyHistoryLoading => _energyHistoryLoading;
 
-  /// Fetch the last 12 hours of energy history from the controller (1-hour
+  /// Fetch the last 24 hours of energy history from the controller (1-hour
   /// buckets). No-op without a controller. Concurrent calls are coalesced; a
   /// transient failure leaves any previously-loaded history in place.
   Future<void> fetchEnergyHistory() {
@@ -179,8 +176,8 @@ class DeviceProvider extends ChangeNotifier {
     final f = () async {
       final now = DateTime.now();
       final to = now.millisecondsSinceEpoch ~/ 1000;
-      final from = to - 12 * 3600;   // last 12 hours
-      // 1-hour buckets keep the payload small (≈12 buckets) even with the
+      final from = to - 24 * 3600;   // last 24 hours
+      // 1-hour buckets keep the payload small (≈24 buckets) even with the
       // per-device series included — the controller re-aggregates server-side.
       final h = await svc.getEnergyHistory(from: from, to: to, bucketSeconds: 3600);
       if (_disposed) return;
@@ -447,6 +444,23 @@ class DeviceProvider extends ChangeNotifier {
           _devices[idx] = existing.copyWith(networkType: corrected);
           changed = true;
         }
+        // Adopt the controller's device type when it changes. Reconcile used to
+        // seed the type only at creation time, so a record stored with a wrong
+        // type stayed wrong forever — that's how a tado thermostat, once
+        // mis-detected as a humidity sensor, kept rendering without thermostat
+        // controls even after the controller had relearned it. Only overwrite
+        // with a type we recognise, so a controller reporting 0/unknown can
+        // never erase a good local value.
+        if (cd.deviceType > 0) {
+          final fromController = DeviceType.fromMatterDeviceTypeId(cd.deviceType);
+          if (fromController != DeviceType.unknown &&
+              fromController != _devices[idx].deviceType) {
+            debugPrint('DeviceProvider: device type for $nodeId '
+                '${_devices[idx].deviceType.name} → ${fromController.name}');
+            _devices[idx] = _devices[idx].copyWith(deviceType: fromController);
+            changed = true;
+          }
+        }
       }
     }
 
@@ -563,7 +577,6 @@ class DeviceProvider extends ChangeNotifier {
   DeviceLiveData? liveDataFor(String deviceId) => _liveCache[deviceId];
 
   String? clusterCacheFor(String deviceId) => _clusterCache[deviceId];
-  OtaProgressState? otaProgressFor(String deviceId) => _otaProgress[deviceId];
 
   // ── Automation rule management ────────────────────────────────────────────
 
@@ -607,17 +620,6 @@ class DeviceProvider extends ChangeNotifier {
     final idx = _rules.indexWhere((r) => r.id == rule.id);
     if (idx >= 0) { _rules[idx] = rule; } else { _rules.add(rule); }
     unawaited(_persistRules());
-    notifyListeners();
-  }
-
-  void removeRule(String ruleId) {
-    _rules.removeWhere((r) => r.id == ruleId);
-    unawaited(_persistRules());
-    notifyListeners();
-  }
-
-  void clearOtaProgress(String deviceId) {
-    _otaProgress.remove(deviceId);
     notifyListeners();
   }
 
@@ -679,33 +681,6 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
-  void updateOtaSupport(String deviceId, {required bool supported, int endpoint = 0}) {
-    _mergeLiveCache(deviceId, (e) => e.withOtaSupported(value: supported, endpoint: endpoint));
-  }
-
-  /// Searches for the OTA Requestor cluster (0x002A) across all endpoints.
-  Future<void> detectAndUpdateOtaSupport(String deviceId) async {
-    if (liveDataFor(deviceId)?.otaSupported != null) return;
-    final device = findById(deviceId);
-    if (device == null) return;
-
-    const otaClusterId = 0x002A;
-    int? foundEndpoint;
-
-    final ep0 = await _channel.readServerClusterList(device.nodeId);
-    if (ep0.contains(otaClusterId)) {
-      foundEndpoint = 0;
-    } else {
-      for (final ep in await _channel.readPartsList(device.nodeId)) {
-        final clusters = await _channel.readServerClusterList(device.nodeId, endpoint: ep);
-        if (clusters.contains(otaClusterId)) {
-          foundEndpoint = ep;
-          break;
-        }
-      }
-    }
-    updateOtaSupport(deviceId, supported: foundEndpoint != null, endpoint: foundEndpoint ?? 0);
-  }
 
   // ── Subscription event handler ────────────────────────────────────────────
 
@@ -715,14 +690,6 @@ class DeviceProvider extends ChangeNotifier {
     final device = candidates.first;
 
     switch (event) {
-      case OtaProgressEvent():
-        _otaProgress[device.id] = OtaProgressState(
-          phase:    event.phase,
-          progress: event.progress,
-          message:  event.message,
-        );
-        notifyListeners();
-
       case SubscriptionErrorEvent() || SubscriptionResubscribingEvent():
         // Mark cache stale but keep values — UI shows last known state dimmed.
         final existing = _liveCache[device.id];
@@ -832,6 +799,15 @@ class DeviceProvider extends ChangeNotifier {
     if (event.containsKey('contactState')) return DeviceType.contactSensor;
     if (event.containsKey('occupancy')) return DeviceType.occupancySensor;
     if (event.containsKey('airQuality')) return DeviceType.airQualitySensor;
+    // Thermostats report humidity and temperature alongside their own cluster,
+    // so they must be matched before the bare-sensor checks below — otherwise a
+    // thermostat with no On/Off cluster infers humiditySensor and loses its
+    // controls. These keys come only from Thermostat (0x0201).
+    if (event.containsKey('heatingSetptCenti') ||
+        event.containsKey('systemMode') ||
+        event.containsKey('localTempCenti')) {
+      return DeviceType.thermostat;
+    }
     if (event.containsKey('humidityCenti') && !event.containsKey('onOff')) {
       return DeviceType.humiditySensor;
     }
@@ -945,7 +921,6 @@ class DeviceProvider extends ChangeNotifier {
   void failCommissioning(String? error) {
     if (error != null) {
       state = DeviceProviderState.error;
-      errorMessage = error;
     } else if (state == DeviceProviderState.loading) {
       state = DeviceProviderState.idle;
     }
@@ -1129,12 +1104,6 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refreshAll() async {
-    for (final d in _devices) {
-      await refreshDevice(d.id);
-    }
-  }
-
 
 
   // ── Room management ───────────────────────────────────────────────────────────────────
@@ -1146,34 +1115,6 @@ class DeviceProvider extends ChangeNotifier {
     await _persistRooms();
     notifyListeners();
     return room;
-  }
-
-  /// Renames [roomId] to [name].  Silently ignores the "No Room" sentinel.
-  Future<void> renameRoom(String roomId, String name) async {
-    if (roomId == Room.noRoomId) return;
-    final idx = _rooms.indexWhere((r) => r.id == roomId);
-    if (idx < 0) return;
-    _rooms = [..._rooms]..[idx] = _rooms[idx].copyWith(name: name);
-    await _persistRooms();
-    notifyListeners();
-  }
-
-  /// Deletes [roomId] and moves its devices to "No Room".
-  /// Silently ignores the "No Room" sentinel.
-  Future<void> deleteRoom(String roomId) async {
-    if (roomId == Room.noRoomId) return;
-    _rooms = _rooms.where((r) => r.id != roomId).toList();
-    final affected = _devices
-        .asMap()
-        .entries
-        .where((e) => e.value.roomId == roomId)
-        .map((e) => e.key)
-        .toList();
-    for (final idx in affected) {
-      _devices[idx] = _devices[idx].copyWith(roomId: Room.noRoomId);
-    }
-    await Future.wait([_persistRooms(), if (affected.isNotEmpty) _persist()]);
-    notifyListeners();
   }
 
   /// Assigns [deviceId] to [roomId].  Pass [Room.noRoomId] to unassign.
@@ -1213,18 +1154,6 @@ class DeviceProvider extends ChangeNotifier {
   }
   // ── Share / rename / remove ───────────────────────────────────────────────
 
-  Future<bool> shareWithGoogleHome(String deviceId) async {
-    final device = findById(deviceId);
-    if (device == null) return false;
-    final result = await _channel.shareDevice(device.nodeId);
-    if (result != null) {
-      final idx = _indexById(deviceId);
-      _devices[idx] = device.copyWith(sharedWithGoogleHome: true);
-      await _persist();
-      notifyListeners();
-    }
-    return result != null;
-  }
 
   Future<void> renameDevice(String deviceId, String newName) async {
     final idx = _indexById(deviceId);
@@ -1259,18 +1188,6 @@ class DeviceProvider extends ChangeNotifier {
     await _persist();
     notifyListeners();
     return true;
-  }
-
-  Future<void> clearAllDevices() async {
-    for (final d in _devices) {
-      await _stopSubscription(d);
-    }
-    _devices.clear();
-    _liveCache.clear();
-    _clusterCache.clear();
-    _snapshots.clear();
-    await _persist();
-    notifyListeners();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

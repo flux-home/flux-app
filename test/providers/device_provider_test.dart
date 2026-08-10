@@ -102,6 +102,31 @@ void main() {
       );
       expect(provider.devices.first.deviceType, DeviceType.onOffLight);
     });
+
+    test('thermostat reporting humidity infers thermostat, not humiditySensor',
+        () async {
+      // A tado thermostat reports Thermostat attrs AND humidity, and has no
+      // On/Off cluster. The bare-sensor checks used to run first, so it inferred
+      // humiditySensor and the detail screen rendered no thermostat controls.
+      final d = _device(type: DeviceType.unknown);
+      final (provider, fake) = await _build(devices: [d]);
+      fake.emit(SubscriptionUpdateEvent(d.nodeId, {
+        'localTempCenti':    2750,
+        'heatingSetptCenti': 1900,
+        'systemMode':        4,
+        'humidityCenti':     5150,
+      }));
+      await pumpEventQueue();
+      expect(provider.devices.first.deviceType, DeviceType.thermostat);
+    });
+
+    test('humidity-only device still infers humiditySensor', () async {
+      final d = _device(type: DeviceType.unknown);
+      final (provider, fake) = await _build(devices: [d]);
+      fake.emit(SubscriptionUpdateEvent(d.nodeId, {'humidityCenti': 5150}));
+      await pumpEventQueue();
+      expect(provider.devices.first.deviceType, DeviceType.humiditySensor);
+    });
   });
 
   // ── 2. Subscription lifecycle ───────────────────────────────────────────────

@@ -132,5 +132,50 @@ void main() {
       expect(empty.isEmpty, isTrue);
       expect(empty.peakW, 0);
     });
+
+    test('drops the in-progress bucket (the one containing `to`)', () {
+      // 1-hour buckets; `to` falls 2 h 30 m in → bucket index 2 is still filling
+      // and must be excluded from both the chart and the totals.
+      final h = $proto.EnergyHistory(
+        bucketSeconds: 3600, // start defaults to 0
+        to: Int64(9000), // inside bucket index 2
+        timeSynced: true,
+        buckets: [
+          $proto.EnergyBucket(index: 0, pvWh: 1000),
+          $proto.EnergyBucket(index: 1, pvWh: 1000),
+          $proto.EnergyBucket(index: 2, pvWh: 100), // partial → dropped
+        ],
+        deviceSeries: [
+          $proto.EnergyDeviceSeries(
+            nodeId: Int64(0x0100000000000002),
+            cls: $proto.EnergyClass.ENERGY_CLASS_PV,
+            name: 'Roof',
+            wh: [1000, 1000, 100],
+          ),
+        ],
+      );
+
+      final d = EnergyHistoryData.fromProto(h);
+
+      expect(d.points.length, 2); // only the two complete hours
+      expect(d.pvKwh, closeTo(2.0, 0.0001)); // 2000 Wh, not 2100
+      expect(d.pvSeries.single.wattsPerBucket.length, 2);
+      expect(d.pvSeries.single.kwh, closeTo(2.0, 0.0001));
+    });
+
+    test('`to` on a bucket boundary keeps all complete buckets', () {
+      // `to` exactly at 2 h → the bucket that would start there is empty/future;
+      // the two complete hours before it are kept.
+      final d = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 3600, // start defaults to 0
+        to: Int64(7200),
+        buckets: [
+          $proto.EnergyBucket(index: 0, pvWh: 500),
+          $proto.EnergyBucket(index: 1, pvWh: 500),
+        ],
+      ));
+      expect(d.points.length, 2);
+      expect(d.pvKwh, closeTo(1.0, 0.0001));
+    });
   });
 }

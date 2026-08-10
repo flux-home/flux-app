@@ -9,10 +9,14 @@ import 'package:provider/provider.dart';
 const _priceColor  = Color(0xFFE8D66B); // yellow — price bars
 const _importColor = Color(0xFFF2A9A0); // coral — grid import overlay
 const _exportColor = Color(0xFFA9E0C0); // mint  — grid export overlay + feed-in
+// Amber — self-consumption savings. Matches the PV accent in the history card
+// and the house energy scene, so "own solar" reads the same colour everywhere.
+const _solarColor  = Color(0xFFF6D08A);
 
-/// A "Prices & consumption" card: the day-ahead spot price curve as bars with a
-/// readable ct/kWh axis, home consumption overlaid, and the aggregated cost of
-/// consumed energy shown top-left.
+/// A "Prices & consumption" card: what electricity cost over the **last 24
+/// hours** with grid import/export overlaid, plus the price forecast for the
+/// hours ahead (drawn faded, right of the "now" marker), and the aggregated cost
+/// of consumed energy shown top-left.
 class EnergyPriceCard extends StatefulWidget {
   const EnergyPriceCard({super.key});
 
@@ -66,6 +70,13 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
               _chart(prices, history),
               const SizedBox(height: 12),
               _legend(context),
+              // Explains an otherwise puzzling empty left half: the controller's
+              // curve doesn't reach back over the history yet (it backfills a day
+              // on each price refresh).
+              if (!prices.points.first.time.isBefore(
+                  DateTime.now().subtract(const Duration(hours: 2))))
+                _footnote(context,
+                    'No settled prices for the last 24 h yet — forecast only'),
               if (prices.stale) _footnote(context,
                   'Price data stale — controller hasn\'t refreshed the curve'),
             ],
@@ -84,7 +95,7 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
             style: tt.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant, letterSpacing: 1.4)),
         const Spacer(),
-        Text('day-ahead',
+        Text('24 h + forecast',
             style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
       ],
     );
@@ -97,42 +108,68 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     final now = DateTime.now();
     final cur = prices.currentAt(now);
     final importCents = prices.importCostCents(history);
+    final savedCents  = prices.selfConsumptionSavingCents(history);
     final exportCents = feedInCt > 0 ? prices.exportRevenueCents(history, feedInCt) : null;
 
-    String eur(double cents) => '€${(cents / 100).toStringAsFixed(2)}';
+    String eur(double? cents) =>
+        cents == null ? '—' : '€${(cents / 100).toStringAsFixed(2)}';
 
-    Widget stat(String value, String label, Color color) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value,
-                style: tt.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700, color: color)),
-            Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-          ],
+    // Three equal columns rather than a Row of intrinsic widths: at three
+    // figures across a phone-width card, a long value (€12.84) would otherwise
+    // overflow. FittedBox shrinks rather than clips in the extreme.
+    Widget stat(String value, String label, Color color) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value,
+                    maxLines: 1,
+                    style: tt.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700, color: color)),
+              ),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ],
+          ),
         );
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final avg = prices.avgCtIn(now.subtract(const Duration(hours: 24)), now) ??
+        prices.avgCt;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        stat(importCents == null ? '—' : eur(importCents), 'import cost',
-            cs.onSurface),
-        if (exportCents != null && exportCents > 0) ...[
-          const SizedBox(width: 22),
-          stat(eur(exportCents), 'feed-in · 24h', _exportColor),
-        ],
-        const Spacer(),
-        // Current gross price.
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        // Always three columns, '—' when a figure isn't available, so they don't
+        // shuffle sideways as values appear and disappear.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              cur != null ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh' : '— ct/kWh',
+            stat(eur(importCents), 'paid · 24h', cs.onSurface),
+            stat(eur(savedCents), 'saved · 24h', _solarColor),
+            stat(eur(exportCents), 'earned · 24h', _exportColor),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Current gross price + the 24 h mean, right-aligned on its own line.
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(
+              text: cur != null
+                  ? '${cur.ctPerKwh.toStringAsFixed(1)} ct/kWh'
+                  : '— ct/kWh',
               style: tt.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700, color: cs.onSurface),
             ),
-            Text('now · Ø ${prices.avgCt.toStringAsFixed(1)}',
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-          ],
+            TextSpan(
+              text: '  now · 24h Ø ${avg.toStringAsFixed(1)}',
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ]),
+          textAlign: TextAlign.right,
         ),
       ],
     );
@@ -235,19 +272,36 @@ class _PriceChartPainter extends CustomPainter {
     final coverStart = pts.first.time.millisecondsSinceEpoch;
     final coverEnd = pts.last.time.millisecondsSinceEpoch + resMs;
 
-    // Window to ~now ±12h so past consumption and upcoming prices share the view.
-    const half = 12 * 3600 * 1000;
+    // The last 24 h is the subject — that's the window the consumption history
+    // covers and what the user actually paid. The forecast gets a shorter tail
+    // (12 h) so it can never squeeze the history; anything the curve covers
+    // beyond that is simply off-window.
+    const pastMs = 24 * 3600 * 1000;
+    const forecastMs = 12 * 3600 * 1000;
     final nowMs = now.millisecondsSinceEpoch;
-    var startMs = nowMs - half < coverStart ? coverStart : nowMs - half;
-    var endMs = nowMs + half > coverEnd ? coverEnd : nowMs + half;
+    var startMs = nowMs - pastMs;
+    var endMs = coverEnd < nowMs + forecastMs ? coverEnd : nowMs + forecastMs;
+    if (endMs <= nowMs) endMs = nowMs;               // no forward coverage → past only
     if (endMs <= startMs) { startMs = coverStart; endMs = coverEnd; }
+    if (endMs <= startMs) return;                    // degenerate coverage
     final span = (endMs - startMs).toDouble();
     double x(int ms) => _padLeft + plotW * (ms - startMs) / span;
 
-    // Price Y scale — include 0, round the top (and bottom, if negative) to a
-    // nice value so the gridline labels are tidy.
-    final rawHi = prices.maxCt > 0 ? prices.maxCt : 1.0;
-    final rawLo = prices.minCt < 0 ? prices.minCt : 0.0;
+    // Price Y scale — from the prices *in view* (the curve can extend well past
+    // the window), including 0, with the top (and bottom, if negative) rounded to
+    // a nice value so the gridline labels are tidy.
+    var hiSeen = 0.0, loSeen = 0.0;
+    var anyInView = false;
+    for (final p in pts) {
+      final t0 = p.time.millisecondsSinceEpoch;
+      if (t0 + resMs <= startMs || t0 >= endMs) continue;
+      if (!anyInView) { hiSeen = loSeen = p.ctPerKwh; anyInView = true; }
+      if (p.ctPerKwh > hiSeen) hiSeen = p.ctPerKwh;
+      if (p.ctPerKwh < loSeen) loSeen = p.ctPerKwh;
+    }
+    if (!anyInView) { hiSeen = prices.maxCt; loSeen = prices.minCt; }
+    final rawHi = hiSeen > 0 ? hiSeen : 1.0;
+    final rawLo = loSeen < 0 ? loSeen : 0.0;
     final step = _niceStep((rawHi - rawLo) / 4);
     final hi = (rawHi / step).ceil() * step;
     final lo = (rawLo / step).floor() * step;
@@ -274,6 +328,16 @@ class _PriceChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(_padLeft, _padTop, size.width, _padTop + plotH));
 
+    // Where "now" sits — the boundary between what happened and what's predicted.
+    final nowX = x(nowMs.clamp(startMs, endMs));
+
+    // Subtle wash over the forecast side so past vs ahead reads at a glance.
+    if (nowX < size.width) {
+      canvas.drawRect(
+          Rect.fromLTRB(nowX, _padTop, size.width, _padTop + plotH),
+          Paint()..color = labelColor.withValues(alpha: 0.055));
+    }
+
     // Price as a stepped line — each interval held flat at its price, with
     // risers at the interval boundaries (no fill).
     final priceLine = Path();
@@ -290,14 +354,25 @@ class _PriceChartPainter extends CustomPainter {
       }
       priceLine.lineTo(x1, yv);    // hold flat across the interval
     }
-    canvas.drawPath(
-        priceLine,
-        Paint()
-          ..color = _priceColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeJoin = StrokeJoin.round
-          ..isAntiAlias = true);
+    final pricePaint = Paint()
+      ..color = _priceColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+    // Settled prices solid, forecast faded — same path, clipped either side of
+    // "now", so the actual/prediction split is unmistakable.
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(_padLeft, _padTop, nowX, _padTop + plotH));
+    canvas.drawPath(priceLine, pricePaint);
+    canvas.restore();
+    if (nowX < size.width) {
+      canvas.save();
+      canvas.clipRect(Rect.fromLTRB(nowX, _padTop, size.width, _padTop + plotH));
+      canvas.drawPath(priceLine,
+          pricePaint..color = _priceColor.withValues(alpha: 0.42));
+      canvas.restore();
+    }
 
     // Grid import + export overlays (shared scale), only over covered time.
     final h = history;
@@ -333,37 +408,58 @@ class _PriceChartPainter extends CustomPainter {
       }
     }
 
-    // "Now" marker + current price label.
+    // "Now" marker.
     if (nowMs >= startMs && nowMs <= endMs) {
-      final nx = x(nowMs);
-      canvas.drawLine(Offset(nx, _padTop), Offset(nx, _padTop + plotH),
+      canvas.drawLine(Offset(nowX, _padTop), Offset(nowX, _padTop + plotH),
           Paint()..color = labelColor.withValues(alpha: 0.7)..strokeWidth = 1);
+    }
+
+    // Name the faded side, so it can't be mistaken for measured data.
+    if (endMs > nowMs) {
+      tp
+        ..text = TextSpan(
+            text: 'FORECAST',
+            style: TextStyle(
+                color: labelColor.withValues(alpha: 0.8),
+                fontSize: 8,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w700))
+        ..layout();
+      if (nowX + 6 + tp.width <= size.width) {
+        tp.paint(canvas, Offset(nowX + 6, _padTop + 1));
+      }
     }
 
     canvas.restore(); // end plot clip
 
-    // Vertical time gridlines + labels every 3 hours across the window, so the
-    // time scale is readable (midnight is emphasised).
-    for (final p in pts) {
-      final t = p.time;
+    // Vertical time gridlines + labels on wall-clock hour boundaries across the
+    // whole window — independent of where price coverage starts, so the axis is
+    // still readable over stretches the curve doesn't reach (midnight emphasised).
+    final tickHours = span > 26 * 3600 * 1000 ? 6 : 3;
+    var t = DateTime.fromMillisecondsSinceEpoch(startMs);
+    t = DateTime(t.year, t.month, t.day, t.hour - t.hour % tickHours);
+    while (t.millisecondsSinceEpoch <= endMs) {
       final ms = t.millisecondsSinceEpoch;
-      if (ms < startMs || ms > endMs) continue;
-      if (t.minute != 0 || t.hour % 3 != 0) continue;
-      final lx = x(ms);
-      final midnight = t.hour == 0;
-      canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
-          Paint()
-            ..color = axisColor.withValues(alpha: midnight ? 0.45 : 0.20)
-            ..strokeWidth = 1);
-      tp
-        ..text = TextSpan(
-            text: '${t.hour.toString().padLeft(2, '0')}:00',
-            style: TextStyle(
-                color: labelColor,
-                fontSize: 8.5,
-                fontWeight: midnight ? FontWeight.w700 : FontWeight.w400))
-        ..layout();
-      tp.paint(canvas, Offset(lx - tp.width / 2, size.height - tp.height));
+      if (ms >= startMs) {
+        final lx = x(ms);
+        final midnight = t.hour == 0;
+        canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
+            Paint()
+              ..color = axisColor.withValues(alpha: midnight ? 0.45 : 0.20)
+              ..strokeWidth = 1);
+        tp
+          ..text = TextSpan(
+              text: '${t.hour.toString().padLeft(2, '0')}:00',
+              style: TextStyle(
+                  color: labelColor,
+                  fontSize: 8.5,
+                  fontWeight: midnight ? FontWeight.w700 : FontWeight.w400))
+          ..layout();
+        tp.paint(canvas, Offset(lx - tp.width / 2, size.height - tp.height));
+      }
+      // Step in wall-clock hours (not fixed milliseconds) so the ticks stay on
+      // the hour grid across a DST change.
+      t = DateTime(t.year, t.month, t.day, t.hour + tickHours);
     }
   }
 

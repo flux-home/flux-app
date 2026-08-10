@@ -158,12 +158,26 @@ class EnergyHistoryData {
     final start = h.start.toInt(); // epoch seconds of bucket 0
     final perHour = bucketSec / 3600.0; // fraction of an hour per bucket
 
+    // The bucket containing the query's end time is still in progress: it holds
+    // only the energy accrued so far this interval, so it always reads low and
+    // climbs as the interval fills. Drop it (and anything at/after it) so the
+    // chart and totals reflect complete buckets only. `to` and `start` share the
+    // controller's clock, so this needs no local wall-clock. Guard against `to`
+    // being unset/pre-start (older responses / tests) → no cutoff.
+    final to = h.to.toInt();
+    final inProgressIndex =
+        to > start ? (to - start) ~/ bucketSec : 1 << 30;
+    final buckets = [
+      for (final b in h.buckets)
+        if (b.index < inProgressIndex) b,
+    ];
+
     // Wh → average W over the bucket.
     double watts(int wh) => wh / perHour;
 
     final points = <EnergyHistoryPoint>[];
     var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0, batChgWh = 0, batDisWh = 0;
-    for (final b in h.buckets) {
+    for (final b in buckets) {
       pvWh += b.pvWh;
       impWh += b.gridImportWh;
       expWh += b.gridExportWh;

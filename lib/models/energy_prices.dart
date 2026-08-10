@@ -45,6 +45,21 @@ class EnergyPrices {
     return null;
   }
 
+  /// Mean price (ct/kWh) across the intervals overlapping [from]..[to], or null
+  /// when the curve covers none of that span. [avgCt] spans the whole curve —
+  /// which reaches both a day back and into tomorrow — so readouts about a
+  /// specific window (e.g. "the last 24 h") need this instead.
+  double? avgCtIn(DateTime from, DateTime to) {
+    var sum = 0.0;
+    var n = 0;
+    for (final p in points) {
+      if (!p.time.add(resolution).isAfter(from) || !p.time.isBefore(to)) continue;
+      sum += p.ctPerKwh;
+      n++;
+    }
+    return n == 0 ? null : sum / n;
+  }
+
   /// Cost (in cents) of the energy imported from the grid in [history], each
   /// bucket valued at the (gross) price covering its time. This is what the user
   /// actually pays. Null when there's no overlap with price coverage.
@@ -57,6 +72,40 @@ class EnergyPrices {
       final price = currentAt(p.time);
       if (price == null) continue; // spot varies by hour → only where priced
       cents += p.gridImportW * bucketHours / 1000.0 * price.ctPerKwh;
+      any = true;
+    }
+    return any ? cents : null;
+  }
+
+  /// Money **not spent** because own generation covered load that would
+  /// otherwise have been imported: per bucket, `pv − export` valued at the gross
+  /// price in force at that time. Null when there's no overlap with coverage.
+  ///
+  /// Priced per bucket, never at a window average, deliberately: PV peaks around
+  /// midday, which is exactly when the day-ahead curve tends to bottom out, so an
+  /// average would systematically overstate what self-consumption was worth under
+  /// a dynamic tariff. Valued at the *gross* consumer price (markup + VAT already
+  /// applied in [fromProto]), because that is the price that was avoided — which
+  /// is why this is typically several times [exportRevenueCents] for the same kWh.
+  ///
+  /// This is a counterfactual, not a cash flow — unlike [exportRevenueCents],
+  /// no money changed hands. Battery round-trips are excluded: the controller
+  /// reports battery only as a window total, not per bucket, so a discharge
+  /// can't be priced by the time it happened.
+  ///
+  /// Cannot overstate itself: `consumptionW = pv + import − export`, so
+  /// `pv − export ≤ consumptionW` for any non-negative import.
+  double? selfConsumptionSavingCents(EnergyHistoryData? history) {
+    if (history == null || history.points.isEmpty || points.isEmpty) return null;
+    final bucketHours = history.bucket.inSeconds / 3600.0;
+    var cents = 0.0;
+    var any = false;
+    for (final p in history.points) {
+      final price = currentAt(p.time);
+      if (price == null) continue; // spot varies by hour → only where priced
+      final selfW = p.pvW - p.gridExportW; // generated, minus what left the house
+      if (selfW <= 0) continue;
+      cents += selfW * bucketHours / 1000.0 * price.ctPerKwh;
       any = true;
     }
     return any ? cents : null;
