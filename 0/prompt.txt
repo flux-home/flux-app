@@ -1,0 +1,1 @@
+we have now sections in the settings menu for the app and for the controller, actually it doesn't make much sense to show th eapp settings, can you keep the controller settings and movbe also the remote conn settings there
