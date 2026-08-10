@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZNZGBN9TEB3DA035QHSB0P3",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "android/app/src/main/kotlin/com/fluxhome/app/MainActivity.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/bridge/CommissioningBridge.kt",
+    "android/app/src/main/kotlin/com/fluxhome/app/chip/MatterCommissioner.kt",
+    "lib/providers/commissioning_controller.dart",
+    "lib/services/proto/flux.pb.dart",
+    "lib/services/proto/flux.pbjson.dart",
+    "lib/ui/screens/commission_screen.dart",
+    "test/providers/commissioning_controller_test.dart",
+    "test/support/commissioning_fakes.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9027,
+    "cache_creation_tokens": 8833275,
+    "cache_read_tokens": 468065893,
+    "output_tokens": 879699,
+    "api_call_count": 1040
+  }
+}
