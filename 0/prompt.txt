@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b9721safz</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/034e38af-47db-4011-9c6f-194a4a10061a/tasks/b9721safz.output</output-file>
+<status>killed</status>
+<summary>Background command "Wait for backfilled curve" was stopped</summary>
+</task-notification>
