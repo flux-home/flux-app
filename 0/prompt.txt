@@ -1,0 +1,1 @@
+cheap, normal,expensive should be removed, rather add clear pricing visibility to the bars, top left should show the aggregated consumption price
