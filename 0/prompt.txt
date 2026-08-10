@@ -1,0 +1,1 @@
+can you show the price bars in yellow and calculate the aggregated price over imported enrgy, additional, can you add a calculation about exported energy based on 6.7 cent einspeiseverguetung
