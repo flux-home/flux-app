@@ -1,0 +1,1 @@
+the retry banner has ugly formatting/colors, can you change that rather to a button style notification next to the setiings icon on the top nav bar
