@@ -1,0 +1,1 @@
+i also implemented the scanning in the background on the controller, how can we use that in the app?
