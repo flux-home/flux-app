@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>a323d52c973fda6b8</task-id>
+<tool-use-id>toolu_01APimVDk7tVAE1ytaycP4D6</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/a735038c-53a0-4ecd-a5f7-8dac96fdf905/tasks/a323d52c973fda6b8.output</output-file>
+<status>completed</status>
+<summary>Agent "Find unreachable UI screens/widgets" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verified with greps. Here is the reachability picture and the dead code.
+
+## Reachability baseline (all live)
+
+Router `/home/tado/workspace/flux/flux-app/lib/router.dart` exposes 7 routes: `HomeScreen`, `CommissionScreen`, `DeviceDetailScreen`, `RoomPickerScreen`, `CategoryScreen`, `SettingsScreen`, `QrPayloadDetailScreen`. From those, everything else in `lib/ui/**` is reachable **except** the phone-scope paths below. I checked every top-level class in `lib/ui` for a construction site — no whole file and no public/private widget class is orphaned at the syntactic level. (`ModbusDevicesScreen`/`TariffSettingsScreen` are reachable via `category_screen.dart:97,104`; `ClusterInspectorScreen`/`ThreadDiagScreen` via `device_settings_screen.dart:1270,1286`; all `device_detail/*` and `home/*` cards have live call sites.)
+
+The dead code is entirely **semantic**: `MatterScope.phone` / `ThreadScope.phone` are never constructed anywhere in `lib/`, `test/`, or `integration_test/` (confirmed — the only constructions are `scope: ...controller` at `settings_screen.dart:45,48`). The removed references were `settings_screen.dart` lines 66/69 in `HEAD` (`THIS PHONE` panel), deleted in the current uncommitted working-tree change.
+
+---
+
+## `lib/ui/screens/settings/thread_settings_screen.dart`
+
+Dead because `ThreadScope.phone` is never passed, so `_isController` is always `true`:
+
+| Line | Symbol | Why dead |
+|---|---|---|
+| 36 | `ThreadScope.phone` (enum value) | no construction site remains |
+| 384 | `_buildPhone` | only the false branch of `build`'s ternary at line 244 |
+| 95 | `_loadThenScan` | only `initState` else-branch, line 69 |
+| 117 | `_runScan` | callers: 114 (`_loadThenScan`) + 400 (`_buildPhone`) — both dead |
+| 141 | `_reload` | callers: 197, 211, 459, 507 — all inside dead members |
+| 153 | `_buildNetworks` | callers: 108, 132, 149 — all dead |
+| 195 | `_selectDataset` | only 531 (`_showAddCredentials`) |
+| 203 | `_importFromOs` | only 489 (`_showAddCredentials`) |
+| 469 | `_showAddCredentials` | only 407, 412 (`_buildPhone` / `_NoCredentialsHint`) |
+| 17 | `_ThreadNetwork` (model class) | only referenced from `_networks`, `_buildNetworks`, `_ActiveNetworkDetailScreen`, `_ThreadNetworkScreen` — all dead |
+| 546 | `_NoCredentialsHint` | only 412 |
+| 591 | `_ActiveNetworkDetailScreen` | only 452 (`_buildPhone`) |
+| 610 | `_pushToController` | inside `_ActiveNetworkDetailScreen` → transitively dead |
+| 761 | `_ThreadNetworkScreen` | only 457 (`_buildPhone`) |
+| 889 | `_BorderRouterDetailScreen` | **transitively dead** — only 740 (`_ActiveNetworkDetailScreen`) and 836 (`_ThreadNetworkScreen`) |
+| 874 | `_kTxtFieldInfo` (const map) | only used by `_BorderRouterDetailScreen` (900, 934) |
+| 992 | `_ThreadDatasetDetailScreen` | **transitively dead** — only 501 (`_showAddCredentials`) and 675 (`_ActiveNetworkDetailScreen`) |
+| 50, 51, 57–61 | `_loading`, `_scanning`, `_datasets`, `_active`, `_networks`, `_routersCache`, `_error` | written/read only from the dead members above |
+
+**Still live in this file — do not touch:** `_isController` (48), `_loadHubThread` (76), `_buildController` (247), `_joinExistingNetwork` (355), `_shareNetwork` (371), `_JoinThreadNetworkScreen` (1226), `_ShareThreadNetworkScreen` (1420), and the `_hubThread*` / `_hubRole` / `_hubNeighborCount` / `_hubDatasetHex` fields.
+
+---
+
+## `lib/ui/screens/settings/matter_settings_screen.dart`
+
+Dead because `MatterScope.phone` is never passed:
+
+| Line | Symbol | Why dead |
+|---|---|---|
+| 17 | `MatterScope.phone` (enum value) | no construction site remains |
+| 45–51 | `initState` else-branch (`MatterChannel.getFabricId` + `_scan()`) | phone-only branch |
+| 56 | `_scan` | callers: 50 (dead branch) and 125 (dead appBar branch) |
+| 74 | `_clearAll` | only 198, inside `_phoneBody` |
+| 116–127 | `appBar.actions` non-controller branch | `_isController` always true |
+| 162 | `_phoneBody` | only the false branch of line 129 |
+| 209 | `_NearbyDevicesSection` | **transitively dead** — only 189 (`_phoneBody`) |
+| 276 | `_CommissionableDeviceTile` | **transitively dead** — only 268 (`_NearbyDevicesSection`) |
+| 30–33 | `_phoneFabricId`, `_scanning`, `_found`, `_scanError` | only touched by the above |
+| 356–361 | orphaned trailing comment block ("Thread sub-screen — auto-scans…", "Merged view of a Thread network:") | leftover from the file split; ends the file with a dangling doc comment attached to nothing |
+
+**Still live:** `_controllerBody` (134), `_copy` (67, used at 146), `_hubFabricId`, and the `MatterFabricPort.getFabricId()` path (42).
+
+---
+
+## Minor: always-null parameter
+
+`/home/tado/workspace/flux/flux-app/lib/ui/screens/settings/device_info_screen.dart:14,17` — `DeviceInfoScreen({this.controllerId})`. The only construction site is `settings_screen.dart:42` (`const DeviceInfoScreen()`), so `controllerId` is always `null` and the fallbacks at lines 36 and 136 are the only reachable outcomes. This was the per-controller-submenu parameter from commit `2666248`, now flattened away. (Note: there is a second, unrelated `DeviceInfoScreen` at `device_settings_screen.dart:1189` — different class, live.)
+
+---
+
+## Non-UI code stranded by the above (flagged, outside the requested scope)
+
+Only reachable from the now-dead phone paths, so effectively dead too:
+- `ThreadSettingsService.loadRouters` / `saveRouters` / `removeDataset` / `updateDataset` — sole call sites were `thread_settings_screen.dart:101, 128, 1058, 1075`.
+- `MatterChannel.discoverThreadNetworks` — sole call site `thread_settings_screen.dart:124`.
+- `MatterPort.discoverCommissionableNodes` — sole live call site was `matter_settings_screen.dart:60` (the interface + 3 impls remain).
+- `DeviceProvider.clearAllDevices` (`device_provider.dart:1264`) — sole call site `matter_settings_screen.dart:101`.
+- `context.read&lt;MatterChannel&gt;().getFabricId()` at `matter_settings_screen.dart:47` was the only direct `MatterChannel` fabric-id call; the method itself stays reachable through `MatterFabricPort`.
+
+`ThreadSettingsService.loadDatasets` / `loadActive` / `setActive` / `addDataset` / `load` and `MatterChannel.readSystemThreadCredentials` remain live via `commission_screen.dart`, `thread_sync_service.dart`, and `settings/device_info_screen.dart` — do **not** remove those.</result>
+<usage><subagent_tokens>84872</subagent_tokens><tool_uses>29</tool_uses><duration_ms>213410</duration_ms></usage>
+</task-notification>
