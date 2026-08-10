@@ -1,0 +1,1 @@
+in the flux hub view can you add a settings menu for modbus devices, discovery and adding, please think ddeply about the flow of discovering, adding, removing devices, it should be very smooth for th eend user
