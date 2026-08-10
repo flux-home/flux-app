@@ -1,0 +1,1 @@
+when another app shares a pairing code for commissioning and the device is already on-network, we could skip the step of commissioning it to the phone, correct?
