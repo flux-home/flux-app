@@ -1,0 +1,100 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The conversation is a series of feature-development requests on the Flutter "Flux Home" app (`matter_home` package, at `/home/tado/workspace/flux/flux-app`) that controls a Flux Controller (ESP32-P4) over CoAP/DTLS. Requests in order:
+   - Install the current version on the phone.
+   - Fix: in the Flux Hub (controller) view, if a controller was added via PSK but can't be found, never show "No hub yet"; also show hub details inline (not in a bottom sheet).
+   - Pivot to energy management: assign electrical sensor devices to roles (grid, PV, car charger, heat pump, home battery) and show a home overview on the main screen. User chose: live flow diagram, signed/bidirectional meters, multiple devices per role, grid shows import/export; and "remove the history/tracking feature as it will move to the controller."
+   - Add Apple-Home-style category buttons (Energy pastel-yellow, Lighting pastel-orange, Climate pastel-blue) below the app title above tiles; move the energy view into a separate Energy view; buttons: outline + colored text, black background.
+   - Iterate the energy visualization: flow diagram → center it/less hectic → isometric neon house → use provided PNG asset (transparent bg, pastel overlays only for assigned assets, no interactivity) → "don't like the png" → clean isometric wireframe house with solar panels → center house + PV → overlays as pastel outline (no icon, short description, grid import/export) → move overlays below house except solar.
+   - Add a Modbus devices settings menu (discovery/adding/removing) in the Flux Hub view; "think deeply about the flow." User answered: TCP+UDP transport; backend already in flux-proto; use existing API discovery; energy roles kept separate.
+   - "I want to see the existing connected modbus devices in the list."
+   - Add a way to reflect controller connectivity (all interactions depend on the controller being connected). User picked the recommendation (A3 centralized status + B1 banner + B3 gate actions), then requested the banner be changed to a button-style notification next to the settings icon.
+   - Investigate "the app cannot find the controller anymore although it's available"; "can you do the lookup from the pc."
+   - "app just crashed" → investigate.
+   - "commit / push all wip changes and then tackle the root cause [ANR] with a well worked out plan, please keep the background controller sync modular."
+
+2. Key Technical Concepts:
+   - Flutter/Dart; Provider (ChangeNotifier), go_router.
+   - CoAP over DTLS-PSK via `coap` + `dtls2` packages; protobuf payloads (Content-Format 42, application/octet-stream).
+   - Matter/Thread device model; nodeId (fixnum Int64 → Dart int).
+   - Protobuf: `.proto` source in sibling repo `/home/tado/workspace/flux/flux-proto/proto/flux.proto`; regenerate Dart bindings with `make dart` (protoc at `/home/tado/workspace/protoc/bin/protoc`, protoc_plugin 25.0.0); copy `generated/dart/{flux.pb,flux.pbenum,flux.pbjson}.dart` into `flux-app/lib/services/proto/`.
+   - Firmware at `/home/tado/workspace/flux/flux-controller`.
+   - mDNS discovery (`multicast_dns`, `_fluxhub._tcp`).
+   - Background isolates (`Isolate.spawn`, SendPort/ReceivePort); platform channels (SharedPreferences) DON'T work in background isolates; FFI + dart:io sockets DO.
+   - ANR = UI thread blocked >5s ("Waited 5001ms for MotionEvent"); root cause = synchronous DTLS handshake/mbedtls crypto on UI isolate.
+   - Deploy rule (memory `flutter-install-does-not-rebuild`): `flutter build apk` THEN `adb install -r` to avoid stale APK.
+   - Modbus synthetic node-id base: `FLUX_MODBUS_NODE_BASE = 0x0100000000000000` (firmware `flux_state.h`); `flux_is_modbus_node(nid) = nid >= base`.
+
+3. Files and Code Sections:
+   - `lib/services/controller_transport/controller_transport.dart` (NEW, current work) — Interface + moved `FluxControllerEndpoint` here (with `coapUri`, `hasDtls`) + value types: `enum TransportMethod { get, put, post, delete }`, `TransportRequest(method, path, {query, body, timeoutMs=15000, retryOnConnError=true})`, `TransportResponse({required ok, required success, payload})` with `static const unreachable`, `enum TransportEventKind { data, error, done }`, `TransportEvent(kind, {payload, error})`, and `abstract interface class ControllerTransport { Future<TransportResponse> request(); Stream<TransportEvent> observe(path,{query}); Future<void> reconnect(); Future<void> dispose(); }`.
+   - `lib/services/controller_transport/in_process_transport.dart` (NEW) — `InProcessTransport implements ControllerTransport`; holds `CoapClient _client`, ported `_buildClient()` (DTLS config + PSK callback), `reconnect()` (single-flight rebuild), `request()` (build CoapRequest per method, send with timeout, reconnect+retry-once, returns TransportResponse), `observe()` (StreamController + `_client.observe` + relation.listen), `dispose()`. Contains moved `_DtlsConfig extends CoapConfigDefault` (PSK ciphers + openSslSecurityLevel=0). Only this + `_transport_isolate` import `coap`.
+   - `lib/services/controller_transport/_transport_isolate.dart` (NEW) — Wire protocol classes (`TransportInit(replyPort, endpoint)`, `TransportReady(commandPort, ok)`, `ReqMsg(id, request)`, `RespMsg(id, response)`, `ObserveMsg(observeId, path, query)`, `EventMsg(observeId, event)`, `CancelObserveMsg`, `ReconnectMsg`, `DoneMsg`, `DisposeMsg`) + `Future<void> transportIsolateEntry(TransportInit init)` top-level entrypoint that creates an `InProcessTransport` inside the isolate and marshals commands to it.
+   - `lib/services/controller_transport/isolate_transport.dart` (NEW) — `IsolateTransport implements ControllerTransport`; spawns isolate (`Isolate.spawn(transportIsolateEntry, TransportInit(...), onError:, onExit:)`), `_ready` Completer, `_cmd` SendPort, `_fallback` InProcessTransport, `_pending`/`_reconnects`/`_observeCtrls` maps; `_degrade(reason)` falls back to in-process on isolate error/exit/build-failure; request/observe/reconnect/dispose route to isolate or fallback.
+   - `lib/services/controller_transport/default_transport.dart` (NEW) — `const bool kUseIsolateTransport = true;` and `ControllerTransport defaultControllerTransport(endpoint) => (kUseIsolateTransport && !kIsWeb) ? IsolateTransport(endpoint) : InProcessTransport(endpoint);`.
+   - `lib/services/flux_coap_service.dart` (HEAVILY REFACTORED) — Removed `import 'package:coap/coap.dart'`; now imports controller_transport + default_transport; re-exports `FluxControllerEndpoint` from the module. Constructor: `FluxCoapService(this.endpoint, {ControllerTransport? transport}) : _transport = transport ?? defaultControllerTransport(endpoint);`. Removed `_client`, `_buildClient`, `_reconnect`, `_send`, `_DtlsConfig`. Added `void Function(bool reachable)? onReachability;`. `_request(method, path, {query, body, timeout, retryOnConnError})` calls `_transport.request(...)`, fires `onReachability?.call(r.ok)`, returns `r.success ? r.payload : null`. `_get/_put/_post` thin wrappers; `_delete` uses transport. `startSubscription` uses `_transport.observe('/events', query:{id}).listen(...)` with `_subscriptions` now `Map<int, StreamSubscription<TransportEvent>>`, `scheduleRetry()` closure for 5s resubscribe on error/done. `_handleStateBytes(nodeId, Uint8List)` (renamed from `_handleStateResponse`). `dispose()` cancels subs + `_transport.dispose()`. `probe` static still uses `FluxCoapService(ep)` (default transport).
+   - `lib/services/hub_connection.dart` (earlier commit a7fcf00) — Added `enum ControllerStatus { noHub, connecting, online, offline }`, `_reachable`/`_probing`, 15s `_heartbeatTimer`, `status` getter, `isOnline`, `_wire(svc)` sets `svc.onReachability`, `_probe()` calls getInfo, `startHealthMonitoring()`/`pauseHealthMonitoring()`, `reconnect()` sets probing.
+   - `lib/ui/widgets/controller_status_chip.dart` (NEW, commit-pending part of connectivity) — compact AppBar pill: Offline (errorContainer, cloud_off, tap→reconnect) / Connecting (spinner) / hidden when online or noHub. (Replaced the deleted `controller_status_banner.dart`.)
+   - `lib/models/matter_device.dart` — `bool get isModbus => nodeId >= 0x0100000000000000;` (fixed from earlier wrong `(nodeId >>> 32) == 0xFFFFFFFF`).
+   - `lib/ui/screens/settings/modbus_devices_screen.dart` (NEW) — list of `provider.modbusDevices`, FAB "Add device"/"Hub offline" gated on `isOnline`, `_ScanSheet` (GET /modbus/discovered), `_ConfigSheet` (manual/confirm form). 
+   - `lib/main.dart` — lifecycle: on resume `hub.startHealthMonitoring()`, on pause `hub.pauseHealthMonitoring()`; MaterialApp.router builder reverted (banner removed).
+   - `lib/ui/screens/home_screen.dart` — AppBar actions: `[ControllerStatusChip(), settings IconButton]`; FAB gated on status (noHub→addHub, online→addDevice, else dimmed+snackbar); empty-state uses status.
+
+4. Errors and fixes:
+   - "No hub yet" bug: controller_settings_screen fell back to NO HUB YET when offline; fixed by gating on `HubConnection.hasConfiguredHub`.
+   - Energy role section hidden for unknown-type PV device: fixed gate to `hasEnergyMeasurement || live active power present`.
+   - Modbus list empty: `isModbus` used wrong constant `(nodeId >>> 32) == 0xFFFFFFFF`; fixed to `nodeId >= 0x0100000000000000` (verified against firmware `flux_state.h`); Kaco NX3 + Energy Meter then appeared.
+   - Energy overlays: user feedback "not centered and feels too hectic" → user clarified they meant the flow line centered between circles (not the home tile); then "move back the home tile"; fixed via bbox-centering + symmetric panel margins + calmer single-dot animation.
+   - USB device (24221FDF6005YN) repeatedly disconnected (fresh transport_id each time — flaky cable/port); user reconnected each time ("up again", "phone is connected").
+   - App couldn't find controller: diagnosed via PC `avahi-browse` — controller pings fine (192.168.1.134) but advertises `_fluxhub._tcp` only on Ethernet; WiFi clients see `_matter`/`_meshcop` but NOT `_fluxhub` (router doesn't bridge wired→wireless multicast). NOT the app's fault. Recommended direct-IP reconnect fallback (not yet implemented).
+   - App ANR crash: pulled dropbox ANR trace — main thread `Native`/Running in synchronous native work (DTLS crypto) on UI isolate; pre-existing (traces 07-07/07-09); my 15s heartbeat polling worsened frequency when offline. Led to the current isolate-transport fix.
+
+5. Problem Solving:
+   Solved: no-hub fix, energy roles/overview, category nav, multiple viz iterations, Modbus feature (proto regen + service + screen), connectivity status, isModbus detection, mDNS diagnosis. In-progress: isolate transport refactor to fix ANRs (module built + FluxCoapService refactored + isolate impl + default flipped; analyze CLEAN). Ongoing: mDNS/direct-IP issue means controller currently unreachable, limiting online verification.
+
+6. All user messages:
+   - "can you install the current version on the phone"
+   - "in the controller view, if a controller cannot be found, but is added through the PSK, the view should never show 'No hub yet'"
+   - "yes" (rebuild+reinstall)
+   - "can you also install it on 192.168.1.179:37975" (later) / "can you show the app screen here, i enabled wireless debugging / 192.168.1.194" / "34203" / "can you open the screen here on the desktop?" / "can you grab the screen again :40067" / "192.168.1.229:40067" (screen/scrcpy navigation)
+   - "flux is mainly a energy management app, I want to be able to assign electrical sensor devices to either grid, PV, car charger, heatpump, home battery, in the end I want to show an overview about my home on the main screen, can you grill me with your questions and work out a plan"
+   - "can you also show the details right away in the screen"
+   - "the energy flow is not centered and feels to hectic"
+   - "I didn't mean the home tile centered, but rather the energy flow centered between the circles"
+   - "can you put the overlays below the house for now, except solar" (wait—ordering: this came later)
+   - "instead of the energy flow diagram I'd rather have a picture showing a home with all the assets and overlays for energy flow and live data, can you make a plan how you would realize that?"
+   - "can you create a isometric view of the home like this [image] and clearly add all energy asstes"
+   - "please use this asset, make th ebackground transparent and add pastel overlays, only for the assigned assets, remove the interactivity from the overlays, just show the current value, to make it clear, use the picture instead of svg"
+   - "i don't like th epng asset either, can you do a very clean isometric wireframe model of a house with solar panels, nothing else fancy yet"
+   - "the house should be centered, the pv should be centered on the roof"
+   - "the overlays should be pastel outline, no icon, short description, for grid, please add export/import status"
+   - "can you put the overlays below th ehouse for now, except solar"
+   - "can you commit / push all wip changes and then tackle the root cause..." (NO—that's later; the energy commit/push was: "please commit and push the current state")
+   - "in the flux hub view can you add a settings menu for modbus devices, discovery and adding, please think ddeply about the flow of discovering, adding, removing devices, it should be very smooth for th eend user"
+   - "I want to see the existing connected modbus devices in the list"
+   - "can you also install it on 192.168.1.179:37975"
+   - "all interactions are depending on the controller being connected to the app, this is currently not reflected in the app, can you make a few suggestions how to handle that, don't iumplement yet"
+   - "go with the recommendation"
+   - "the retry banner has ugly formatting/colors, can you change that rather to a button style notification next to the setiings icon on the top nav bar"
+   - "up again"
+   - "the app cannot find the controller anymore although it's available"
+   - "can you dio the lookup from the pc"
+   - "app just crashed"
+   - "can you commit / push all wip changes and then tackle the root cause with a well worked out plan, please keep the background controller sync modulart"
+   - "phone is connected"
+
+7. Pending Tasks:
+   - Task 20 (in_progress): IsolateTransport + isolate host + auto-fallback; flip default — CODE COMPLETE, analyze CLEAN. Needs `flutter test` + build to fully close.
+   - Task 21 (pending): Verify isolate transport on device — the ANR repro (controller offline, hammer UI, confirm no ANR via `adb shell dumpsys dropbox --print`); confirm reconnect/behaviour when controller reachable.
+   - After verification: commit + push the ANR-fix batch.
+   - Deferred/optional (raised, not committed to): direct-IP reconnect fallback for mDNS flakiness; manual "Connect by IP" field.
+
+8. Current Work:
+   Implementing the ANR root-cause fix per the approved plan (`/home/tado/.claude/plans/woolly-exploring-truffle.md`): move controller CoAP/DTLS off the UI isolate into a background isolate behind a modular `ControllerTransport` interface. Completed: the transport module (controller_transport.dart interface + value types + moved FluxControllerEndpoint; in_process_transport.dart; _transport_isolate.dart isolate host reusing InProcessTransport; isolate_transport.dart UI proxy with graceful `_degrade` fallback; default_transport.dart factory with `kUseIsolateTransport=true` flag). Refactored FluxCoapService to delegate raw CoAP to the injected transport (default now IsolateTransport on mobile). The immediately-preceding action was `flutter analyze lib/` which returned "CLEAN (only pre-existing)". Note: task 15/16/17 (connectivity) and the Modbus feature were already committed/pushed as `a7fcf00` and `4a67368`.
+
+9. Optional Next Step:
+   Run `flutter test` and then build + install on the phone to verify the isolate transport, specifically the ANR repro. This directly continues task 21 and the user's request to "tackle the root cause with a well worked out plan." Verbatim from the approved plan's verification: "The ANR repro: on device, force the controller offline (disable Wi-Fi or power it down) and hammer the UI ... Before: ANR within ~1 min. After: UI stays responsive, chip shows Offline, no ANR ... Confirm with `adb shell dumpsys dropbox --print` that no new `data_app_anr` is logged." Since the app builds/analyzes clean, next: `flutter test` (expect 71 pass / 1 pre-existing commissioning failure), then `flutter build apk` + `adb -s 24221FDF6005YN install -r`, launch, and run the offline ANR repro. (The controller is currently genuinely offline due to the mDNS wired/wireless issue, which is actually convenient for the offline ANR repro.)
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/tado/.claude/projects/-home-tado-workspace-flux-flux-app/5934f94a-d68c-4874-8ef0-ce61e69f1ae2.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
