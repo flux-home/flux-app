@@ -1,0 +1,1 @@
+Right now we are showing the calculation just for the feed in kilowatt hours.I'd also like to show how much money we saved by not buying, but using self-consumption.This has be calculated based on flexible pricing.Can you make a suggestion?
