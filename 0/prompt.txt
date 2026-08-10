@@ -1,0 +1,101 @@
+<task-notification>
+<task-id>a4334119b10fd93a2</task-id>
+<tool-use-id>toolu_01HP6GDmWTaozNJJXJpbqgzT</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/56a2eb51-b243-41df-95fa-4ad926fcec3d/tasks/a4334119b10fd93a2.output</output-file>
+<status>completed</status>
+<summary>Agent "Map Flux Hub view + reusable UX flows" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Exploration complete. Here is the full map for adding a "Modbus devices" settings menu.
+
+## 1. Flux Hub settings screen — `lib/ui/screens/settings/controller_settings_screen.dart` (356 lines)
+
+State-management model (how it reads state):
+- Reads the hub via `context.read&lt;HubConnection&gt;().service` → a `FluxCoapService?` (`:45`). Watches `HubConnection` in `build()` (`:282`) to rebuild when the service is swapped.
+- `_fetchInfo(FluxCoapService svc)` (`:78-87`) calls `svc.getInfo()` and sets `_info`/`_online`. This is the real reachability probe.
+- Polling: a 10s `Timer.periodic` in `initState` (`:49-52`) re-probes `_fetchInfo` while the screen is open.
+- `HubConnection.hasConfiguredHub` is the source-of-truth for "a hub exists" (`:288`); `_online` is live reachability.
+
+Actions (all show a `SnackBar`):
+- `_rediscover()` `:91-106` — `hub.reconnect()`, snackbar result. Bound to `_HubAction.refresh`.
+- `_syncThread()` `:155-176` — `ThreadSyncService(svc).ensureInSync()`, `switch` over `ThreadSyncStatus` for message. Bound to `_HubAction.syncThread`.
+- `_clearPsk()` `:118-151` — the removal flow. Shows an `AlertDialog` confirm (Cancel / Remove) `:125-141`, then `ControllerSettings.clearPsk(id)` + `hub.reconnect()` + snackbar "Hub removed". Bound to `_HubAction.remove`.
+- `_addController()` `:108-116` — calls `runAddControllerFlow(context)` (shared flow, see §3).
+
+The `_HubAction` popup menu — enum at `:15`, dispatch `_onHubAction` `:178-184`, built as `PopupMenuButton&lt;_HubAction&gt;` in the hub card trailing `:328-347`: items Refresh / Sync Thread network / `PopupMenuDivider` / Remove hub (error-coloured).
+
+`build()` structure `:280-354`:
+```
+Scaffold(
+  appBar: AppBar(title: Text('Flux Hub')),
+  floatingActionButton: configured ? null : FloatingActionButton(+ / _addController),  // :293-301
+  body: !_pskLoaded &amp;&amp; !configured ? SizedBox.shrink()                                 // :302-303
+      : !configured ? DotMatrixEmptyHint('NO HUB YET','TAP + TO ADD')                  // :304-305
+      : ListView(padding: symmetric(vertical:8), children: [
+          Card( ListTile(                       // hub card :309-349
+            leading: Icon(Icons.router_outlined, cs.primary),
+            title: Text(_hubName()),            // :237-240 host or 'Flux Hub'
+            subtitle: Row[ status dot (green/outline), Text(_hubSubtitle()) ],  // :242-249
+            trailing: PopupMenuButton&lt;_HubAction&gt;(...),   // :328-347
+          )),
+          _detailsCard(cs),                     // :350
+        ]),
+)
+```
+- `_detailsCard(cs)` `:191-232` — a `Card` with a "DETAILS" caption then `_detailRow(label,value)` rows (Host, IP, Firmware, Uptime, Pairing key, Fabric, Thread network). `_detailRow` `:263-276` is a fixed-92px label + monospace value.
+- Note: the `_RoomTile`/room-picker patterns are NOT in this file (they live in a `device_settings_screen`, which does not exist under `lib/ui/screens/settings/` — the room picker is `lib/ui/screens/commission_area/room_picker_screen.dart`, routed at `/room-picker/:id`).
+
+Where a "Modbus devices" section slots in: the cleanest spot is a new nav `Card` + `ListTile` inserted into the `ListView` children right after `_detailsCard(cs)` (`:350`), pushing a dedicated `ModbusDevicesScreen` (Modbus devices hang off the hub). Alternatively add a top-level entry in `settings_screen.dart` (§2). Given Modbus devices are hub-attached, a tile inside this screen is the most natural.
+
+## 2. Top-level Settings list — `lib/ui/screens/settings_screen.dart` (83 lines)
+
+`StatelessWidget`, `Scaffold` + `ListView`. Submenus grouped in one `Card` (`:20-56`) with `ListTile`s separated by `Divider`s. Each tile: `title`, `subtitle`, `trailing: Icon(Icons.chevron_right)`, and `onTap` pushing a `MaterialPageRoute`:
+```dart
+onTap: () =&gt; Navigator.push(context,
+    MaterialPageRoute&lt;void&gt;(builder: (_) =&gt; const ControllerSettingsScreen())),  // :31-33
+```
+First/last tiles use a `RoundedRectangleBorder` with top/bottom radius for the grouped-card look (`:28-30`, `:48-50`). Entries: Flux Hub → `ControllerSettingsScreen`, Matter → `MatterSettingsScreen`, Thread → `ThreadSettingsScreen`; then an "About" `SectionLabel` + App Info card. A new top-level "Modbus" entry would be another `ListTile` in that first `Card`.
+
+## 3. Discovery / add flows to reuse
+
+Shared add-hub flow — `lib/services/add_controller_flow.dart` (87 lines):
+- `runAddControllerFlow(BuildContext, {String? knownControllerId}) → Future&lt;bool&gt;` (`:25`). Opens `AddControllerSheet` via `showModalBottomSheet&lt;String&gt;` with `isScrollControlled:true, backgroundColor: transparent` (`:26-31`), parses the result (`flux://setup?id=&amp;psk=` or raw hex), saves via `ControllerSettings.savePsk`, calls `hub.refreshConfiguredState()` + `hub.reconnect()`, and emits its own success/failure snackbars (`:70-76`). This "sheet → parse → persist → reconnect → snackbar; return bool" shape is the exact template for an "add Modbus device" flow.
+
+Add sheet — `lib/ui/widgets/add_controller_sheet.dart` (118 lines):
+- Bottom-sheet with grab-handle (`:53-59`), title + description, a primary `FilledButton.icon` ("Scan QR code", `minimumSize: Size.fromHeight(52)`), and a "Enter manually" reveal with a `TextField` + counter + `Confirm` `FilledButton` (`:82-111`). Pops with a `String` or null. Good template for a manual "add Modbus device by address/unit-id" sheet.
+
+Commissioning flow — `lib/ui/screens/commission_screen.dart` (2158 lines). Reusable UX patterns:
+- Phase model: `CommissionPhase { idle, parsed, running, done, failed }` drives the UI; `build()` `:463-476` switches to `_buildProgressScreen` when in-progress.
+- Progress screen `:545-637`: `PopScope(canPop:!busy)` with a "Cancel commissioning?" `AlertDialog` on back (`:557-567`); success block = green `Icons.check_circle_rounded` + "Device added" (`:593-610`); failure = "Scan again" button (`:611-632`). This is the reference for a Modbus add "progress → success/failure" screen.
+- Picker sheets to mirror: `_ThreadDatasetPromptSheet` `:1512+` and `_DatasetPickerSheet` `:1672-1726` — list-of-`ListTile` bottom sheets (radio leading icon, title/subtitle, `onTap: Navigator.pop(context, item)`). `_showConnectionPicker` extension `:2035-2093` + `_ConnectionTile` `:2096-2157` — a choice sheet of large tappable option cards (icon, title, subtitle, chevron); ideal for "how is this Modbus device connected (TCP / RTU)".
+- Wi-Fi credential entry `_WifiCredentialPanel` `:1839-2024` — full-form modal sheet with dropdown scan results + password field; template for a Modbus connection-config sheet.
+
+## 4. Routing — `lib/router.dart` (79 lines)
+
+`go_router` with a `_slide` transition (`:66-78`) used for all pushed detail screens; `_fade` for home. Existing detail screens are registered as `GoRoute`s (`/device/:id`, `/room-picker/:id`, `/category/:cat`, `/settings`, `/qr-detail`). Two navigation idioms coexist:
+- Settings sub-screens use plain `Navigator.push(MaterialPageRoute(...))` (settings_screen `:31-33`, thread_settings screen-to-screen `:269-280`) — NOT registered in the router.
+- Top-level/deep-linkable screens use `context.push('/route')` / `context.go('/')` (commission_screen `:436`, `:460`).
+
+For a Modbus sub-screen, follow the settings convention: push via `MaterialPageRoute` from the tile's `onTap` (no router entry needed). Add a `GoRoute` only if you want deep-linking.
+
+## 5. Theming / widget conventions to match
+
+- `Card` + `ListTile` grouped lists with `Divider(height:1, indent:16, endIndent:16, color: cs.outlineVariant)` between rows (settings_screen `:35`; matter_settings `:133`, `:227`).
+- Card margin convention: `EdgeInsets.symmetric(horizontal: 16)`.
+- `SectionLabel` — `lib/ui/widgets/section_label.dart`. Two styles: `.subtle` (default, uppercased muted list headers) and `.prominent` (primary-colour form headers). Used as `Padding(EdgeInsets.fromLTRB(16,12,16,6), child: SectionLabel('...'))`.
+- `DotMatrixEmptyHint(headline:, subline:)` — `lib/ui/widgets/dot_matrix_empty_hint.dart` — the LED-matrix empty state ("NO … YET" / "TAP + TO ADD"); used by controller screen for the no-hub state.
+- `InfoRow(label:, value:, mono:, link:)` — `lib/ui/widgets/info_row.dart` — key/value detail rows (130px label). Used across Thread detail screens; use it for a Modbus device detail page.
+- Scan/refresh convention: an `AppBar` action `IconButton` that swaps `Icons.refresh_outlined` ↔ a small `CircularProgressIndicator(strokeWidth:2)` while `_scanning`, disabled during scan (thread_settings `:212-223`, matter_settings `:91-99`).
+- Add convention: `FloatingActionButton.extended(icon: Icon(Icons.add), label: Text('Add …'))` opening a `showModalBottomSheet` add sheet (thread_settings `:225-229`, `_showAddCredentials` `:290-362`).
+- Destructive/remove convention: `showDialog&lt;bool&gt;` `AlertDialog` (Cancel + error-styled confirm), then act + snackbar. See `_clearPsk` (controller `:125-151`), `_clearAll` (matter `:48-81`), `_confirmDelete` (thread `:849-883`). Detail-screen delete is an `AppBar` `IconButton(Icons.delete_outline)` (thread `:923-928`).
+- Status colours: green success is the literal `Color(0xFF34A853)`; errors use `cs.error`; brand green is `kBrandGreen` in `lib/ui/theme.dart`.
+
+## Hub API surface (for the data layer) — `lib/services/flux_coap_service.dart`
+
+The hub is reached over CoAP/DTLS. Existing typed methods: `getInfo()` `:232`, `getDeviceList()` `:258`, `commission(...)` `:277`, `getThreadDataset()`/`postThreadDataset()` `:239`/`:252`, plus generic `_get/_put/_post/_delete` helpers (`:173-227`) and `endpoint.coapUri(path, {query})` (`:47`). A Modbus feature would add methods here (e.g. GET `/modbus/devices`, POST/DELETE) following the same protobuf-payload pattern (`_proto` accept type).
+
+## Recommendation
+Best fit: add a Modbus entry as a nav `Card`+`ListTile` in `controller_settings_screen.dart`'s `ListView` after `_detailsCard(cs)` (`:350`), pushing a new `ModbusDevicesScreen` via `MaterialPageRoute`. Model that screen on `thread_settings_screen.dart` / `matter_settings_screen.dart` (AppBar refresh action, `FloatingActionButton.extended` "Add device", `Card`/`ListTile` list, `DotMatrixEmptyHint`/empty-state hint, `showModalBottomSheet` add sheet modeled on `AddControllerSheet` + `_ConnectionTile`, and `AlertDialog` confirm for removal). Back it with new `FluxCoapService` Modbus endpoints.
+
+Key files: `lib/ui/screens/settings/controller_settings_screen.dart`, `lib/ui/screens/settings_screen.dart`, `lib/services/add_controller_flow.dart`, `lib/ui/widgets/add_controller_sheet.dart`, `lib/ui/screens/commission_screen.dart`, `lib/ui/screens/settings/thread_settings_screen.dart`, `lib/ui/screens/settings/matter_settings_screen.dart`, `lib/services/flux_coap_service.dart`, `lib/router.dart`, `lib/ui/widgets/{section_label,dot_matrix_empty_hint,info_row}.dart`.</result>
+<usage><subagent_tokens>83308</subagent_tokens><tool_uses>14</tool_uses><duration_ms>96898</duration_ms></usage>
+</task-notification>
