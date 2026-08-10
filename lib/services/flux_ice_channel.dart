@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -92,12 +94,50 @@ class FluxIceSession {
   Future<int> localPort() => FluxIceChannel._localPort(_handle);
 
   /// Convenience: complete when CONNECTED, throw on FAILED/CLOSED or [timeout].
+  ///
+  /// The thrown message is user-facing — it lands verbatim on the Connection
+  /// screen's ICE-connect stage. A bare `.timeout(d)` was worse than useless
+  /// there: Dart's default TimeoutException message is the literal string
+  /// "Future not completed", which told the reader nothing about ICE. Report the
+  /// last state actually observed instead, because "no state at all" (the native
+  /// state stream never delivered) and "stuck in checking" (connectivity checks
+  /// are failing) have completely different causes.
   Future<void> awaitConnected({Duration timeout = const Duration(seconds: 20)}) async {
-    final s = await states.firstWhere(
-      (st) => st == FluxIceState.connected || st == FluxIceState.failed || st == FluxIceState.closed,
-    ).timeout(timeout);
-    if (s != FluxIceState.connected) {
-      throw StateError('ICE did not connect (state=$s)');
+    FluxIceState? last;
+    final done = Completer<FluxIceState>();
+    final sub = states.listen(
+      (st) {
+        last = st;
+        if (!done.isCompleted &&
+            (st == FluxIceState.connected ||
+             st == FluxIceState.failed ||
+             st == FluxIceState.closed)) {
+          done.complete(st);
+        }
+      },
+      onError: (Object e) {
+        if (!done.isCompleted) done.completeError(e);
+      },
+      onDone: () {
+        if (!done.isCompleted) {
+          done.completeError(StateError(
+              'the ICE state stream closed before connecting '
+              '(last state: ${last?.name ?? "none"})'));
+        }
+      },
+    );
+    try {
+      final s = await done.future.timeout(timeout, onTimeout: () {
+        throw StateError(
+            'ICE did not connect within ${timeout.inSeconds} s '
+            '(last state: ${last?.name ?? "none seen — no candidate pair "
+                "succeeded, or the native state stream is silent"})');
+      });
+      if (s != FluxIceState.connected) {
+        throw StateError('ICE reported ${s.name} before connecting');
+      }
+    } finally {
+      await sub.cancel();
     }
   }
 
