@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b2yn5ih9l</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/56a2eb51-b243-41df-95fa-4ad926fcec3d/tasks/b2yn5ih9l.output</output-file>
+<status>failed</status>
+<summary>Background command "Launch scrcpy desktop mirror" failed with exit code 2</summary>
+</task-notification>
