@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZPKKTG0M1RH80V78YJKB1M1",
+  "session_id": "9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-10T19:50:30.188125332Z",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 4,
+  "save_step_count": 3,
+  "files_touched": [
+    "lib/services/flux_ice_channel.dart"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5[1m]",
+  "turn_id": "c8b60059c636",
+  "checkpoint_transcript_start": 5458,
+  "transcript_lines_at_start": 5458,
+  "compact_transcript_start": 1276,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 860831,
+    "cache_read_tokens": 18789902,
+    "output_tokens": 15639,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-10T19:50:29.532230443Z",
+    "agent_lines": 45,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 45,
+    "total_lines_changed": 50,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 5
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 5
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 45,
+      "agent_lines_removed": 5
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+i get an ICE connect failure, Future not completed
+
+---
+
+201:40935
+
+---
+
+flux connection diagnostics
+status: offline  via: none
+attempts: 4  failures: 1
+last attempt: 2026-08-10T16:43:12.067803 (failed)
+error: Tunnel probe: no reply within 15 s
+--- stages ---
+failed  LAN discovery (5008 ms) — no controller advertised on this network (mDNS)
+skipped LAN probe — nothing discovered
+ok      Pairing lookup (0 ms) — flux-controller-e25311
+ok      ICE gather (166 ms) — host=2 srflx=2 relay=1
+--- trace ---
+LAN discovery FAILED: no controller advertised on this network (mDNS)
+default TURN: standard.relay.metered.ca:80 (built-in)
+start: stun=stun.relay.metered.ca:80 turn=standard.relay.metered.ca:80
+ICE gather: stun=stun.relay.metered.ca:80 turn=standard.relay.metered.ca:80
+offer gathered: host=2 srflx=2 relay=1
+signaling offer via rendezvous…
+mailbox=qx3wbhlj… POST offer → https://flux.fluxbox.workers.dev
+ICE state: checking
+offer POSTed (HTTP 204); polling for answer…
+heartbeat failed x2 → re-running discovery
+connect: joined the in-flight attempt
+poll 1/6: HTTP 204, empty
+poll 2/6: HTTP 204, empty
