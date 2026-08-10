@@ -1,0 +1,1 @@
+all interactions are depending on the controller being connected to the app, this is currently not reflected in the app, can you make a few suggestions how to handle that, don't iumplement yet
