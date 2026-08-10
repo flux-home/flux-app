@@ -1,0 +1,1 @@
+In the thread view, current network, can you shou the network name + role,channel, number of devices on mesh, not the PAN ID neither ext pan id, for credential sharing please also keep the buttons clean, no icons, show the ecosystem description after button press, can you also add functionality to split up thread networks?
