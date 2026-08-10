@@ -1,0 +1,1 @@
+in the energy view, the latest reading at the current hour is always low as the calculation is ongoing, do you understand the problem and can you suggest, hwo to fix it
