@@ -1,0 +1,137 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. **Primary Request and Intent:**
+
+   A long multi-part session on the **flux** smart-home project (Flutter app + ESP32-P4 controller firmware + shared proto), spanning three repos: `/home/tado/workspace/flux/flux-app`, `/home/tado/workspace/flux/flux-controller`, `/home/tado/workspace/flux/flux-proto`. Requests in order:
+   - Install the app on a wireless adb device (repeatedly, ports kept rotating).
+   - Confirm that a shared pairing code for an already-on-network device lets us skip phone-side commissioning.
+   - **Remove the "proprietary IPv6 step"** from commissioning handoff entirely; user chose "Full removal + SRP lookup".
+   - Show the Thread network name in the commissioning progress screen — then corrected to put it **in the stage label** ("waiting for device on \<name\>").
+   - Suggest, then implement, **fine-grained controller-side commissioning progress** streamed to the app.
+   - Debug "stuck in Device found forever".
+   - Connect to the USB phone via **scrcpy**.
+   - Fix a **phantom controller** that couldn't be removed after clearing cache/storage.
+   - Suggest where/how to add **Thread credential sharing** (join side), then also the **share side**; user chose controller-side discovery ("A").
+   - Use the controller's background scanning (repeatedly not present in the checkout; user chose "B" = Observe; later said "the api is being reworked").
+   - In the controller Thread view: **remove operational-network sync** — "the app should always use the active controller network" — and show the current network.
+   - **Review the app for dead code**, then "push the current state on .179:41109 and then perform the cleanup"; mid-turn: "for 2 the app shouldn't" (app must never push a Thread dataset).
+   - "#3 delete from UI for now, loadManualOverride can be removed".
+   - Rework the Thread current-network card + clean icon-free buttons + ecosystem description after press + **add split-network functionality**; then "instead of split we should call it **create**".
+   - **Review and test reliability of local and remote controller connections**, "execute tests against the controller until you're satisfied"; then "ok, can you fix these"; mid-turn: "add last connection metrics" to the connection view, "deploy it to both phones", "179:41687".
+   - Most recent: **"from device info, can you remove thread and matter stuff"**.
+
+2. **Key Technical Concepts:**
+   - Matter/Thread: commissioning (BLE PASE, ECM windows, multi-admin), fabrics, NOC/RCAC/ICAC/IPK, `OperationalCredentials` cluster, RemoveFabric, discriminators (12-bit vs 4-bit short), DNS-SD `_matterc._udp`, SRP server table, `_meshcop._udp` / `_meshcop-e._udp`, ePSKc (Thread 1.4 credential sharing), MeshCoP commissioner, `MGMT_PENDING_SET` migration, `otDatasetCreateNewNetwork`.
+   - CoAP/DTLS-PSK API between app and controller; protobuf (nanopb C + protoc-gen-dart); CoAP **Observe**; block-wise transfers; separate responses via a notify queue.
+   - Flutter/Dart: Provider/ProxyProvider, `ChangeNotifier`, isolate transport, `Completer`, `StreamController`, sealed event hierarchies, `part` files.
+   - ESP-IDF/esp-matter: `coap_task` single-threadedness, `esp_openthread_lock`, FreeRTOS tasks, heap poisoning, `CommissioningStage`/`StageToString`, `DevicePairingDelegate::OnCommissioningStatusUpdate`.
+   - ICE/TURN/STUN remote tunnel (flux-ice, libjuice), rendezvous signaling, loopback CoAP bridge.
+
+3. **Files and Code Sections:**
+
+   **Proto (all three checkouts — they DIVERGE, never blind-copy):**
+   - `proto/flux.proto` / `proto/flux.options`: `CommissionRequest` reserved 8,9 (`device_address`,`device_port`) + added `bool short_discriminator = 10`; added `CommissionEvent {seq, stage, failed, detail}`; `ThreadJoinRequest`/`ThreadJoinResult` synced into the other two checkouts. Regenerated via `make c` / `PATH=$PATH:$HOME/.pub-cache/bin make dart`.
+
+   **Firmware:**
+   - `firmware/main/matter/flux_commission.cpp` — removed direct-PASE-to-phone-address branch; added SRP-table lookup (`otSrpServerGetNextHost`/`HostGetNextService`/`ServiceGetTxtData`, `txt_find_discriminator`, prefers OMR over mesh-local), 2s `srp_poll_cb`, `disc_matches()` for short discriminators, `start_pase()` shared by both lookups, `pase_started` race guard, idempotency cache re-keyed to passcode+discriminator, `OnCommissioningStatusUpdate` emitting stages.
+   - `firmware/main/events/flux_events.{h,c}` — added `flux_events_emit_commission(stage, failed, detail)` + sink field.
+   - `firmware/main/coap/flux_coap_internal.h` — `NOTIFY_TYPE_COMMISSION_PROGRESS 6`, `cp_stage[40]/cp_failed/cp_detail[64]`, `commission_progress_t`.
+   - `firmware/main/coap/flux_coap_notify.c` — `s_cm_events_resource`, `s_cm_progress`, drain case, `flux_coap_notify_commission_progress`.
+   - `firmware/main/coap/flux_coap_handlers.c` — `hnd_commission_events_get`. **Critical fix**: originally used stack buffer + `coap_add_data_blocked_response` → heap corruption; now uses `coap_send_proto` (owned copy).
+   - Build: `cd firmware && source esp-env.sh && idf.py build`; flash requires stopping `serial_logger.py` first (it holds /dev/ttyACM0).
+
+   **App — commissioning:**
+   - `lib/providers/commissioning_controller.dart` — direct-handover path (skips Pass 1, ECM window, fabric cleanup) for on-network codes; `_subscribeControllerProgress()` feeding `▶ Stage: <name>` into `_onEvent`; stage labels `SrpLookup`/`Discovering`/`Found`; `threadNetworkName` substituted into the `LOOKING FOR DEVICE ON NETWORK` label → `WAITING FOR DEVICE ON <NAME>`; `parseThreadDatasetInfo` TLV parser; `CommissionConfig` slimmed (removed ipAddress/discriminator/setupPinCode).
+   - `lib/services/flux_coap_service.dart` — `commission()` без address; `joinThreadNetwork()`, `startThreadShare()`, `getThreadShareState()`, `stopThreadShare()`, `createThreadNetwork()` (`POST /thread/create` → `StatusResponse`, **no firmware handler yet**), `observeCommissionEvents()`; deleted `postThreadDataset`, `commissionViaIp`, `commissionViaCode`, `shareDevice`, `downloadAndFlash`, `cancelOta`, `readThreadNetworkDiagnostics`, `discoverThreadNetworks`, `discoverCommissionableNodes`.
+
+   **App — Thread UI (`lib/ui/screens/settings/thread_settings_screen.dart`, 1601 → ~760 lines):**
+   - Controller-only now (`ThreadScope` enum deleted). Current-network card shows name as title + `InfoRow`s for **Role / Channel / Devices on mesh** (PAN ID and Ext PAN ID deliberately excluded).
+   - Credential-sharing card: three **title-only, icon-free** tiles — "Join an existing network", "Share this network", "Create a new network" (always enabled).
+   - `_JoinThreadNetworkScreen`, `_ShareThreadNetworkScreen` (9-digit OTPC, 2s state poll, best-effort DELETE on exit), `_CreateThreadNetworkScreen` (copy adapts on `onNetwork`).
+
+   **App — reliability fixes (most recent code work):**
+   - `lib/services/controller_transport/isolate_transport.dart`:
+     ```dart
+     static const _deadlineSlack = Duration(seconds: 5);
+     if (_disposed) return TransportResponse.unreachable;
+     return c.future.timeout(Duration(milliseconds: r.timeoutMs) + _deadlineSlack,
+       onTimeout: () { _pending.remove(id); ... return TransportResponse.unreachable; });
+     ```
+     `dispose()` now completes all `_pending`/`_reconnects` and closes `_rx`/`_errors`/`_exits`.
+   - `lib/services/hub_connection.dart`: `_fsmInflight` + `_runFsm(tag, body)` coalescing/error-containing wrapper; `_reconnectInner`/`_tryRemoteInner` (inner calls avoid self-deadlock); `_svcGen` + `_install(svc)` (detach `onReachability` before dispose, reset streak, restart heartbeat); generation checks in `_wire` and `_probe`; heartbeat escalation `unawaited(connect())` after ≥2 failures with 30s→5min backoff; `_probeInflight` overlap guard; `_stopIce(why:)`; ICE retained + `states` monitored after connect + `port <= 0` treated as failure; connectivity watch seeds baseline on first event and detects transport regain (`_lastTypesEmpty`); metrics fields `lastConnectDuration/lastConnectAt/lastConnectOk/lastConnectKind/lastProbeRtt/lastProbeAt/lastConnectError/connectAttempts/connectFailures/probeFailStreak`.
+   - `lib/services/flux_coap_service.dart` observe retry: `_subRetryTimers`/`_subRetryAttempt`, one pending retry per node, backoff 2s→60s cap, `_disposed` re-checked at fire time, reset on data; `retryOnConnError: false` added to `/command` and `/thread/epskc`; `dispose()` sets `onReachability = null` and cancels retry timers.
+   - `lib/ui/screens/settings/connection_screen.dart` — new **LAST CONNECTION** card (attempt+age, setup time, via, heartbeat RTT+age, attempts/failures, conditional missed-beats and last-error) plus `_ms()`/`_ago()` helpers.
+   - `test_live/conn_reliability_test.dart` (new, outside `test/` so CI skips it) — T1 smoke, T2 sustained, T3 unreachable, T4 dispose-mid-flight, T5 concurrent connects, T6 controller reboot via DTR toggle. Reads host/PSK from `~/.config/flux/config.toml` — **no secret committed**.
+
+   **Most recent edit — `lib/ui/screens/settings/device_info_screen.dart`:** removed the `Fabric` row and `Thread network` row, the `fabricProvisioned` local, `_activeDataset` field, the `ThreadSettingsService.loadActive()` call, and the `thread_models.dart` + `thread_settings_service.dart` imports. Remaining rows: **Name, IP address, Firmware, Uptime, Pairing key**. Doc comment now notes Matter/Thread have their own screens.
+
+4. **Errors and fixes:**
+   - **Wrong subnet guess** (192.168.178.179) → read local IPs, used 192.168.1.x.
+   - **Stale firmware build env**: my memory said `/home/tado/workspace/esp-idf`; project needs `source firmware/esp-env.sh` (flux/esp/). Updated memory.
+   - **Deleted `ModbusRawDump`** by blind-copying proto between diverged checkouts → firmware build broke. Fixed with `git checkout` + per-checkout edits. Saved to memory.
+   - **Heap corruption / controller crash** (`CORRUPT HEAP`, `assert failed: multi_heap_free`) from giving libcoap a stack buffer in `hnd_commission_events_get` → caused the user's "stuck in Device found forever". Fixed with `coap_send_proto`.
+   - **scrcpy USB drops** (exit 2, "Device disconnected") → switched to Wi-Fi adb.
+   - **Phantom controller**: `pm clear` + fixed `_remove()` (was `clearPsk('')` no-op, then `hub.connect()` re-discovering).
+   - **sed line-range slips** during cleanup: orphaned `@override` pair in `null_matter_port.dart`/`matter_fakes.dart`; a shifted `948s` target (turned out to be a harmless no-op, verified against backup). Analyzer caught both.
+   - **Python regex over-deletion**: removed live `readSystemThreadCredentials` (restored) and `ThreadDataset` from `thread_models.dart` (restored via `git checkout`, then trimmed with `head -35`).
+   - **Heredoc pollution**: stale `flutter test` output leaked into `test_live/...dart` via `>` redirect → switched to the Write tool.
+   - **T4 false pass**: request completed in 3ms before `dispose()`, so the race was never exercised. Retargeted at unreachable host `192.0.2.1` → it then HUNG 40s, confirming the defect. I explicitly documented this in the test comment.
+   - **Two self-corrections I volunteered**: (a) my claim that the 21.5s handshake cliff "exceeds the app's 15s timeout" was overstated — the app's Dart client peaks at ~1.2s at n=8; the 16-21s figures came from the Python harness's retransmit backoff. (b) The audit's "app stays offline indefinitely after hub reboot" was refuted by T6 (recovered in 17s); it only holds for a DHCP IP change.
+   - **Repeated user feedback on scope/naming**: "i meant show it waiting for device on network -> waiting for device on \<name\>"; "for 2 the app shouldn't" (push); "instead of split we should call it create".
+
+5. **Problem Solving:**
+   - Established that `/thread/create` has **no firmware handler**; deliberately did not invent a proto message (bare POST → existing `StatusResponse`).
+   - Repeatedly could not find the user's "background scanning" in the checkout; reported honestly rather than building against a guessed contract. Later found the reworked API does have `GET /thread/join` → `ThreadEphemeralList` (a poll) and `POST /devices/commissioning-window`.
+   - Dead-code review: 4 parallel agents + analyzer; cumulative cleanup 48 files, **−4,108 net lines**, 9 files deleted. Rejected false positives (`part` files, field-access-only proto types) and refused to delete shared-contract proto messages.
+   - Reliability: measured baseline (5ms reuse / 28ms fresh handshake / concurrent-handshake cliff at 4), proved the orphaned-request defect, fixed 11 defects across transport/FSM/service.
+
+6. **All user messages:**
+   - "can you install the app on my wireless adb device at .179:5555"
+   - "when another app shares a pairing code for commissioning and the device is already on-network, we could skip the step of commissioning it to the phone, correct?"
+   - "it also could be directly handed over to the controller, I'd like to remove the proprietary Ipv6 step anyways"
+   - "A, controller side discovery, it's implemented now" (answer to the scope question)
+   - "in the commissioning progress screen, can you also show the Thread network ID while waiting for the device appearing on the thread network"
+   - "i meant show it waiting for device on network -> waiting for device on <thread network name>"
+   - "I actually also want to see fine grained commissioning steps when the controller commissioning is ongoing, can you suggest a solution"
+   - "alright, let's go"
+   - "i wanted to commisison a device and I'm stuck in Device found forever"
+   - "can you connect to the usb attached phone vie scrcpy"
+   - "can you install the app on 179:5555" / "179:40707"
+   - "i cleaned cache and storgae, now the app thinks a controller is added, and i cant remove it with the button in controller device info"
+   - "I just added thread credentials sharing to the controller, can you make a asuggestion how and where to add it to the app"
+   - "please add that too"
+   - "i also implemented the scanning in the background on the controller, how can we use that in the app?"
+   - "B"
+   - "is the API for the poll there?"
+   - "the api is being reworked, can you also in the controller thread view remove the operational network sync, the app should always use the active controller network, and show the current thread network running on the controller"
+   - "can you review the app for dead code"
+   - "please push the current state on .179:41109 and then perform the cleanup"
+   - "for 2 the app shouldn't"
+   - "#3 delete from UI for now, loadManualOverride can be removed"
+   - "In the thread view, current network, can you shou the network name + role,channel, number of devices on mesh, not the PAN ID neither ext pan id, for credential sharing please also keep the buttons clean, no icons, show the ecosystem description after button press, can you also add functionality to split up thread networks?"
+   - "instead of split we should call it create"
+   - "can you review and test the reliability of local and remote connections to the controller and look for improvements. eg at state handling/reconnections error handling and so on, please execute tetst against the controller until you're satisfied"
+   - "ok, can you fix these"
+   - "in the connection view, acn you add last connection metrics?"
+   - "after fixing, please deploy it to both phones"
+   - "179:41687"
+   - "from device info, can you remove thread and matter stuff"
+
+7. **Pending Tasks:**
+   - **Deploy the device-info change to the second phone (A063)** — needs its current wireless-debugging port or a USB connection.
+   - Everything is **uncommitted across all three repos**, and the **three proto checkouts remain diverged** and need reconciling before committing submodule pointers.
+   - `POST /thread/create` firmware handler (offered: `otDatasetCreateNewNetwork` + `MGMT_PENDING_SET` ~30s, plain apply when no mesh).
+   - Use the new `GET /thread/join` candidate poll in the Join screen (live "who's sharing" list).
+   - Possibly restore Share-device UI against `POST /devices/commissioning-window`.
+   - Remaining reliability items (offered, not done): `_readAttrs` correlates by node id only; native ICE `stop()` use-after-free in `FluxIceBridge.kt`; rendezvous mailbox cross-talk; controller-side DTLS handshake serialization.
+   - Deferred: ~30 never-read DTO fields; native `device_state` EventChannel possibly producerless (`Provider<MatterSubscriptionPort>` never read).
+
+8. **Current Work:**
+   Immediately before this summary I completed the most recent request, "from device info, can you remove thread and matter stuff". I edited `lib/ui/screens/settings/device_info_screen.dart` to delete the `Fabric` row (Matter) and `Thread network` row, plus `_activeDataset`, the `ThreadSettingsService.loadActive()` call, the `fabricProvisioned` local, and the `thread_models.dart` / `thread_settings_service.dart` imports; the doc comment now explains Matter/Thread have dedicated screens. Verified remaining rows are Name / IP address / Firmware / Uptime / Pairing key, analyzer 0 errors+warnings, 92/92 tests. I checked the second, per-device `DeviceInfoScreen` in `device_settings_screen.dart` and deliberately left it alone because its rows (Product, Vendor, Product ID, Hardware, Node ID, Serial no., Product URL) are the screen's substance. I built the APK and installed to the **Pixel 6 over USB (success)**, but the second phone failed: `failed to connect to '192.168.1.179:41687': Connection refused` — its wireless-debugging port had rotated again (it had accepted 41687 minutes earlier for the reliability build, so that build *is* on it, but not this device-info change). I reported this and asked for the current port or a USB connection.
+
+9. **Optional Next Step:**
+   Install the current APK to the second phone once the user supplies its port. From my last message: *"Give me the current port from the phone's Wireless debugging screen and I'll push it, or plug it in over USB and I'll install to both."* No other work should start without confirmation, since the device-info request is complete and all remaining items were explicitly offered but not accepted.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/tado/.claude/projects/-home-tado-workspace-flux-flux-app/9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
