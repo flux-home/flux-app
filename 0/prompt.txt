@@ -1,0 +1,1 @@
+i cleaned cache and storgae, now the app thinks a controller is added, and i cant remove it with the button in controller device info
