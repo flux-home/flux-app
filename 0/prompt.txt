@@ -1,0 +1,1 @@
+[Image #3] please use this asset, make th ebackground transparent and add pastel overlays, only for the assigned assets, remove the interactivity from the overlays, just show the current value, to make it clear, use the picture instead of svg
