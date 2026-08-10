@@ -1,0 +1,1 @@
+Device info screen shows Thread as Network type for all assets, can you fix it to show modbus, wifi, thread
