@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxbvpb0su</task-id>
+<tool-use-id>toolu_01YSx6iBreGeuDLQuUXNT6Dy</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f/tasks/bxbvpb0su.output</output-file>
+<status>failed</status>
+<summary>Background command "Launch scrcpy mirroring the USB Pixel 6" failed with exit code 2</summary>
+</task-notification>
