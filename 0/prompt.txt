@@ -1,0 +1,1 @@
+can you review and test the reliability of local and remote connections to the controller and look for improvements. eg at state handling/reconnections error handling and so on, please execute tetst against the controller until you're satisfied
