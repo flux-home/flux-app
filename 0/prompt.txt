@@ -1,0 +1,9 @@
+can you suggest where in the architecture rooms should live?
+
+---
+
+ok, then let's go forward with dev_id, we should have node_id and type as 2 selection criterisa
+
+---
+
+app is not released yet

@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZPQMHWPM7616D7579K1SW0Y",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "flux-interface",
+    "lib/services/proto/flux.pb.dart",
+    "lib/services/proto/flux.pbenum.dart",
+    "lib/services/proto/flux.pbjson.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 360,
+    "cache_creation_tokens": 226441,
+    "cache_read_tokens": 105669855,
+    "output_tokens": 101078,
+    "api_call_count": 180
+  }
+}
