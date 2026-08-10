@@ -1,0 +1,1 @@
+the api is being reworked, can you also in the controller thread view remove the operational network sync, the app should always use the active controller network, and show the current thread network running on the controller
