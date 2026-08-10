@@ -1,0 +1,1 @@
+I have a tado thermostat connected in the app, but i only see humidity values no thermostat controls , device is 229:43379
