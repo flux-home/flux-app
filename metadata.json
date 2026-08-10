@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZNZH46DFBT66QFSRMGC41RE",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "lib/models/thread_models.dart",
+    "lib/services/flux_coap_service.dart",
+    "lib/services/thread_settings_service.dart",
+    "lib/services/thread_sync_service.dart",
+    "lib/ui/screens/device_detail_screen.dart",
+    "lib/ui/screens/device_settings_screen.dart",
+    "lib/ui/screens/settings/device_info_screen.dart",
+    "lib/ui/screens/settings/matter_settings_screen.dart",
+    "lib/ui/screens/settings/thread_settings_screen.dart",
+    "lib/ui/screens/settings_screen.dart",
+    "test/services/thread_sync_service_test.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9029,
+    "cache_creation_tokens": 8834091,
+    "cache_read_tokens": 468901529,
+    "output_tokens": 880434,
+    "api_call_count": 1041
+  }
+}
