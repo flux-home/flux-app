@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b2pdbg5wp</task-id>
+<tool-use-id>toolu_01NU65C6sFbfD9qCskrEUdUc</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/5934f94a-d68c-4874-8ef0-ce61e69f1ae2/tasks/b2pdbg5wp.output</output-file>
+<status>failed</status>
+<summary>Background command "Relaunch scrcpy with notice disabled" failed with exit code 2</summary>
+</task-notification>
