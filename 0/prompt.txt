@@ -1,0 +1,1 @@
+Istill have to think about that, but I'd really liek to change that none-Matter devices are using nodeid asidentifiers, can you make a suggestion how to change that? grill me
