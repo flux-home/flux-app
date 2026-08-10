@@ -112,9 +112,6 @@ class MainActivity : FlutterActivity() {
         channel.setMethodCallHandler { call, result ->
                 Log.d(TAG, "← ${call.method}")
                 when (call.method) {
-                    "ping" ->
-                        bridge.ping(result)
-
                     "commissionDevice" -> {
                         val payload          = call.argument<String>("payload") ?: ""
                         val wifiSsid         = call.argument<String>("wifiSsid")
@@ -123,23 +120,6 @@ class MainActivity : FlutterActivity() {
                         val nodeId           = call.nodeIdArg()
                                                ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
                         bridge.commissionDevice(payload, wifiSsid, wifiPassword, threadDatasetHex, nodeId, result)
-                    }
-
-                    "commissionViaIp" -> {
-                        val ip      = call.argument<String>("ipAddress") ?: ""
-                        val port    = call.argument<Int>("port") ?: 5540
-                        val disc    = call.argument<Int>("discriminator") ?: 0
-                        val pin     = call.argument<Int>("setupPinCode")?.toLong() ?: 0L
-                        val nodeId  = call.nodeIdArg()
-                                      ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
-                        bridge.commissionViaIp(ip, port, disc, pin, nodeId, result)
-                    }
-
-                    "commissionViaCode" -> {
-                        val setupCode = call.argument<String>("setupCode") ?: ""
-                        val nodeId    = call.nodeIdArg()
-                                        ?: (System.currentTimeMillis() and 0xFFFF_FFFFL)
-                        bridge.commissionViaCode(setupCode, nodeId, result)
                     }
 
                     "readBasicInfo" -> {
@@ -158,11 +138,6 @@ class MainActivity : FlutterActivity() {
                         bridge.readPartsList(nodeId, result)
                     }
 
-                    "readThreadNetworkDiagnostics" -> {
-                        val nodeId = call.nodeIdArg() ?: 0L
-                        bridge.readThreadNetworkDiagnostics(nodeId, result)
-                    }
-
                     "readClusters" -> {
                         val nodeId = call.nodeIdArg() ?: 0L
                         bridge.readClusters(nodeId, result)
@@ -178,19 +153,6 @@ class MainActivity : FlutterActivity() {
                         bridge.readFabrics(nodeId, result)
                     }
 
-                    "downloadAndFlash" -> {
-                        val nodeId              = call.nodeIdArg() ?: 0L
-                        val otaUrl              = call.argument<String>("otaUrl") ?: ""
-                        val targetVersion       = call.argument<String>("targetVersion")
-                                                    ?.toLongOrNull() ?: 0L
-                        val targetVersionString = call.argument<String>("targetVersionString") ?: ""
-                        val dryRun              = call.argument<Boolean>("dryRun") ?: false
-                        val endpoint            = call.argument<Int>("endpoint") ?: 0
-                        bridge.downloadAndFlash(nodeId, otaUrl, targetVersion, targetVersionString, dryRun, endpoint, result)
-                    }
-
-                    "cancelOta" -> bridge.cancelOta(result)
-
                     "identify" -> {
                         val nodeId  = call.nodeIdArg() ?: 0L
                         val seconds = call.argument<Int>("seconds") ?: 15
@@ -201,8 +163,7 @@ class MainActivity : FlutterActivity() {
                         val nodeId    = call.nodeIdArg() ?: 0L
                         val vendorId  = call.argument<Int>("vendorId")  ?: 0
                         val productId = call.argument<Int>("productId") ?: 0
-                        val awaitReachable = call.argument<Boolean>("awaitReachable") ?: true
-                        bridge.openCommissioningWindow(nodeId, vendorId, productId, awaitReachable, result)
+                        bridge.openCommissioningWindow(nodeId, vendorId, productId, result)
                     }
 
                     "removeFabric" -> {
@@ -222,16 +183,10 @@ class MainActivity : FlutterActivity() {
                     "readSystemThreadCredentials" ->
                         AndroidThreadCredentialReader.requestPreferredCredentials(this, result)
 
-                    "discoverThreadNetworks" -> bridge.discoverThreadNetworks(result)
-
-                    "runNetworkDiagnostics" -> bridge.runNetworkDiagnostics(result)
-
                     "parsePayload" -> {
                         val payload = call.argument<String>("payload") ?: ""
                         bridge.parsePayload(payload, result)
                     }
-
-                    "exportFabricForController" -> bridge.exportFabricForController(result)
 
                     "provideCredentials" -> {
                         val ssid     = call.argument<String?>("ssid")
@@ -246,12 +201,6 @@ class MainActivity : FlutterActivity() {
 
                     "getFabricId" ->
                         bridge.getFabricId(result)
-
-                    "getVendorId" ->
-                        bridge.getVendorId(result)
-
-                    "discoverCommissionableNodes" ->
-                        bridge.discoverCommissionableNodes(result)
 
                     else ->
                         result.notImplemented()

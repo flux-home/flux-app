@@ -44,14 +44,12 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
   /// Result of [removeFabric].
   bool removeFabricResult = true;
 
-  /// Invoked inside commissionDevice / commissionViaIp / commissionViaCode.
+  /// Invoked inside commissionDevice.
   Future<void> Function()? onCommission;
 
   // ── Recorded calls ────────────────────────────────────────────────────────
   int parseCallCount = 0;
   int commissionDeviceCalls = 0;
-  int commissionViaIpCalls = 0;
-  int commissionViaCodeCalls = 0;
   int openWindowCalls = 0;
   int readFabricsCalls = 0;
   final List<({int nodeId, int fabricIndex})> removeFabricCalls = [];
@@ -59,9 +57,6 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
   String? lastWifiSsid;
   String? lastWifiPassword;
   String? lastThreadDatasetHex;
-  String? lastIpAddress;
-  int? lastDiscriminator;
-  int? lastSetupPinCode;
 
   // provideCredentials capture + a future tests can await.
   int provideCredentialsCalls = 0;
@@ -90,28 +85,6 @@ class FakeMatterCommissionPort implements MatterCommissionPort {
     lastWifiSsid = wifiSsid;
     lastWifiPassword = wifiPassword;
     lastThreadDatasetHex = threadDatasetHex;
-    if (onCommission != null) await onCommission!();
-    return commissionResult;
-  }
-
-  @override
-  Future<CommissionResult> commissionViaIp({
-    required String ipAddress,
-    required int discriminator,
-    required int setupPinCode,
-    int port = 5540,
-  }) async {
-    commissionViaIpCalls++;
-    lastIpAddress = ipAddress;
-    lastDiscriminator = discriminator;
-    lastSetupPinCode = setupPinCode;
-    if (onCommission != null) await onCommission!();
-    return commissionResult;
-  }
-
-  @override
-  Future<CommissionResult> commissionViaCode({required String setupCode}) async {
-    commissionViaCodeCalls++;
     if (onCommission != null) await onCommission!();
     return commissionResult;
   }
@@ -231,12 +204,26 @@ class FakeFluxCoapService extends FluxCoapService {
   /// When false, [commission] returns null (transport failure).
   bool commissionReturnsResult = true;
 
+  /// Node id the controller "assigns" when the request passes nodeId 0.
+  int assignedNodeId = 0x42;
+
+  /// Controllable /commission/events progress stream (observeCommissionEvents).
+  final commissionProgressCtrl =
+      StreamController<$proto.CommissionEvent>.broadcast();
+
+  /// Invoked inside [commission] before returning — lets a test emit progress
+  /// events while the handoff is "in flight".
+  Future<void> Function()? onCommission;
+
   int getThreadDatasetCalls = 0;
   int commissionCalls = 0;
   int? commissionedNodeId;
   String? commissionedName;
   int? commissionedPasscode;
   int? commissionedDiscriminator;
+  bool? commissionedShortDiscriminator;
+  int? commissionedVendorId;
+  int? commissionedProductId;
   int? commissionedDeviceType;
 
   @override
@@ -249,27 +236,34 @@ class FakeFluxCoapService extends FluxCoapService {
   Future<$proto.CommissionResult?> commission({
     required int passcode,
     required int discriminator,
+    bool shortDiscriminator = false,
     int nodeId = 0,
     String name = '',
     int vendorId = 0,
     int productId = 0,
     int deviceType = 0,
-    String deviceAddress = '',
-    int devicePort = 0,
   }) async {
     commissionCalls++;
     commissionedNodeId = nodeId;
     commissionedName = name;
     commissionedPasscode = passcode;
     commissionedDiscriminator = discriminator;
+    commissionedShortDiscriminator = shortDiscriminator;
+    commissionedVendorId = vendorId;
+    commissionedProductId = productId;
     commissionedDeviceType = deviceType;
+    if (onCommission != null) await onCommission!();
     if (!commissionReturnsResult) return null;
     return $proto.CommissionResult()
       ..success = commissionSuccess
-      ..nodeId = Int64(nodeId)
+      ..nodeId = Int64(nodeId == 0 ? assignedNodeId : nodeId)
       ..fabricId = Int64(commissionFabricId)
       ..error = commissionError;
   }
+
+  @override
+  Stream<$proto.CommissionEvent> observeCommissionEvents() =>
+      commissionProgressCtrl.stream;
 }
 
 /// Builds a [ParsedPayload] with sensible defaults for tests.

@@ -5,6 +5,7 @@ import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/commissioning_controller.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' show CommissionEvent;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/commissioning_fakes.dart';
@@ -121,7 +122,8 @@ void main() {
       expect(svc.commissionCalls, 1);
       expect(svc.commissionedPasscode, 0x4D2);
       expect(svc.commissionedDiscriminator, 0x2A);
-      expect(svc.commissionedNodeId, 0x1234);
+      // nodeId 0 = the controller assigns the device's id on its own fabric.
+      expect(svc.commissionedNodeId, 0);
       // Safety gate read the fabrics, then removed the phone's own fabric (idx 1).
       expect(port.readFabricsCalls, 1);
       expect(port.removeFabricCalls, [(nodeId: 0x1234, fabricIndex: 1)]);
@@ -130,6 +132,28 @@ void main() {
       expect(c.result, isNotNull);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('last_matter_qr_payload'), isNull);
+    });
+
+    test('waiting-on-network stage names the Thread network', () async {
+      final svc = FakeFluxCoapService()
+        ..threadDatasetHexResult = '0309666C75782D686F6D65'; // name "flux-home"
+      port.fabricsResult = [_fab(2, '0xCAFE'), _fab(1, '0x0000000000000001')];
+      final c = build(controllerService: svc);
+      await setParsed(c);
+      port.onCommission = () async {
+        port.emit('▶ Stage: FindOperationalForStayActive');
+        await Future<void>.delayed(Duration.zero); // let the listener run
+      };
+
+      await c.start(const CommissionConfig(
+          method: CommissionMethod.ble, netType: 0));
+
+      expect(c.threadNetworkName, 'flux-home');
+      expect(c.humanLog.map((e) => e.text),
+          contains('WAITING FOR DEVICE ON FLUX-HOME'));
+      // The generic label must have been replaced, not duplicated.
+      expect(c.humanLog.map((e) => e.text),
+          isNot(contains('LOOKING FOR DEVICE ON NETWORK')));
     });
 
     test('window open fails → no handoff, phase failed', () async {
@@ -338,38 +362,95 @@ void main() {
     });
   });
 
-  // ── IP / on-network paths ─────────────────────────────────────────────────────
+  // ── Direct handover (device already on-network) ───────────────────────────────
 
-  group('start (IP)', () {
-    test('no IP address → commissionViaCode (DNS-SD discovery)', () async {
+  group('start (direct handover)', () {
+    test('forwards the pairing code to the controller — phone never commissions',
+        () async {
       final svc = FakeFluxCoapService();
       final c = build(controllerService: svc);
       await setParsed(c);
 
       await c.start(const CommissionConfig(method: CommissionMethod.ip));
 
-      expect(port.commissionViaCodeCalls, 1);
-      expect(port.commissionViaIpCalls, 0);
+      // The pairing code goes straight to POST /commission …
+      expect(svc.commissionCalls, 1);
+      expect(svc.commissionedPasscode, 20202021);
+      expect(svc.commissionedDiscriminator, 3840);
+      expect(svc.commissionedShortDiscriminator, false);
+      expect(svc.commissionedVendorId, 0xFFF1);
+      // … and the phone SDK is never involved: no Pass-1, no ECM window,
+      // no fabric cleanup.
+      expect(port.commissionDeviceCalls, 0);
+      expect(port.openWindowCalls, 0);
+      expect(port.readFabricsCalls, 0);
+      expect(port.removeFabricCalls, isEmpty);
+
+      expect(provider.registeredManagedBy, ManagedBy.controller);
+      expect(provider.registeredResult?.nodeId, svc.assignedNodeId);
       expect(provider.registeredNetworkType, NetworkType.ethernet);
       expect(c.phase, CommissionPhase.done);
     });
 
-    test('explicit IP → commissionViaIp with discriminator/pin', () async {
+    test('manual code → short_discriminator flag set', () async {
+      final svc = FakeFluxCoapService();
+      final c = build(controllerService: svc);
+      port.parsedResult = ParsedPayload(
+        vendorId: 0,
+        productId: 0,
+        discriminator: 0xF, // 4-bit short code from an 11-digit manual code
+        hasShortDiscriminator: true,
+        discoveryCapabilities: const [], // manual codes carry no capability bits
+        setupPinCode: 11223344,
+      );
+      await c.setPayload('11223344556');
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ip));
+
+      expect(svc.commissionCalls, 1);
+      expect(svc.commissionedPasscode, 11223344);
+      expect(svc.commissionedDiscriminator, 0xF);
+      expect(svc.commissionedShortDiscriminator, true);
+    });
+
+    test('controller stage events drive the progress track', () async {
       final svc = FakeFluxCoapService();
       final c = build(controllerService: svc);
       await setParsed(c);
+      svc.onCommission = () async {
+        svc.commissionProgressCtrl
+          ..add(CommissionEvent(seq: 1, stage: 'SrpLookup'))
+          ..add(CommissionEvent(seq: 2, stage: 'Found', detail: '[fd12::1]:5540'))
+          ..add(CommissionEvent(seq: 3, stage: 'SendNOC'));
+        await Future<void>.delayed(Duration.zero); // let the listener run
+      };
 
-      await c.start(const CommissionConfig(
-        method: CommissionMethod.ip,
-        ipAddress: '10.0.0.5',
-        discriminator: 1234,
-        setupPinCode: 11223344,
-      ));
+      await c.start(const CommissionConfig(method: CommissionMethod.ip));
 
-      expect(port.commissionViaIpCalls, 1);
-      expect(port.lastIpAddress, '10.0.0.5');
-      expect(port.lastDiscriminator, 1234);
-      expect(port.lastSetupPinCode, 11223344);
+      final human = c.humanLog.map((e) => e.text).toList();
+      expect(human, containsAllInOrder(<String>[
+        'CONTROLLER COMMISSIONING',
+        'SEARCHING THREAD MESH',
+        'DEVICE FOUND',
+        'INSTALL ID', // SendNOC via the shared stage table
+      ]));
+      // stageIdx advanced to the real controller stage.
+      expect(c.stageIdx, kCommissionStages.indexOf('SendNOC'));
+      expect(c.phase, CommissionPhase.done);
+    });
+
+    test('controller failure → failed, nothing registered', () async {
+      final svc = FakeFluxCoapService()
+        ..commissionSuccess = false
+        ..commissionError = 'no commissionable node found';
+      final c = build(controllerService: svc);
+      await setParsed(c);
+
+      await c.start(const CommissionConfig(method: CommissionMethod.ip));
+
+      expect(c.phase, CommissionPhase.failed);
+      expect(c.error, contains('no commissionable node found'));
+      expect(provider.registerCalls, 0);
     });
   });
 
@@ -441,6 +522,29 @@ void main() {
       expect(CommissioningController.suggestNetType(p, threadDataset: 'AABB'), 0);
       // No thread info → None (learned later from onReadCommissioningInfo).
       expect(CommissioningController.suggestNetType(p), 2);
+    });
+  });
+
+  group('parseThreadDatasetInfo', () {
+    test('extracts network name + extended PAN ID from dataset TLVs', () {
+      // 0x02 (ext PAN, 8B: DEAD00BEEF00CAFE) + 0x03 (name, "flux-home").
+      const hex = '0208DEAD00BEEF00CAFE0309666C75782D686F6D65';
+      final info = CommissioningController.parseThreadDatasetInfo(hex);
+      expect(info, isNotNull);
+      expect(info!.name, 'flux-home');
+      expect(info.extPanId, 'DEAD00BEEF00CAFE');
+    });
+
+    test('unknown TLVs are skipped; garbage returns null', () {
+      // 0x00 (channel-ish, 3B) followed by name only.
+      const hex = '000300000F03026869'; // name "hi"
+      final info = CommissioningController.parseThreadDatasetInfo(hex);
+      expect(info?.name, 'hi');
+      expect(info?.extPanId, isNull);
+
+      expect(CommissioningController.parseThreadDatasetInfo('zz'), isNull);
+      expect(CommissioningController.parseThreadDatasetInfo(''), isNull);
+      expect(CommissioningController.parseThreadDatasetInfo('01020304'), isNull);
     });
   });
 }

@@ -460,6 +460,218 @@ class ThreadEphemeralKeyResult extends $pb.GeneratedMessage {
   void clearError() => $_clearField(5);
 }
 
+/// POST /thread/join
+/// Thread 1.4 credential sharing — JOIN side. flux acts as a MeshCoP commissioner
+/// against a foreign Border Router's ephemeral-key (ePSKc) session: connects over
+/// DTLS (EC-JPAKE, password = the ephemeral key), retrieves the Active Operational
+/// Dataset, and returns it. With apply/migrate set, flux also adopts the network.
+/// target_addr/port identify the foreign Border Agent (discoverable via
+/// _meshcop-e._udp); ephemeral_key is the code shown by that ecosystem's app.
+class ThreadJoinRequest extends $pb.GeneratedMessage {
+  factory ThreadJoinRequest({
+    $core.String? targetAddr,
+    $core.int? targetPort,
+    $core.String? ephemeralKey,
+    $core.bool? apply,
+    $core.bool? migrate,
+    $core.int? delayMs,
+  }) {
+    final result = create();
+    if (targetAddr != null) result.targetAddr = targetAddr;
+    if (targetPort != null) result.targetPort = targetPort;
+    if (ephemeralKey != null) result.ephemeralKey = ephemeralKey;
+    if (apply != null) result.apply = apply;
+    if (migrate != null) result.migrate = migrate;
+    if (delayMs != null) result.delayMs = delayMs;
+    return result;
+  }
+
+  ThreadJoinRequest._();
+
+  factory ThreadJoinRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadJoinRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadJoinRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'targetAddr')
+    ..aI(2, _omitFieldNames ? '' : 'targetPort', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(3, _omitFieldNames ? '' : 'ephemeralKey')
+    ..aOB(4, _omitFieldNames ? '' : 'apply')
+    ..aOB(5, _omitFieldNames ? '' : 'migrate')
+    ..aI(6, _omitFieldNames ? '' : 'delayMs', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadJoinRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadJoinRequest copyWith(void Function(ThreadJoinRequest) updates) =>
+      super.copyWith((message) => updates(message as ThreadJoinRequest))
+          as ThreadJoinRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadJoinRequest create() => ThreadJoinRequest._();
+  @$core.override
+  ThreadJoinRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadJoinRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadJoinRequest>(create);
+  static ThreadJoinRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get targetAddr => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set targetAddr($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasTargetAddr() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTargetAddr() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get targetPort => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set targetPort($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTargetPort() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTargetPort() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get ephemeralKey => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set ephemeralKey($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasEphemeralKey() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearEphemeralKey() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.bool get apply => $_getBF(3);
+  @$pb.TagNumber(4)
+  set apply($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasApply() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearApply() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.bool get migrate => $_getBF(4);
+  @$pb.TagNumber(5)
+  set migrate($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasMigrate() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearMigrate() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get delayMs => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set delayMs($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasDelayMs() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearDelayMs() => $_clearField(6);
+}
+
+class ThreadJoinResult extends $pb.GeneratedMessage {
+  factory ThreadJoinResult({
+    $core.bool? success,
+    $core.List<$core.int>? tlv,
+    $core.String? networkName,
+    $core.String? error,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    if (tlv != null) result.tlv = tlv;
+    if (networkName != null) result.networkName = networkName;
+    if (error != null) result.error = error;
+    return result;
+  }
+
+  ThreadJoinResult._();
+
+  factory ThreadJoinResult.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadJoinResult.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadJoinResult',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..a<$core.List<$core.int>>(
+        2, _omitFieldNames ? '' : 'tlv', $pb.PbFieldType.OY)
+    ..aOS(3, _omitFieldNames ? '' : 'networkName')
+    ..aOS(4, _omitFieldNames ? '' : 'error')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadJoinResult clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadJoinResult copyWith(void Function(ThreadJoinResult) updates) =>
+      super.copyWith((message) => updates(message as ThreadJoinResult))
+          as ThreadJoinResult;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadJoinResult create() => ThreadJoinResult._();
+  @$core.override
+  ThreadJoinResult createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadJoinResult getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadJoinResult>(create);
+  static ThreadJoinResult? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get tlv => $_getN(1);
+  @$pb.TagNumber(2)
+  set tlv($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTlv() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTlv() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get networkName => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set networkName($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasNetworkName() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearNetworkName() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get error => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set error($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasError() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearError() => $_clearField(4);
+}
+
 /// POST /fabric/provision
 /// App installs the controller's operational Matter identity.
 /// All certs must be X.509 DER encoded; the CHIP stack converts them to Matter TLV
@@ -886,18 +1098,31 @@ class MfgProvisionResult extends $pb.GeneratedMessage {
 }
 
 /// POST /commission
-/// Commission-then-handoff (standard Matter multi-admin).  The phone has already
-/// BLE-commissioned the device onto a throwaway phone fabric and pushed the hub's
-/// Thread credentials, then opened an Enhanced Commissioning Method (ECM) window
-/// on the device.  It hands the controller the window's passcode + discriminator;
-/// the controller discovers the device over Thread (commissionable DNS-SD),
-/// performs PASE, and commissions it onto the controller's *own* fabric with its
-/// own CA — so no device CSR ever leaves the controller and /fabric/sign-noc is
-/// not needed.  On success the controller has an operational session and registers
-/// + subscribes the device itself (no separate /node/register call required).
+/// Hand a commissionable device to the controller (standard Matter flow — the
+/// controller does its own discovery, PASE and commissioning onto its *own*
+/// fabric with its own CA, so no device CSR ever leaves the controller and
+/// /fabric/sign-noc is not needed).  On success the controller has an
+/// operational session and registers + subscribes the device itself (no
+/// separate /node/register call required).  Two ways in:
 ///
-/// The phone then verifies the device's Fabrics attribute shows fabric_id before
-/// removing its throwaway fabric (RemoveFabric).  See docs/flows.md.
+///  * Direct handover (device already on the network): the user got a pairing
+///    code from another ecosystem's share flow (multi-admin) or the device is
+///    a factory-fresh on-network device.  The phone forwards the code's
+///    passcode + discriminator verbatim — it never commissions the device
+///    itself.  Manual 11-digit codes only carry the 4-bit short discriminator;
+///    set short_discriminator so the controller matches on the high nibble.
+///
+///  * Commission-then-handoff (device needs network credentials): the phone
+///    BLE-commissions the device onto a throwaway phone fabric, pushes the
+///    hub's Thread credentials, opens an ECM window and forwards the window's
+///    passcode + full 12-bit discriminator.  The phone then verifies the
+///    device's Fabrics attribute shows fabric_id before removing its
+///    throwaway fabric (RemoveFabric).  See docs/flows.md.
+///
+/// The controller locates the device itself: commissionable DNS-SD on the LAN,
+/// plus its own SRP server table for devices on its Thread mesh (the OTBR's
+/// SRP->mDNS proxy strips the discriminator/CM TXT, so the mDNS echo of its
+/// own registrations is unusable — the SRP table is the authoritative source).
 class CommissionRequest extends $pb.GeneratedMessage {
   factory CommissionRequest({
     $core.int? passcode,
@@ -907,8 +1132,7 @@ class CommissionRequest extends $pb.GeneratedMessage {
     $core.int? vendorId,
     $core.int? productId,
     $core.int? deviceType,
-    $core.String? deviceAddress,
-    $core.int? devicePort,
+    $core.bool? shortDiscriminator,
   }) {
     final result = create();
     if (passcode != null) result.passcode = passcode;
@@ -918,8 +1142,8 @@ class CommissionRequest extends $pb.GeneratedMessage {
     if (vendorId != null) result.vendorId = vendorId;
     if (productId != null) result.productId = productId;
     if (deviceType != null) result.deviceType = deviceType;
-    if (deviceAddress != null) result.deviceAddress = deviceAddress;
-    if (devicePort != null) result.devicePort = devicePort;
+    if (shortDiscriminator != null)
+      result.shortDiscriminator = shortDiscriminator;
     return result;
   }
 
@@ -945,8 +1169,7 @@ class CommissionRequest extends $pb.GeneratedMessage {
     ..aI(5, _omitFieldNames ? '' : 'vendorId', fieldType: $pb.PbFieldType.OU3)
     ..aI(6, _omitFieldNames ? '' : 'productId', fieldType: $pb.PbFieldType.OU3)
     ..aI(7, _omitFieldNames ? '' : 'deviceType', fieldType: $pb.PbFieldType.OU3)
-    ..aOS(8, _omitFieldNames ? '' : 'deviceAddress')
-    ..aI(9, _omitFieldNames ? '' : 'devicePort', fieldType: $pb.PbFieldType.OU3)
+    ..aOB(10, _omitFieldNames ? '' : 'shortDiscriminator')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1031,28 +1254,14 @@ class CommissionRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(7)
   void clearDeviceType() => $_clearField(7);
 
-  /// The device's commissionable IPv6 + port, as the phone resolved them from
-  /// its own mDNS scan of the open ECM window. When set, the controller PASEs
-  /// this address directly and skips DNS-SD discovery — the OTBR's SRP->mDNS
-  /// proxy strips the discriminator/CM TXT on the controller's local query, so
-  /// controller-side discovery cannot identify the device. Empty = discover.
-  @$pb.TagNumber(8)
-  $core.String get deviceAddress => $_getSZ(7);
-  @$pb.TagNumber(8)
-  set deviceAddress($core.String value) => $_setString(7, value);
-  @$pb.TagNumber(8)
-  $core.bool hasDeviceAddress() => $_has(7);
-  @$pb.TagNumber(8)
-  void clearDeviceAddress() => $_clearField(8);
-
-  @$pb.TagNumber(9)
-  $core.int get devicePort => $_getIZ(8);
-  @$pb.TagNumber(9)
-  set devicePort($core.int value) => $_setUnsignedInt32(8, value);
-  @$pb.TagNumber(9)
-  $core.bool hasDevicePort() => $_has(8);
-  @$pb.TagNumber(9)
-  void clearDevicePort() => $_clearField(9);
+  @$pb.TagNumber(10)
+  $core.bool get shortDiscriminator => $_getBF(7);
+  @$pb.TagNumber(10)
+  set shortDiscriminator($core.bool value) => $_setBool(7, value);
+  @$pb.TagNumber(10)
+  $core.bool hasShortDiscriminator() => $_has(7);
+  @$pb.TagNumber(10)
+  void clearShortDiscriminator() => $_clearField(10);
 }
 
 class CommissionResult extends $pb.GeneratedMessage {
@@ -1148,6 +1357,110 @@ class CommissionResult extends $pb.GeneratedMessage {
   $core.bool hasError() => $_has(3);
   @$pb.TagNumber(4)
   void clearError() => $_clearField(4);
+}
+
+/// GET /commission/events (CoAP Observe)
+/// Fine-grained progress of the /commission currently in flight.  A plain GET
+/// returns the LATEST event (seq 0 = nothing in flight yet); Observe
+/// notifications fire on every stage change.  seq is monotonic so the app can
+/// drop stale or duplicate notifies.  stage is a CHIP CommissioningStage name
+/// exactly as StageToString() renders it (e.g. "SendNOC", "Cleanup") — the
+/// same names the phone SDK reports during its own commissioning — or one of
+/// the controller's discovery pseudo-stages that precede PASE:
+///   "SrpLookup"     checking the controller's own SRP server table
+///   "Discovering"   commissionable DNS-SD browse on the LAN
+///   "Found"         device located (detail = address); PASE starting
+/// Only one commission runs at a time, so the stream is global.  Events are
+/// advisory (UI progress) — the POST /commission reply remains the source of
+/// truth for success/failure.
+class CommissionEvent extends $pb.GeneratedMessage {
+  factory CommissionEvent({
+    $core.int? seq,
+    $core.String? stage,
+    $core.bool? failed,
+    $core.String? detail,
+  }) {
+    final result = create();
+    if (seq != null) result.seq = seq;
+    if (stage != null) result.stage = stage;
+    if (failed != null) result.failed = failed;
+    if (detail != null) result.detail = detail;
+    return result;
+  }
+
+  CommissionEvent._();
+
+  factory CommissionEvent.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory CommissionEvent.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'CommissionEvent',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'seq', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(2, _omitFieldNames ? '' : 'stage')
+    ..aOB(3, _omitFieldNames ? '' : 'failed')
+    ..aOS(4, _omitFieldNames ? '' : 'detail')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionEvent clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  CommissionEvent copyWith(void Function(CommissionEvent) updates) =>
+      super.copyWith((message) => updates(message as CommissionEvent))
+          as CommissionEvent;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CommissionEvent create() => CommissionEvent._();
+  @$core.override
+  CommissionEvent createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static CommissionEvent getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<CommissionEvent>(create);
+  static CommissionEvent? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get seq => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set seq($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSeq() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSeq() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get stage => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set stage($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasStage() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearStage() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.bool get failed => $_getBF(2);
+  @$pb.TagNumber(3)
+  set failed($core.bool value) => $_setBool(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasFailed() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearFailed() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get detail => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set detail($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasDetail() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDetail() => $_clearField(4);
 }
 
 class Device extends $pb.GeneratedMessage {

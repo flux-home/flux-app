@@ -4,7 +4,6 @@ import android.util.Log
 import com.fluxhome.app.chip.ChipClient
 import com.fluxhome.app.chip.CommissioningException
 import com.fluxhome.app.chip.MatterCommissioner
-import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.SetupPayloadHelper
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import io.flutter.plugin.common.MethodChannel
@@ -15,8 +14,6 @@ import matter.onboardingpayload.OnboardingPayload
 import matter.onboardingpayload.QRCodeOnboardingPayloadGenerator
 
 class CommissioningBridge(private val core: BridgeCore) {
-
-    fun ping(result: MethodChannel.Result) = result.success(true)
 
     // ── Commission via BLE ────────────────────────────────────────────────────
 
@@ -49,50 +46,6 @@ class CommissioningBridge(private val core: BridgeCore) {
         }
     }
 
-    // ── Commission via IP ─────────────────────────────────────────────────────
-
-    fun commissionViaIp(
-        ipAddress: String,
-        port: Int,
-        discriminator: Int,
-        setupPinCode: Long,
-        nodeId: Long,
-        result: MethodChannel.Result,
-    ) = core.requireChip(result) {
-        val commissionedNodeId = MatterCommissioner.commissionViaIp(
-            context       = core.context,
-            ipAddress     = ipAddress,
-            port          = port,
-            discriminator = discriminator,
-            setupPinCode  = setupPinCode,
-            nodeId        = nodeId,
-            onEvent       = { msg -> Log.i(TAG, msg); core.emitEvent(msg) },
-        )
-        val deviceTypeId = readPrimaryDeviceType(core.context, commissionedNodeId)
-        core.main.post {
-            result.success(mapOf("nodeId" to commissionedNodeId, "deviceTypeId" to deviceTypeId))
-        }
-    }
-
-    // ── Commission via on-network DNS-SD (multi-admin / already-provisioned) ─────
-
-    fun commissionViaCode(
-        setupCode: String,
-        nodeId: Long,
-        result: MethodChannel.Result,
-    ) = core.requireChip(result) {
-        val commissionedNodeId = MatterCommissioner.commissionViaCode(
-            context   = core.context,
-            setupCode = setupCode,
-            nodeId    = nodeId,
-            onEvent   = { msg -> Log.i(TAG, msg); core.emitEvent(msg) },
-        )
-        val deviceTypeId = readPrimaryDeviceType(core.context, commissionedNodeId)
-        core.main.post {
-            result.success(mapOf("nodeId" to commissionedNodeId, "deviceTypeId" to deviceTypeId))
-        }
-    }
-
     // ── Remove ────────────────────────────────────────────────────────────────
 
     fun removeDevice(nodeId: Long, result: MethodChannel.Result) =
@@ -107,7 +60,6 @@ class CommissioningBridge(private val core: BridgeCore) {
         nodeId: Long,
         vendorId: Int,
         productId: Int,
-        awaitReachable: Boolean,
         result: MethodChannel.Result,
     ) = core.requireChip(result) {
         val rng           = java.security.SecureRandom()
@@ -164,47 +116,15 @@ class CommissioningBridge(private val core: BridgeCore) {
         Log.i(TAG, "ECM window open: nodeId=$nodeId disc=$discriminator " +
                    "VID=0x%04X PID=0x%04X manual=$manualCode qr=$qrCode".format(finalVendorId, finalProductId))
 
-        // Scan for the device's CM=2 mDNS advertisement to get its Thread IPv6 address.
-        // OTBR proxies the _matterc._udp PTR to Ethernet but does NOT proxy the
-        // discriminator subtype PTR (L{disc}._sub._matterc._udp).  This means CHIP's
-        // built-in discriminator-based discovery (pairing_code) never finds the device.
-        // The phone can find it via top-level _matterc._udp browse.  We return the IPv6
-        // so the firmware can use PairDevice(IP) and skip CHIP DNS-SD discovery entirely.
-        //
-        // Skipped for the commission-then-handoff path (awaitReachable=false): the
-        // controller rediscovers the device over Thread itself from the discriminator,
-        // so the phone need not block on the (slow) mDNS scan.
-        var ipv6Address = ""
-        var ipv6Port    = 0
-        if (awaitReachable) {
-            val scanStart   = System.currentTimeMillis()
-            val scanTimeout = 90_000L
-            Log.i(TAG, "Scanning for CM=2 device disc=$discriminator (up to ${scanTimeout/1000}s)...")
-            while (ipv6Address.isEmpty() && System.currentTimeMillis() - scanStart < scanTimeout) {
-                val devices = MatterCommissionableScanner.scan(core.context)
-                val match   = devices.find {
-                    it.discriminator.toInt() == discriminator &&
-                    it.commissioningMode == "EnhancedWindowOpen"
-                }
-                if (match != null) {
-                    ipv6Address = match.ipAddress
-                    ipv6Port    = match.port
-                    Log.i(TAG, "CM=2 found at $ipv6Address:$ipv6Port after ${System.currentTimeMillis()-scanStart}ms")
-                } else {
-                    Log.d(TAG, "CM=2 not found yet, ${scanTimeout-(System.currentTimeMillis()-scanStart)}ms remaining")
-                }
-            }
-            if (ipv6Address.isEmpty()) {
-                Log.w(TAG, "CM=2 device not found within ${scanTimeout/1000}s — will fallback to mDNS on controller")
-            }
-        }
-
+        // No address resolution here: the controller locates the device itself
+        // (its own SRP server table for own-mesh devices, plus a commissionable
+        // DNS-SD browse), so the phone only needs to report the window's
+        // passcode + discriminator.  This used to block on a CM=2 mDNS scan for
+        // up to 90 s to return an IPv6 address that nothing reads any more.
         core.main.post {
             result.success(mapOf(
                 "manualPairingCode" to manualCode,
                 "qrCodePayload"     to qrCode,
-                "ipv6Address"       to ipv6Address,
-                "port"              to ipv6Port,
                 "passcode"          to pin,
                 "discriminator"     to discriminator,
             ))

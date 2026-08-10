@@ -50,9 +50,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
   final _threadCtrl = TextEditingController();
   final _ssidCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  final _ipCtrl = TextEditingController();
-  final _discCtrl = TextEditingController();
-  final _pinCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   // ── Log scroll controller ─────────────────────────────────────────────────
@@ -145,9 +142,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
     _threadCtrl.dispose();
     _ssidCtrl.dispose();
     _passCtrl.dispose();
-    _ipCtrl.dispose();
-    _discCtrl.dispose();
-    _pinCtrl.dispose();
     _rawLogScrollCtrl.dispose();
     super.dispose();
   }
@@ -218,13 +212,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
           threadDataset: _threadCtrl.text,
           threadSelected: _threadExplicitlySelected,
         );
-
-        if (!p.hasShortDiscriminator && p.discriminator > 0) {
-          _discCtrl.text = p.discriminator.toString();
-        } else {
-          _discCtrl.clear();
-        }
-        if (p.setupPinCode > 0) _pinCtrl.text = p.setupPinCode.toString();
       });
 
       if (autoStart) {
@@ -424,9 +411,6 @@ class _CommissionScreenState extends State<CommissionScreen> {
         threadDatasetHex: _threadCtrl.text.trim(),
         wifiSsid: _ssidCtrl.text.trim(),
         wifiPassword: _passCtrl.text,
-        ipAddress: _ipCtrl.text.trim(),
-        discriminator: int.tryParse(_discCtrl.text) ?? 3840,
-        setupPinCode: int.tryParse(_pinCtrl.text) ?? 20202021,
       ),
     );
 
@@ -870,58 +854,18 @@ class _CommissionScreenState extends State<CommissionScreen> {
                 ),
               ],
 
-              // ── IP fields ─────────────────────────────────────────────
+              // ── Direct handover (device already on the network) ───────
               if (_ctrl.parsed != null && _method == CommissionMethod.ip) ...[
                 const SizedBox(height: 20),
-                const SectionLabel('IP commissioning', style: SectionLabelStyle.prominent),
+                const SectionLabel('Direct handover', style: SectionLabelStyle.prominent),
                 const SizedBox(height: 6),
-                // For multi-admin (already-provisioned) devices the IP is optional:
-                // leave it blank and the app discovers the device via DNS-SD
-                // (_matterc._udp) automatically.
+                // The pairing code is forwarded to the controller verbatim; the
+                // controller discovers and commissions the device on its own
+                // (SRP table / DNS-SD) — nothing to configure on the phone.
                 const Text(
-                  'Leave IP address empty to find the device automatically via DNS-SD.',
+                  'The pairing code is handed to your Flux controller, which finds '
+                  'and commissions the device on the network automatically.',
                   style: TextStyle(fontSize: 12, color: Colors.white54),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _ipCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'IP address (optional)',
-                    hintText: 'Leave empty for auto-discovery',
-                    prefixIcon: Icon(Icons.lan_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _discCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Discriminator',
-                          hintText: _ctrl.parsed?.hasShortDiscriminator ?? false
-                              ? 'Unknown - manual codes only carry 4 bits'
-                              : '${_ctrl.parsed?.discriminator ?? 3840}',
-                          border: const OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _pinCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Setup PIN',
-                          hintText: '20202021',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
                 ),
               ],
 
@@ -930,7 +874,9 @@ class _CommissionScreenState extends State<CommissionScreen> {
               FilledButton.icon(
                 onPressed: _ctrl.rawPayload != null && _ctrl.parsed != null && !_ctrl.parsing ? _commission : null,
                 icon: const Icon(Icons.add_link),
-                label: Text(_method == CommissionMethod.ble ? 'Commission via BLE' : 'Commission via IP'),
+                label: Text(_method == CommissionMethod.ble
+                    ? 'Commission via BLE'
+                    : 'Hand over to controller'),
               ),
               const SizedBox(height: 32),
             ],
@@ -2084,7 +2030,7 @@ extension on _CommissionScreenState {
               _ConnectionTile(
                 icon: Icons.lan_outlined,
                 title: 'Already on a network',
-                subtitle: 'Multi-admin / shared from another app - discovered automatically via DNS-SD',
+                subtitle: 'Multi-admin / shared from another app - the controller finds and commissions it directly',
                 onTap: () => Navigator.pop(sheetCtx, CommissionMethod.ip),
               ),
             ],

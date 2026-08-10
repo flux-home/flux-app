@@ -12,6 +12,8 @@ import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/matter_port.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' as proto
+    show CommissionEvent;
 import 'package:matter_home/services/qr_payload_service.dart';
 
 // ── Public enums ──────────────────────────────────────────────────────────────
@@ -29,18 +31,12 @@ class CommissionConfig {
     this.threadDatasetHex = '',
     this.wifiSsid = '',
     this.wifiPassword = '',
-    this.ipAddress = '',
-    this.discriminator = 3840,
-    this.setupPinCode = 20202021,
   });
   final CommissionMethod method;
   final int netType; // 0 = Thread, 1 = Wi-Fi, 2 = None
   final String threadDatasetHex;
   final String wifiSsid;
   final String wifiPassword;
-  final String ipAddress;
-  final int discriminator;
-  final int setupPinCode;
 
   CommissionConfig copyWith({
     CommissionMethod? method,
@@ -48,18 +44,12 @@ class CommissionConfig {
     String? threadDatasetHex,
     String? wifiSsid,
     String? wifiPassword,
-    String? ipAddress,
-    int? discriminator,
-    int? setupPinCode,
   }) => CommissionConfig(
     method: method ?? this.method,
     netType: netType ?? this.netType,
     threadDatasetHex: threadDatasetHex ?? this.threadDatasetHex,
     wifiSsid: wifiSsid ?? this.wifiSsid,
     wifiPassword: wifiPassword ?? this.wifiPassword,
-    ipAddress: ipAddress ?? this.ipAddress,
-    discriminator: discriminator ?? this.discriminator,
-    setupPinCode: setupPinCode ?? this.setupPinCode,
   );
 }
 
@@ -167,6 +157,11 @@ const Map<String, String> kCommissionStageHuman = {
   'FindOperationalForCommissioningComplete': 'CHECK ID',
   'SendComplete': 'FINALIZING',
   'Cleanup': 'DONE',
+  // Controller-side discovery pseudo-stages (streamed via the observable
+  // GET /commission/events while the hub commissions the device itself).
+  'SrpLookup': 'SEARCHING THREAD MESH',
+  'Discovering': 'SEARCHING NETWORK',
+  'Found': 'DEVICE FOUND',
 };
 
 // ── CommissioningController ────────────────────────────────────────────────────
@@ -218,9 +213,43 @@ class CommissioningController extends ChangeNotifier {
   MatterDevice? result;
   String? error;
 
+  /// Identity of the Thread network the device is being joined to, parsed from
+  /// the resolved dataset (BLE+Thread commissions only).  The progress screen
+  /// shows these while waiting for the device to appear on the mesh, so the
+  /// user can tell WHICH network the device is expected on.
+  String? threadNetworkName;
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   StreamSubscription<String>? _eventSub;
+  StreamSubscription<proto.CommissionEvent>? _ctrlProgressSub;
+
+  /// Streams the controller's fine-grained commissioning stages
+  /// (GET /commission/events, CoAP Observe) into the same log/track pipeline
+  /// the phone SDK feeds — the stage names are the same CHIP stage machine.
+  /// Active only while a POST /commission is in flight.
+  void _subscribeControllerProgress() {
+    _ctrlProgressSub?.cancel();
+    _ctrlProgressSub = controllerService!.observeCommissionEvents().listen((e) {
+      if (e.failed) {
+        // Terminal state is decided by the commission() reply — just log.
+        _appendRaw(
+            '✗ Controller: ${e.stage}'
+            '${e.detail.isNotEmpty ? ' — ${e.detail}' : ''}',
+            level: LogLevel.error);
+        return;
+      }
+      _onEvent('▶ Stage: ${e.stage}');
+      if (e.detail.isNotEmpty) {
+        _appendRaw('  ↳ ${e.detail}', level: LogLevel.info);
+      }
+    });
+  }
+
+  Future<void> _unsubscribeControllerProgress() async {
+    await _ctrlProgressSub?.cancel();
+    _ctrlProgressSub = null;
+  }
 
   /// Monotonically-increasing session counter.  When reset() or a new start()
   /// is called, any in-flight start() from a previous session detects the
@@ -300,6 +329,7 @@ class CommissioningController extends ChangeNotifier {
     stageIdx = -1;
     result = null;
     error = null;
+    threadNetworkName = null;
     phase = CommissionPhase.running;
     notifyListeners();
 
@@ -338,8 +368,61 @@ class CommissioningController extends ChangeNotifier {
 
     _provider.beginCommissioning();
 
-    if (cfg.method == CommissionMethod.ble) {
-      // ── BLE commissioning (phone always commissions) ──────────────────────
+    if (cfg.method == CommissionMethod.ip) {
+      // ── Direct handover (device already on the network) ────────────────────
+      // The pairing code IS the handoff: a device shared by another ecosystem
+      // (multi-admin) or a factory on-network device already has network
+      // credentials — and an open commissioning window with this code.  Forward
+      // the code's passcode + discriminator to the controller; it locates the
+      // device itself (SRP table / DNS-SD), PASEs, and commissions it onto its
+      // own fabric.  The phone never commissions the device, so there is no
+      // throwaway fabric, no ECM window to open, and no cleanup pass.  On
+      // failure the device simply stays on its current fabric (a consumed
+      // shared window means re-sharing from the source ecosystem).
+      await _eventSub?.cancel();
+      _eventSub = null;
+      _appendRaw('▶ Handing the pairing code to the controller…', level: LogLevel.step);
+      _appendHuman('CONTROLLER COMMISSIONING');
+      _subscribeControllerProgress();
+      final handoff = await controllerService!.commission(
+        passcode:           parsed!.setupPinCode,
+        discriminator:      parsed!.discriminator,
+        shortDiscriminator: parsed!.hasShortDiscriminator,
+        name:               name,
+        vendorId:           parsed!.vendorId,
+        productId:          parsed!.productId,
+      );
+      await _unsubscribeControllerProgress();
+      if (sessionId != _sessionId) return;
+      if (handoff == null || !handoff.success) {
+        final why = (handoff?.error.isNotEmpty ?? false)
+            ? handoff!.error
+            : 'the controller could not commission the device';
+        _failHandoff('Handoff failed — $why');
+        return;
+      }
+      _appendRaw('✓ Controller commissioned the device (node '
+          '0x${handoff.nodeId.toHexString().toUpperCase()})', level: LogLevel.success);
+      _appendHuman('CONTROLLER COMMISSIONED');
+
+      final device = await _provider.registerCommissionedDevice(
+        CommissionResult.ok(nodeId: handoff.nodeId.toInt()),
+        name,
+        networkType,
+        managedBy: ManagedBy.controller,
+      );
+      result = device;
+      phase = CommissionPhase.done;
+      _appendHuman('COMPLETE', color: const Color(0xFF34A853));
+      await QrPayloadService.clear();
+      notifyListeners();
+      return;
+    }
+
+    {
+      // ── BLE Pass-1 (device needs network credentials) ─────────────────────
+      // The phone commissions the device onto a throwaway fabric to push the
+      // hub's Thread (or Wi-Fi) credentials, then hands it off below.
       networkType = switch (cfg.netType) {
         0 => NetworkType.thread,
         1 => NetworkType.wifi,
@@ -371,6 +454,19 @@ class CommissioningController extends ChangeNotifier {
         threadHex = threadDataset().replaceAll(RegExp(r'\s'), '');
       }
 
+      // Surface WHICH Thread network the device is joining — shown by the
+      // progress screen while waiting for the device to appear on the mesh.
+      if (cfg.netType == 0 && threadHex.isNotEmpty) {
+        final info = parseThreadDatasetInfo(threadHex);
+        if (info != null) {
+          threadNetworkName = info.name;
+          _appendRaw(
+              '✓ Thread network "${info.name ?? '?'}"'
+              '${info.extPanId != null ? ' (ext PAN ${info.extPanId})' : ''}',
+              level: LogLevel.info);
+        }
+      }
+
       _appendRaw('▶ Connecting to device via Bluetooth…', level: LogLevel.step);
       commissionResult = switch (cfg.netType) {
         0 => await _port.commissionDevice(rawPayload!, threadDatasetHex: threadHex),
@@ -378,22 +474,6 @@ class CommissioningController extends ChangeNotifier {
                 wifiSsid: cfg.wifiSsid, wifiPassword: cfg.wifiPassword),
         _ => await _port.commissionDevice(rawPayload!),
       };
-    } else {
-      // ── IP / on-network commissioning ─────────────────────────────────────
-      networkType = NetworkType.ethernet;
-      if (cfg.ipAddress.trim().isEmpty) {
-        _appendRaw('🔍 No IP address — using DNS-SD on-network discovery…',
-            level: LogLevel.info);
-        commissionResult = await _port.commissionViaCode(setupCode: rawPayload!);
-      } else {
-        commissionResult = await _port.commissionViaIp(
-          ipAddress: cfg.ipAddress,
-          discriminator: cfg.discriminator > 0
-              ? cfg.discriminator
-              : (parsed!.discriminator > 0 ? parsed!.discriminator : 3840),
-          setupPinCode: cfg.setupPinCode,
-        );
-      }
     }
 
     await _eventSub?.cancel();
@@ -437,18 +517,18 @@ class CommissioningController extends ChangeNotifier {
     // the phone-fabric node ID through the wire (the proto field is uint64; a
     // node ID with bit 31 set must not be sign-extended). Our post-handoff
     // fabric gate uses the phone's own CASE session, not this id.
-    // device_address/port come from the phone's own mDNS scan of the open window
-    // (window.ipv6Address). The controller PASEs this directly because its own
-    // DNS-SD discovery can't identify the device over the OTBR proxy.
+    // No address is passed — the controller locates the device itself, via its
+    // own SRP server table (the device just joined the hub's Thread mesh and
+    // registered the ECM window there) with a DNS-SD browse as fallback.
+    _subscribeControllerProgress();
     final handoff = await svc.commission(
       passcode:      window.passcode,
       discriminator: window.discriminator,
       nodeId:        0,
       name:          name,
       deviceType:    commissionResult.deviceTypeId ?? 0,
-      deviceAddress: window.ipv6Address,
-      devicePort:    window.port,
     );
+    await _unsubscribeControllerProgress();
     if (sessionId != _sessionId) return;
     if (handoff == null || !handoff.success) {
       // Controller could not commission — NEVER remove our fabric; the device
@@ -534,6 +614,8 @@ class CommissioningController extends ChangeNotifier {
     _sessionId++; // invalidate in-flight start()
     _eventSub?.cancel();
     _eventSub = null;
+    _ctrlProgressSub?.cancel();
+    _ctrlProgressSub = null;
     _provider.failCommissioning(null);
     phase = CommissionPhase.idle;
     parsed = null;
@@ -545,16 +627,54 @@ class CommissioningController extends ChangeNotifier {
     stageIdx = -1;
     result = null;
     error = null;
+    threadNetworkName = null;
     notifyListeners();
   }
 
   @override
   void dispose() {
     _eventSub?.cancel();
+    _ctrlProgressSub?.cancel();
     super.dispose();
   }
 
   // ── Static helpers ────────────────────────────────────────────────────────
+
+  /// Minimal Thread operational-dataset TLV walk (type/len/value, 1-byte each
+  /// for type and len): extracts the network name (type 0x03) and extended PAN
+  /// ID (type 0x02) for display.  Returns null when [hex] is not parseable or
+  /// carries neither field.
+  static ({String? name, String? extPanId})? parseThreadDatasetInfo(String hex) {
+    final clean = hex.replaceAll(RegExp(r'\s'), '');
+    if (clean.length < 4 || clean.length.isOdd) return null;
+    final List<int> bytes;
+    try {
+      bytes = [
+        for (var i = 0; i < clean.length; i += 2)
+          int.parse(clean.substring(i, i + 2), radix: 16),
+      ];
+    } on FormatException {
+      return null;
+    }
+    String? name;
+    String? extPan;
+    var i = 0;
+    while (i + 2 <= bytes.length) {
+      final type = bytes[i];
+      final len = bytes[i + 1];
+      final end = i + 2 + len;
+      if (end > bytes.length) break;
+      final v = bytes.sublist(i + 2, end);
+      if (type == 0x03) name = String.fromCharCodes(v);
+      if (type == 0x02) {
+        extPan =
+            v.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+      }
+      i = end;
+    }
+    if (name == null && extPan == null) return null;
+    return (name: name, extPanId: extPan);
+  }
 
   static CommissionMethod suggestMethod(ParsedPayload p) =>
       (p.prefersBle || p.capabilitiesUnknown) ? CommissionMethod.ble : CommissionMethod.ip;
@@ -609,7 +729,12 @@ class CommissioningController extends ChangeNotifier {
       scheduleMicrotask(() => _handleCredentialsNeeded(false));
     }
 
-    final human = _eventToHumanText(event);
+    var human = _eventToHumanText(event);
+    // While waiting for the device to appear on the mesh, say WHICH Thread
+    // network it is expected on (name parsed from the resolved dataset).
+    if (human == 'LOOKING FOR DEVICE ON NETWORK' && threadNetworkName != null) {
+      human = 'WAITING FOR DEVICE ON ${threadNetworkName!.toUpperCase()}';
+    }
     if (human != null) {
       Color? humanColor;
       if (human == 'COMPLETE') humanColor = const Color(0xFF34A853);

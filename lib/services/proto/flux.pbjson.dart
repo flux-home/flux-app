@@ -203,6 +203,43 @@ final $typed_data.Uint8List threadEphemeralKeyResultDescriptor = $convert.base64
     'RvdHBjGAIgASgJUgRvdHBjEhkKCHVkcF9wb3J0GAMgASgNUgd1ZHBQb3J0EhQKBXN0YXRlGAQg'
     'ASgJUgVzdGF0ZRIUCgVlcnJvchgFIAEoCVIFZXJyb3I=');
 
+@$core.Deprecated('Use threadJoinRequestDescriptor instead')
+const ThreadJoinRequest$json = {
+  '1': 'ThreadJoinRequest',
+  '2': [
+    {'1': 'target_addr', '3': 1, '4': 1, '5': 9, '10': 'targetAddr'},
+    {'1': 'target_port', '3': 2, '4': 1, '5': 13, '10': 'targetPort'},
+    {'1': 'ephemeral_key', '3': 3, '4': 1, '5': 9, '10': 'ephemeralKey'},
+    {'1': 'apply', '3': 4, '4': 1, '5': 8, '10': 'apply'},
+    {'1': 'migrate', '3': 5, '4': 1, '5': 8, '10': 'migrate'},
+    {'1': 'delay_ms', '3': 6, '4': 1, '5': 13, '10': 'delayMs'},
+  ],
+};
+
+/// Descriptor for `ThreadJoinRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List threadJoinRequestDescriptor = $convert.base64Decode(
+    'ChFUaHJlYWRKb2luUmVxdWVzdBIfCgt0YXJnZXRfYWRkchgBIAEoCVIKdGFyZ2V0QWRkchIfCg'
+    't0YXJnZXRfcG9ydBgCIAEoDVIKdGFyZ2V0UG9ydBIjCg1lcGhlbWVyYWxfa2V5GAMgASgJUgxl'
+    'cGhlbWVyYWxLZXkSFAoFYXBwbHkYBCABKAhSBWFwcGx5EhgKB21pZ3JhdGUYBSABKAhSB21pZ3'
+    'JhdGUSGQoIZGVsYXlfbXMYBiABKA1SB2RlbGF5TXM=');
+
+@$core.Deprecated('Use threadJoinResultDescriptor instead')
+const ThreadJoinResult$json = {
+  '1': 'ThreadJoinResult',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+    {'1': 'tlv', '3': 2, '4': 1, '5': 12, '10': 'tlv'},
+    {'1': 'network_name', '3': 3, '4': 1, '5': 9, '10': 'networkName'},
+    {'1': 'error', '3': 4, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `ThreadJoinResult`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List threadJoinResultDescriptor = $convert.base64Decode(
+    'ChBUaHJlYWRKb2luUmVzdWx0EhgKB3N1Y2Nlc3MYASABKAhSB3N1Y2Nlc3MSEAoDdGx2GAIgAS'
+    'gMUgN0bHYSIQoMbmV0d29ya19uYW1lGAMgASgJUgtuZXR3b3JrTmFtZRIUCgVlcnJvchgEIAEo'
+    'CVIFZXJyb3I=');
+
 @$core.Deprecated('Use fabricProvisionDescriptor instead')
 const FabricProvision$json = {
   '1': 'FabricProvision',
@@ -292,9 +329,19 @@ const CommissionRequest$json = {
     {'1': 'vendor_id', '3': 5, '4': 1, '5': 13, '10': 'vendorId'},
     {'1': 'product_id', '3': 6, '4': 1, '5': 13, '10': 'productId'},
     {'1': 'device_type', '3': 7, '4': 1, '5': 13, '10': 'deviceType'},
-    {'1': 'device_address', '3': 8, '4': 1, '5': 9, '10': 'deviceAddress'},
-    {'1': 'device_port', '3': 9, '4': 1, '5': 13, '10': 'devicePort'},
+    {
+      '1': 'short_discriminator',
+      '3': 10,
+      '4': 1,
+      '5': 8,
+      '10': 'shortDiscriminator'
+    },
   ],
+  '9': [
+    {'1': 8, '2': 9},
+    {'1': 9, '2': 10},
+  ],
+  '10': ['device_address', 'device_port'],
 };
 
 /// Descriptor for `CommissionRequest`. Decode as a `google.protobuf.DescriptorProto`.
@@ -303,8 +350,8 @@ final $typed_data.Uint8List commissionRequestDescriptor = $convert.base64Decode(
     'JpbWluYXRvchgCIAEoDVINZGlzY3JpbWluYXRvchIXCgdub2RlX2lkGAMgASgEUgZub2RlSWQS'
     'EgoEbmFtZRgEIAEoCVIEbmFtZRIbCgl2ZW5kb3JfaWQYBSABKA1SCHZlbmRvcklkEh0KCnByb2'
     'R1Y3RfaWQYBiABKA1SCXByb2R1Y3RJZBIfCgtkZXZpY2VfdHlwZRgHIAEoDVIKZGV2aWNlVHlw'
-    'ZRIlCg5kZXZpY2VfYWRkcmVzcxgIIAEoCVINZGV2aWNlQWRkcmVzcxIfCgtkZXZpY2VfcG9ydB'
-    'gJIAEoDVIKZGV2aWNlUG9ydA==');
+    'ZRIvChNzaG9ydF9kaXNjcmltaW5hdG9yGAogASgIUhJzaG9ydERpc2NyaW1pbmF0b3JKBAgIEA'
+    'lKBAgJEApSDmRldmljZV9hZGRyZXNzUgtkZXZpY2VfcG9ydA==');
 
 @$core.Deprecated('Use commissionResultDescriptor instead')
 const CommissionResult$json = {
@@ -322,6 +369,22 @@ final $typed_data.Uint8List commissionResultDescriptor = $convert.base64Decode(
     'ChBDb21taXNzaW9uUmVzdWx0EhgKB3N1Y2Nlc3MYASABKAhSB3N1Y2Nlc3MSFwoHbm9kZV9pZB'
     'gCIAEoBFIGbm9kZUlkEhsKCWZhYnJpY19pZBgDIAEoBFIIZmFicmljSWQSFAoFZXJyb3IYBCAB'
     'KAlSBWVycm9y');
+
+@$core.Deprecated('Use commissionEventDescriptor instead')
+const CommissionEvent$json = {
+  '1': 'CommissionEvent',
+  '2': [
+    {'1': 'seq', '3': 1, '4': 1, '5': 13, '10': 'seq'},
+    {'1': 'stage', '3': 2, '4': 1, '5': 9, '10': 'stage'},
+    {'1': 'failed', '3': 3, '4': 1, '5': 8, '10': 'failed'},
+    {'1': 'detail', '3': 4, '4': 1, '5': 9, '10': 'detail'},
+  ],
+};
+
+/// Descriptor for `CommissionEvent`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List commissionEventDescriptor = $convert.base64Decode(
+    'Cg9Db21taXNzaW9uRXZlbnQSEAoDc2VxGAEgASgNUgNzZXESFAoFc3RhZ2UYAiABKAlSBXN0YW'
+    'dlEhYKBmZhaWxlZBgDIAEoCFIGZmFpbGVkEhYKBmRldGFpbBgEIAEoCVIGZGV0YWls');
 
 @$core.Deprecated('Use deviceDescriptor instead')
 const Device$json = {
