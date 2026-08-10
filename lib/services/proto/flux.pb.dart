@@ -672,6 +672,335 @@ class ThreadJoinResult extends $pb.GeneratedMessage {
   void clearError() => $_clearField(4);
 }
 
+/// GET /thread/join
+/// List foreign Border Agents currently advertising a Thread 1.4 ephemeral-key
+/// session (_meshcop-e._udp) — only present while the other ecosystem's Thread-
+/// sharing sheet is open. The controller (the OTBR on the mesh) browses for them.
+/// The app can show these to the user; then POST /thread/join with the code
+/// (target_addr optional — the controller re-discovers/auto-picks if omitted).
+class ThreadEphemeralCandidate extends $pb.GeneratedMessage {
+  factory ThreadEphemeralCandidate({
+    $core.String? addr,
+    $core.int? port,
+    $core.String? name,
+  }) {
+    final result = create();
+    if (addr != null) result.addr = addr;
+    if (port != null) result.port = port;
+    if (name != null) result.name = name;
+    return result;
+  }
+
+  ThreadEphemeralCandidate._();
+
+  factory ThreadEphemeralCandidate.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadEphemeralCandidate.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadEphemeralCandidate',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'addr')
+    ..aI(2, _omitFieldNames ? '' : 'port', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(3, _omitFieldNames ? '' : 'name')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralCandidate clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralCandidate copyWith(
+          void Function(ThreadEphemeralCandidate) updates) =>
+      super.copyWith((message) => updates(message as ThreadEphemeralCandidate))
+          as ThreadEphemeralCandidate;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralCandidate create() => ThreadEphemeralCandidate._();
+  @$core.override
+  ThreadEphemeralCandidate createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralCandidate getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadEphemeralCandidate>(create);
+  static ThreadEphemeralCandidate? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get addr => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set addr($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasAddr() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearAddr() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get port => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set port($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasPort() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPort() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get name => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set name($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasName() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearName() => $_clearField(3);
+}
+
+class ThreadEphemeralList extends $pb.GeneratedMessage {
+  factory ThreadEphemeralList({
+    $core.Iterable<ThreadEphemeralCandidate>? candidates,
+  }) {
+    final result = create();
+    if (candidates != null) result.candidates.addAll(candidates);
+    return result;
+  }
+
+  ThreadEphemeralList._();
+
+  factory ThreadEphemeralList.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ThreadEphemeralList.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ThreadEphemeralList',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..pPM<ThreadEphemeralCandidate>(1, _omitFieldNames ? '' : 'candidates',
+        subBuilder: ThreadEphemeralCandidate.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralList clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ThreadEphemeralList copyWith(void Function(ThreadEphemeralList) updates) =>
+      super.copyWith((message) => updates(message as ThreadEphemeralList))
+          as ThreadEphemeralList;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralList create() => ThreadEphemeralList._();
+  @$core.override
+  ThreadEphemeralList createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ThreadEphemeralList getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ThreadEphemeralList>(create);
+  static ThreadEphemeralList? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<ThreadEphemeralCandidate> get candidates => $_getList(0);
+}
+
+/// POST /devices/commissioning-window
+/// Open an Administrator Commissioning (ECM) window on a device this controller
+/// already commissioned, so ANOTHER admin/ecosystem can commission it too
+/// (Matter multi-admin). The controller generates the passcode + PAKE verifier,
+/// opens the window on the device (AdministratorCommissioning 0x3C), and returns
+/// the manual pairing code to hand to the other ecosystem.
+class OpenCommissioningWindowRequest extends $pb.GeneratedMessage {
+  factory OpenCommissioningWindowRequest({
+    $fixnum.Int64? nodeId,
+    $core.int? timeoutS,
+    $core.int? iterations,
+    $core.int? discriminator,
+  }) {
+    final result = create();
+    if (nodeId != null) result.nodeId = nodeId;
+    if (timeoutS != null) result.timeoutS = timeoutS;
+    if (iterations != null) result.iterations = iterations;
+    if (discriminator != null) result.discriminator = discriminator;
+    return result;
+  }
+
+  OpenCommissioningWindowRequest._();
+
+  factory OpenCommissioningWindowRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory OpenCommissioningWindowRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OpenCommissioningWindowRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(2, _omitFieldNames ? '' : 'timeoutS', fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'iterations', fieldType: $pb.PbFieldType.OU3)
+    ..aI(4, _omitFieldNames ? '' : 'discriminator',
+        fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OpenCommissioningWindowRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OpenCommissioningWindowRequest copyWith(
+          void Function(OpenCommissioningWindowRequest) updates) =>
+      super.copyWith(
+              (message) => updates(message as OpenCommissioningWindowRequest))
+          as OpenCommissioningWindowRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static OpenCommissioningWindowRequest create() =>
+      OpenCommissioningWindowRequest._();
+  @$core.override
+  OpenCommissioningWindowRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static OpenCommissioningWindowRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OpenCommissioningWindowRequest>(create);
+  static OpenCommissioningWindowRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get nodeId => $_getI64(0);
+  @$pb.TagNumber(1)
+  set nodeId($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasNodeId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearNodeId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get timeoutS => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set timeoutS($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasTimeoutS() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTimeoutS() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get iterations => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set iterations($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasIterations() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearIterations() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get discriminator => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set discriminator($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasDiscriminator() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDiscriminator() => $_clearField(4);
+}
+
+class OpenCommissioningWindowResult extends $pb.GeneratedMessage {
+  factory OpenCommissioningWindowResult({
+    $core.bool? success,
+    $core.String? manualCode,
+    $core.int? discriminator,
+    $core.String? error,
+  }) {
+    final result = create();
+    if (success != null) result.success = success;
+    if (manualCode != null) result.manualCode = manualCode;
+    if (discriminator != null) result.discriminator = discriminator;
+    if (error != null) result.error = error;
+    return result;
+  }
+
+  OpenCommissioningWindowResult._();
+
+  factory OpenCommissioningWindowResult.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory OpenCommissioningWindowResult.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OpenCommissioningWindowResult',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'success')
+    ..aOS(2, _omitFieldNames ? '' : 'manualCode')
+    ..aI(3, _omitFieldNames ? '' : 'discriminator',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOS(4, _omitFieldNames ? '' : 'error')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OpenCommissioningWindowResult clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OpenCommissioningWindowResult copyWith(
+          void Function(OpenCommissioningWindowResult) updates) =>
+      super.copyWith(
+              (message) => updates(message as OpenCommissioningWindowResult))
+          as OpenCommissioningWindowResult;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static OpenCommissioningWindowResult create() =>
+      OpenCommissioningWindowResult._();
+  @$core.override
+  OpenCommissioningWindowResult createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static OpenCommissioningWindowResult getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OpenCommissioningWindowResult>(create);
+  static OpenCommissioningWindowResult? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get success => $_getBF(0);
+  @$pb.TagNumber(1)
+  set success($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasSuccess() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSuccess() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get manualCode => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set manualCode($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasManualCode() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearManualCode() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get discriminator => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set discriminator($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasDiscriminator() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearDiscriminator() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get error => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set error($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasError() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearError() => $_clearField(4);
+}
+
 /// POST /fabric/provision
 /// App installs the controller's operational Matter identity.
 /// All certs must be X.509 DER encoded; the CHIP stack converts them to Matter TLV
@@ -1472,6 +1801,7 @@ class Device extends $pb.GeneratedMessage {
     $core.int? productId,
     $core.int? deviceType,
     ConnectivityState? connectivity,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -1481,6 +1811,7 @@ class Device extends $pb.GeneratedMessage {
     if (productId != null) result.productId = productId;
     if (deviceType != null) result.deviceType = deviceType;
     if (connectivity != null) result.connectivity = connectivity;
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -1506,6 +1837,8 @@ class Device extends $pb.GeneratedMessage {
     ..aI(6, _omitFieldNames ? '' : 'deviceType', fieldType: $pb.PbFieldType.OU3)
     ..aE<ConnectivityState>(7, _omitFieldNames ? '' : 'connectivity',
         enumValues: ConnectivityState.values)
+    ..aE<DeviceKind>(8, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1588,6 +1921,15 @@ class Device extends $pb.GeneratedMessage {
   $core.bool hasConnectivity() => $_has(6);
   @$pb.TagNumber(7)
   void clearConnectivity() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  DeviceKind get kind => $_getN(7);
+  @$pb.TagNumber(8)
+  set kind(DeviceKind value) => $_setField(8, value);
+  @$pb.TagNumber(8)
+  $core.bool hasKind() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearKind() => $_clearField(8);
 }
 
 /// GET /devices
@@ -1644,10 +1986,12 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
   factory RenameDeviceRequest({
     $fixnum.Int64? nodeId,
     $core.String? name,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (name != null) result.name = name;
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -1667,6 +2011,8 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1705,6 +2051,15 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
   $core.bool hasName() => $_has(1);
   @$pb.TagNumber(2)
   void clearName() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  DeviceKind get kind => $_getN(2);
+  @$pb.TagNumber(3)
+  set kind(DeviceKind value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKind() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKind() => $_clearField(3);
 }
 
 /// POST /node/register
@@ -2131,6 +2486,153 @@ class ModbusDiscovered extends $pb.GeneratedMessage {
   $pb.PbList<ModbusCandidate> get candidates => $_getList(0);
 }
 
+/// GET /modbus/rawdump?host=<ip>&unit=<id>[&transport=tcp|udp]
+/// Raw SunSpec register capture of one device for off-device capability
+/// profiling (field-hardware database). The controller walks the SunSpec model
+/// chain ('SunS' marker + each model header) and returns the registers verbatim
+/// — it does NOT decode models on-device; the app forwards this blob and it is
+/// decoded off-device (e.g. pysunspec2). `registers` is big-endian uint16[reg_count]
+/// starting at `base_addr`. On failure `error` is set and registers is empty.
+class ModbusRawDump extends $pb.GeneratedMessage {
+  factory ModbusRawDump({
+    $core.String? host,
+    $core.int? unitId,
+    ModbusTransport? transport,
+    $core.int? baseAddr,
+    $core.int? regCount,
+    $core.List<$core.int>? registers,
+    $core.bool? truncated,
+    $core.String? error,
+  }) {
+    final result = create();
+    if (host != null) result.host = host;
+    if (unitId != null) result.unitId = unitId;
+    if (transport != null) result.transport = transport;
+    if (baseAddr != null) result.baseAddr = baseAddr;
+    if (regCount != null) result.regCount = regCount;
+    if (registers != null) result.registers = registers;
+    if (truncated != null) result.truncated = truncated;
+    if (error != null) result.error = error;
+    return result;
+  }
+
+  ModbusRawDump._();
+
+  factory ModbusRawDump.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ModbusRawDump.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModbusRawDump',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'host')
+    ..aI(2, _omitFieldNames ? '' : 'unitId', fieldType: $pb.PbFieldType.OU3)
+    ..aE<ModbusTransport>(3, _omitFieldNames ? '' : 'transport',
+        enumValues: ModbusTransport.values)
+    ..aI(4, _omitFieldNames ? '' : 'baseAddr', fieldType: $pb.PbFieldType.OU3)
+    ..aI(5, _omitFieldNames ? '' : 'regCount', fieldType: $pb.PbFieldType.OU3)
+    ..a<$core.List<$core.int>>(
+        6, _omitFieldNames ? '' : 'registers', $pb.PbFieldType.OY)
+    ..aOB(7, _omitFieldNames ? '' : 'truncated')
+    ..aOS(8, _omitFieldNames ? '' : 'error')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusRawDump clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModbusRawDump copyWith(void Function(ModbusRawDump) updates) =>
+      super.copyWith((message) => updates(message as ModbusRawDump))
+          as ModbusRawDump;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ModbusRawDump create() => ModbusRawDump._();
+  @$core.override
+  ModbusRawDump createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ModbusRawDump getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModbusRawDump>(create);
+  static ModbusRawDump? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get host => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set host($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasHost() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearHost() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get unitId => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set unitId($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasUnitId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearUnitId() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  ModbusTransport get transport => $_getN(2);
+  @$pb.TagNumber(3)
+  set transport(ModbusTransport value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasTransport() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTransport() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get baseAddr => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set baseAddr($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasBaseAddr() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearBaseAddr() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get regCount => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set regCount($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasRegCount() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearRegCount() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.List<$core.int> get registers => $_getN(5);
+  @$pb.TagNumber(6)
+  set registers($core.List<$core.int> value) => $_setBytes(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasRegisters() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearRegisters() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.bool get truncated => $_getBF(6);
+  @$pb.TagNumber(7)
+  set truncated($core.bool value) => $_setBool(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasTruncated() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearTruncated() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.String get error => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set error($core.String value) => $_setString(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasError() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearError() => $_clearField(8);
+}
+
 enum Attr_Value { boolVal, intVal, longVal, notSet }
 
 /// A single cluster attribute with a typed value.
@@ -2246,10 +2748,12 @@ class AttrsUpdate extends $pb.GeneratedMessage {
   factory AttrsUpdate({
     $fixnum.Int64? nodeId,
     $core.Iterable<Attr>? attrs,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (attrs != null) result.attrs.addAll(attrs);
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -2269,6 +2773,8 @@ class AttrsUpdate extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..pPM<Attr>(2, _omitFieldNames ? '' : 'attrs', subBuilder: Attr.create)
+    ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2301,6 +2807,15 @@ class AttrsUpdate extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(2)
   $pb.PbList<Attr> get attrs => $_getList(1);
+
+  @$pb.TagNumber(3)
+  DeviceKind get kind => $_getN(2);
+  @$pb.TagNumber(3)
+  set kind(DeviceKind value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKind() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKind() => $_clearField(3);
 }
 
 /// Pushed when a subscription changes state or attributes are updated.
@@ -2310,12 +2825,14 @@ class DeviceStateEvent extends $pb.GeneratedMessage {
     DeviceEventType? type,
     AttrsUpdate? update,
     $core.String? error,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (type != null) result.type = type;
     if (update != null) result.update = update;
     if (error != null) result.error = error;
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -2339,6 +2856,8 @@ class DeviceStateEvent extends $pb.GeneratedMessage {
     ..aOM<AttrsUpdate>(3, _omitFieldNames ? '' : 'update',
         subBuilder: AttrsUpdate.create)
     ..aOS(4, _omitFieldNames ? '' : 'error')
+    ..aE<DeviceKind>(5, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2397,6 +2916,15 @@ class DeviceStateEvent extends $pb.GeneratedMessage {
   $core.bool hasError() => $_has(3);
   @$pb.TagNumber(4)
   void clearError() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  DeviceKind get kind => $_getN(4);
+  @$pb.TagNumber(5)
+  set kind(DeviceKind value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasKind() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearKind() => $_clearField(5);
 }
 
 enum CommandArg_Value { boolVal, uintVal, intVal, strVal, notSet }
@@ -2545,6 +3073,7 @@ class DeviceCommand extends $pb.GeneratedMessage {
     $core.int? clusterId,
     $core.int? commandId,
     $core.Iterable<CommandArg>? args,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -2552,6 +3081,7 @@ class DeviceCommand extends $pb.GeneratedMessage {
     if (clusterId != null) result.clusterId = clusterId;
     if (commandId != null) result.commandId = commandId;
     if (args != null) result.args.addAll(args);
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -2575,6 +3105,8 @@ class DeviceCommand extends $pb.GeneratedMessage {
     ..aI(4, _omitFieldNames ? '' : 'commandId', fieldType: $pb.PbFieldType.OU3)
     ..pPM<CommandArg>(5, _omitFieldNames ? '' : 'args',
         subBuilder: CommandArg.create)
+    ..aE<DeviceKind>(6, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2634,6 +3166,15 @@ class DeviceCommand extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(5)
   $pb.PbList<CommandArg> get args => $_getList(4);
+
+  @$pb.TagNumber(6)
+  DeviceKind get kind => $_getN(5);
+  @$pb.TagNumber(6)
+  set kind(DeviceKind value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasKind() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearKind() => $_clearField(6);
 }
 
 enum WriteAttrRequest_Value { boolVal, intVal, notSet }
@@ -2648,6 +3189,7 @@ class WriteAttrRequest extends $pb.GeneratedMessage {
     $core.bool? boolVal,
     $core.int? intVal,
     $core.String? jsonVal,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -2657,6 +3199,7 @@ class WriteAttrRequest extends $pb.GeneratedMessage {
     if (boolVal != null) result.boolVal = boolVal;
     if (intVal != null) result.intVal = intVal;
     if (jsonVal != null) result.jsonVal = jsonVal;
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -2688,6 +3231,8 @@ class WriteAttrRequest extends $pb.GeneratedMessage {
     ..aOB(5, _omitFieldNames ? '' : 'boolVal')
     ..aI(6, _omitFieldNames ? '' : 'intVal', fieldType: $pb.PbFieldType.OS3)
     ..aOS(7, _omitFieldNames ? '' : 'jsonVal')
+    ..aE<DeviceKind>(8, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2779,6 +3324,15 @@ class WriteAttrRequest extends $pb.GeneratedMessage {
   $core.bool hasJsonVal() => $_has(6);
   @$pb.TagNumber(7)
   void clearJsonVal() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  DeviceKind get kind => $_getN(7);
+  @$pb.TagNumber(8)
+  set kind(DeviceKind value) => $_setField(8, value);
+  @$pb.TagNumber(8)
+  $core.bool hasKind() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearKind() => $_clearField(8);
 }
 
 /// Read one or more cluster attributes.
@@ -2788,12 +3342,14 @@ class ReadRequest extends $pb.GeneratedMessage {
     $core.Iterable<$core.int>? endpointIds,
     $core.Iterable<$core.int>? clusterIds,
     $core.Iterable<$core.int>? attrIds,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (endpointIds != null) result.endpointIds.addAll(endpointIds);
     if (clusterIds != null) result.clusterIds.addAll(clusterIds);
     if (attrIds != null) result.attrIds.addAll(attrIds);
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -2815,6 +3371,8 @@ class ReadRequest extends $pb.GeneratedMessage {
     ..p<$core.int>(2, _omitFieldNames ? '' : 'endpointIds', $pb.PbFieldType.KU3)
     ..p<$core.int>(3, _omitFieldNames ? '' : 'clusterIds', $pb.PbFieldType.KU3)
     ..p<$core.int>(4, _omitFieldNames ? '' : 'attrIds', $pb.PbFieldType.KU3)
+    ..aE<DeviceKind>(5, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2853,6 +3411,15 @@ class ReadRequest extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(4)
   $pb.PbList<$core.int> get attrIds => $_getList(3);
+
+  @$pb.TagNumber(5)
+  DeviceKind get kind => $_getN(4);
+  @$pb.TagNumber(5)
+  set kind(DeviceKind value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasKind() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearKind() => $_clearField(5);
 }
 
 /// Simple success/failure response.
@@ -3131,12 +3698,14 @@ class EnergyDeviceSeries extends $pb.GeneratedMessage {
     EnergyClass? cls,
     $core.String? name,
     $core.Iterable<$core.int>? wh,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (cls != null) result.cls = cls;
     if (name != null) result.name = name;
     if (wh != null) result.wh.addAll(wh);
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -3159,6 +3728,8 @@ class EnergyDeviceSeries extends $pb.GeneratedMessage {
         enumValues: EnergyClass.values)
     ..aOS(3, _omitFieldNames ? '' : 'name')
     ..p<$core.int>(4, _omitFieldNames ? '' : 'wh', $pb.PbFieldType.KU3)
+    ..aE<DeviceKind>(5, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3209,6 +3780,15 @@ class EnergyDeviceSeries extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(4)
   $pb.PbList<$core.int> get wh => $_getList(3);
+
+  @$pb.TagNumber(5)
+  DeviceKind get kind => $_getN(4);
+  @$pb.TagNumber(5)
+  set kind(DeviceKind value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasKind() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearKind() => $_clearField(5);
 }
 
 class EnergyHistory extends $pb.GeneratedMessage {
@@ -3352,10 +3932,12 @@ class EnergyRoleEntry extends $pb.GeneratedMessage {
   factory EnergyRoleEntry({
     $fixnum.Int64? nodeId,
     EnergyClass? cls,
+    DeviceKind? kind,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (cls != null) result.cls = cls;
+    if (kind != null) result.kind = kind;
     return result;
   }
 
@@ -3376,6 +3958,8 @@ class EnergyRoleEntry extends $pb.GeneratedMessage {
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..aE<EnergyClass>(2, _omitFieldNames ? '' : 'cls',
         enumValues: EnergyClass.values)
+    ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3414,6 +3998,15 @@ class EnergyRoleEntry extends $pb.GeneratedMessage {
   $core.bool hasCls() => $_has(1);
   @$pb.TagNumber(2)
   void clearCls() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  DeviceKind get kind => $_getN(2);
+  @$pb.TagNumber(3)
+  set kind(DeviceKind value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKind() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKind() => $_clearField(3);
 }
 
 class EnergyRoleMap extends $pb.GeneratedMessage {

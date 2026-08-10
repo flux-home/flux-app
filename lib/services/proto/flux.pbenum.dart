@@ -40,6 +40,47 @@ class ConnectivityState extends $pb.ProtobufEnum {
   const ConnectivityState._(super.value, super.name);
 }
 
+/// What kind of thing a device is, and therefore what `node_id` means for it.
+///
+/// A device is identified by the PAIR (kind, node_id) — two selection criteria,
+/// neither sufficient alone. node_id is scoped to its kind's namespace:
+///   DEVICE_KIND_MATTER — a real Matter operational node ID on our fabric.
+///   DEVICE_KIND_MODBUS — a controller-assigned id for a polled Modbus device.
+///   DEVICE_KIND_CLOUD  — a controller-assigned id for a cloud-API appliance.
+///
+/// This replaces inferring the kind from the magnitude of node_id. Synthetic
+/// devices used to be handed Matter node IDs above a reserved base
+/// (0x0100000000000000) and every consumer re-derived "is this really a Matter
+/// node?" from that constant — which was duplicated across three repos, was
+/// already stale and wrong in one of them, and forced a cross-repo rule that
+/// bit 63 stay clear because the app decodes node_id into a signed integer.
+/// With kind carried explicitly none of that is needed: the reserved range and
+/// the bit-63 rule are both gone, and each namespace can number from 1.
+class DeviceKind extends $pb.ProtobufEnum {
+  static const DeviceKind DEVICE_KIND_UNKNOWN =
+      DeviceKind._(0, _omitEnumNames ? '' : 'DEVICE_KIND_UNKNOWN');
+  static const DeviceKind DEVICE_KIND_MATTER =
+      DeviceKind._(1, _omitEnumNames ? '' : 'DEVICE_KIND_MATTER');
+  static const DeviceKind DEVICE_KIND_MODBUS =
+      DeviceKind._(2, _omitEnumNames ? '' : 'DEVICE_KIND_MODBUS');
+  static const DeviceKind DEVICE_KIND_CLOUD =
+      DeviceKind._(3, _omitEnumNames ? '' : 'DEVICE_KIND_CLOUD');
+
+  static const $core.List<DeviceKind> values = <DeviceKind>[
+    DEVICE_KIND_UNKNOWN,
+    DEVICE_KIND_MATTER,
+    DEVICE_KIND_MODBUS,
+    DEVICE_KIND_CLOUD,
+  ];
+
+  static final $core.List<DeviceKind?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 3);
+  static DeviceKind? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const DeviceKind._(super.value, super.name);
+}
+
 /// Register-map profile that tells the controller how to decode a device.
 /// (SUNSPEC stays 0 for wire/NVS compatibility; UNKNOWN is discovery-only.)
 class ModbusProfile extends $pb.ProtobufEnum {

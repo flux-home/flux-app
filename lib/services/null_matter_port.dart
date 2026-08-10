@@ -1,4 +1,5 @@
 import 'package:matter_home/models/basic_info.dart';
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
@@ -19,10 +20,10 @@ class NullMatterPort implements MatterPort {
   Stream<DeviceStateEvent> get deviceStateUpdates => const Stream.empty();
 
   @override
-  Future<bool> startSubscription(int nodeId) async => false;
+  Future<bool> startSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) async => false;
 
   @override
-  Future<void> stopSubscription(int nodeId) async {}
+  Future<void> stopSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) async {}
 
   @override
   Stream<String> get commissionEvents => const Stream.empty();
@@ -125,7 +126,7 @@ class NullMatterPort implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin}) async => false;
 
   @override
-  Future<bool> removeDevice(int nodeId) async => false;
+  Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) async => false;
 
   @override
   Future<String?> getFabricId() async => null;

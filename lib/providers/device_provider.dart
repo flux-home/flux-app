@@ -80,7 +80,9 @@ class DeviceProvider extends ChangeNotifier {
   final List<AutomationRule> _rules               = [];
   final Map<String, int>     _lastSwitchPressTime = {}; // debounce
 
-  final Set<int> _subscribedNodeIds = {};
+  /// Keyed by the full device key — a Matter and a Modbus device may share a
+  /// node id, and subscribing to one must not suppress the other.
+  final Set<(DeviceKind, int)> _subscribedNodeIds = {};
 
   /// Timers that fire a fallback [refreshDevice] if a subscription does not
   /// deliver an `established` event within [_kEstablishTimeout].
@@ -394,22 +396,26 @@ class DeviceProvider extends ChangeNotifier {
     for (final cd in raw) {
       final nodeId = cd.nodeId.toInt();
       controllerNodeIds.add(nodeId);
-      final idx = _devices.indexWhere((d) => d.nodeId == nodeId);
+      final cdKind = DeviceKind.fromWire(cd.kind.value);
+      final idx = _devices.indexWhere(
+          (d) => d.nodeId == nodeId && d.kind == cdKind);
 
       if (idx == -1) {
         // Device on controller but not locally — add it.
         final dt = cd.deviceType > 0
             ? DeviceType.fromMatterDeviceTypeId(cd.deviceType)
             : DeviceType.unknown;
-        // Modbus devices carry a synthetic node id (>= FLUX_MODBUS_NODE_BASE) and
-        // are reliably identifiable here. The controller doesn't (yet) report the
-        // transport for real Matter nodes, so leave those as `unknown` — the info
-        // screen hides the Network row rather than falsely labelling them Thread.
-        final networkType = nodeId >= 0x0100000000000000
+        // The controller reports the kind, so nothing here has to infer it from
+        // the magnitude of nodeId. It still doesn't report the transport for real
+        // Matter nodes, so leave those as `unknown` — the info screen hides the
+        // Network row rather than falsely labelling them Thread.
+        final kind = DeviceKind.fromWire(cd.kind.value);
+        final networkType = kind == DeviceKind.modbus
             ? NetworkType.modbus
             : NetworkType.unknown;
         final device = MatterDevice(
           id:             _uuid.v4(),
+          kind:           kind,
           name:           cd.name.isNotEmpty ? cd.name : 'Device $nodeId',
           deviceType:     dt,
           nodeId:         nodeId,
@@ -525,8 +531,10 @@ class DeviceProvider extends ChangeNotifier {
     // Tear down existing subscriptions and listener.
     await _deviceStateSub?.cancel();
     _deviceStateSub = null;
-    for (final nodeId in List<int>.of(_subscribedNodeIds)) {
-      try { await _channel.stopSubscription(nodeId); } on Exception catch (_) {}
+    for (final key in List<(DeviceKind, int)>.of(_subscribedNodeIds)) {
+      try {
+        await _channel.stopSubscription(key.$2, kind: key.$1);
+      } on Exception catch (_) {}
     }
     _subscribedNodeIds.clear();
 
@@ -685,7 +693,8 @@ class DeviceProvider extends ChangeNotifier {
   // ── Subscription event handler ────────────────────────────────────────────
 
   void _onDeviceStateEvent(DeviceStateEvent event) {
-    final candidates = _devices.where((d) => d.nodeId == event.nodeId);
+    final candidates = _devices
+        .where((d) => d.nodeId == event.nodeId && d.kind == event.kind);
     if (candidates.isEmpty) return;
     final device = candidates.first;
 
@@ -832,11 +841,12 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> _startSubscription(MatterDevice device) async {
-    if (_subscribedNodeIds.contains(device.nodeId)) return;
-    _subscribedNodeIds.add(device.nodeId);
-    final ok = await _channel.startSubscription(device.nodeId);
+    final key = (device.kind, device.nodeId);
+    if (_subscribedNodeIds.contains(key)) return;
+    _subscribedNodeIds.add(key);
+    final ok = await _channel.startSubscription(device.nodeId, kind: device.kind);
     if (!ok) {
-      _subscribedNodeIds.remove(device.nodeId);
+      _subscribedNodeIds.remove(key);
       return;
     }
     // Controller-managed devices deliver state exclusively via CoAP Observe.
@@ -858,8 +868,8 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> _stopSubscription(MatterDevice device) async {
-    _subscribedNodeIds.remove(device.nodeId);
-    await _channel.stopSubscription(device.nodeId);
+    _subscribedNodeIds.remove((device.kind, device.nodeId));
+    await _channel.stopSubscription(device.nodeId, kind: device.kind);
   }
 
   // ── Commission lifecycle (called by CommissioningController) ─────────────
@@ -1145,10 +1155,13 @@ class DeviceProvider extends ChangeNotifier {
   Future<void> _syncEnergyRoles() async {
     final svc = _ctrlService;
     if (svc == null) return;
-    final map = <int, int>{};
+    // Keyed by the whole device key: the controller matches roles on
+    // (kind, node_id), so sending nodeId alone would push kind=UNKNOWN and the
+    // override would silently never apply.
+    final map = <(DeviceKind, int), int>{};
     for (final d in _devices) {
       final cls = d.energyRole.controllerClass;
-      if (cls != null) map[d.nodeId] = cls;
+      if (cls != null) map[(d.kind, d.nodeId)] = cls;
     }
     await svc.setEnergyRoles(map);
   }
@@ -1171,7 +1184,7 @@ class DeviceProvider extends ChangeNotifier {
     _establishTimeouts.remove(deviceId)?.cancel();
     // Always notify the controller — it tracks all registered nodes regardless
     // of who commissioned them.
-    await _ctrlService?.removeDevice(device.nodeId);
+    await _ctrlService?.removeDevice(device.nodeId, kind: device.kind);
     // Non-controller-managed devices (e.g. a failed-handoff orphan still on
     // the phone's throwaway fabric) get an extra removeDevice call on the
     // active channel — a no-op once that channel is the controller proxy and

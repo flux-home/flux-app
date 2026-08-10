@@ -9,6 +9,7 @@ import 'package:matter_home/services/controller_transport/default_transport.dart
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -352,10 +353,15 @@ class FluxCoapService implements MatterPort {
   /// from the Modbus profile. [nodeToClass] maps node id → flux_EnergyClass code
   /// (1=grid, 2=pv, 3=load, 4=battery); it's the full set (replaces the stored
   /// map). See POST /energy/roles.
-  Future<bool> setEnergyRoles(Map<int, int> nodeToClass) async {
+  /// Push the user's energy-role assignments. Keyed by (kind, nodeId): the
+  /// controller looks roles up by the full key, so an entry sent without its kind
+  /// would never match and the role would silently have no effect.
+  Future<bool> setEnergyRoles(Map<(DeviceKind, int), int> deviceToClass) async {
     final map = $proto.EnergyRoleMap(
-      entries: nodeToClass.entries.map((e) => $proto.EnergyRoleEntry(
-            nodeId: Int64(e.key),
+      entries: deviceToClass.entries.map((e) => $proto.EnergyRoleEntry(
+            nodeId: Int64(e.key.$2),
+            kind: $proto.DeviceKind.valueOf(e.key.$1.wire) ??
+                $proto.DeviceKind.DEVICE_KIND_UNKNOWN,
             cls: $proto.EnergyClass.valueOf(e.value) ??
                 $proto.EnergyClass.ENERGY_CLASS_UNKNOWN,
           )),
@@ -457,8 +463,9 @@ class FluxCoapService implements MatterPort {
   static const _subRetryMax  = Duration(seconds: 60);
 
   @override
-  Future<bool> startSubscription(int nodeId) async {
-    await stopSubscription(nodeId);
+  Future<bool> startSubscription(int nodeId,
+      {DeviceKind kind = DeviceKind.matter}) async {
+    await stopSubscription(nodeId, kind: kind);
     void scheduleRetry() {
       if (_disposed) return;
       if (_subRetryTimers.containsKey(nodeId)) return; // already queued
@@ -473,7 +480,7 @@ class FluxCoapService implements MatterPort {
         // Re-check at FIRE time: a retry armed before dispose() used to run on
         // the dead service and add to a closed StreamController.
         if (_disposed) return;
-        startSubscription(nodeId).catchError((Object e) {
+        startSubscription(nodeId, kind: kind).catchError((Object e) {
           debugPrint('FluxCoapService sub $nodeId retry error: $e');
           return false;
         });
@@ -481,8 +488,11 @@ class FluxCoapService implements MatterPort {
     }
 
     final hexId = nodeId.toRadixString(16).padLeft(16, '0');
-    _subscriptions[nodeId] =
-        _transport.observe('/events', query: {'id': hexId}).listen(
+    // Send the kind explicitly: the controller can infer it from the node id
+    // alone today, but only because no id is reused across kinds — don't lean
+    // on that.
+    _subscriptions[nodeId] = _transport.observe('/events',
+        query: {'id': hexId, 'kind': '${kind.wire}'}).listen(
       (ev) {
         switch (ev.kind) {
           case TransportEventKind.data:
@@ -491,18 +501,21 @@ class FluxCoapService implements MatterPort {
             if (ev.payload != null) _handleStateBytes(nodeId, ev.payload!);
           case TransportEventKind.error:
             debugPrint('FluxCoapService sub $nodeId error: ${ev.error}');
-            _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, ev.error ?? ''));
+            _deviceStateCtrl.add(
+                SubscriptionErrorEvent(nodeId, ev.error ?? '', kind: kind));
             scheduleRetry();
           case TransportEventKind.done:
             debugPrint('FluxCoapService sub $nodeId done');
             _subscriptions.remove(nodeId);
-            _deviceStateCtrl.add(SubscriptionResubscribingEvent(nodeId, 0));
+            _deviceStateCtrl.add(
+                SubscriptionResubscribingEvent(nodeId, 0, kind: kind));
             scheduleRetry();
         }
       },
       onError: (Object e) {
         debugPrint('FluxCoapService sub $nodeId stream error: $e');
-        _deviceStateCtrl.add(SubscriptionErrorEvent(nodeId, e.toString()));
+        _deviceStateCtrl.add(
+            SubscriptionErrorEvent(nodeId, e.toString(), kind: kind));
         scheduleRetry();
       },
     );
@@ -510,7 +523,8 @@ class FluxCoapService implements MatterPort {
   }
 
   @override
-  Future<void> stopSubscription(int nodeId) async {
+  Future<void> stopSubscription(int nodeId,
+      {DeviceKind kind = DeviceKind.matter}) async {
     _subRetryTimers.remove(nodeId)?.cancel();
     final sub = _subscriptions.remove(nodeId);
     await sub?.cancel();
@@ -567,13 +581,17 @@ class FluxCoapService implements MatterPort {
 
   DeviceStateEvent _toAppEvent($proto.DeviceStateEvent ev) {
     final nodeId = ev.nodeId.toInt();
+    // Carry the kind through: a device is (kind, nodeId), so an event decoded
+    // without it would be matched against the wrong device — or, for a Modbus
+    // device, against nothing at all, silently stopping its readings.
+    final kind = DeviceKind.fromWire(ev.kind.value);
     switch (ev.type) {
       case $proto.DeviceEventType.DEVICE_EVENT_ESTABLISHED:
-        return SubscriptionEstablishedEvent(nodeId);
+        return SubscriptionEstablishedEvent(nodeId, kind: kind);
       case $proto.DeviceEventType.DEVICE_EVENT_ERROR:
-        return SubscriptionErrorEvent(nodeId, ev.error);
+        return SubscriptionErrorEvent(nodeId, ev.error, kind: kind);
       case $proto.DeviceEventType.DEVICE_EVENT_RESUBSCRIBING:
-        return SubscriptionResubscribingEvent(nodeId, 0);
+        return SubscriptionResubscribingEvent(nodeId, 0, kind: kind);
       case $proto.DeviceEventType.DEVICE_EVENT_ATTRS_UPDATE:
         final attrs = <String, dynamic>{};
         for (final a in ev.update.attrs) {
@@ -581,7 +599,7 @@ class FluxCoapService implements MatterPort {
           else if (a.hasIntVal())  attrs[a.key] = a.intVal;
           else if (a.hasLongVal()) attrs[a.key] = a.longVal.toInt();
         }
-        return SubscriptionUpdateEvent(nodeId, attrs);
+        return SubscriptionUpdateEvent(nodeId, attrs, kind: kind);
       default:
         return SubscriptionErrorEvent(nodeId, 'unknown event type');
     }
@@ -905,8 +923,11 @@ class FluxCoapService implements MatterPort {
 
   /// Remove a device — DELETE /devices?id=<hex>
   @override
-  Future<bool> removeDevice(int nodeId) =>
-      _delete('/devices', query: {'id': nodeId.toRadixString(16).padLeft(16, '0')});
+  Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) =>
+      _delete('/devices', query: {
+        'id': nodeId.toRadixString(16).padLeft(16, '0'),
+        'kind': '${kind.wire}',
+      });
 
   @override Future<String?> readSystemThreadCredentials() async => null;
 

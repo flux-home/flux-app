@@ -1,6 +1,7 @@
 import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -17,8 +18,11 @@ abstract interface class MatterSubscriptionPort {
   /// Decoded from the raw platform-channel map by [MatterChannel].
   Stream<DeviceStateEvent> get deviceStateUpdates;
 
-  Future<bool> startSubscription(int nodeId);
-  Future<void> stopSubscription(int nodeId);
+  /// A device is identified by (kind, nodeId). [kind] defaults to matter
+  /// because the local CHIP fabric can only ever address Matter devices; only
+  /// the controller port acts on it.
+  Future<bool> startSubscription(int nodeId, {DeviceKind kind});
+  Future<void> stopSubscription(int nodeId, {DeviceKind kind});
 }
 
 /// Commissioning a new device into the fabric.
@@ -103,7 +107,7 @@ abstract interface class MatterClusterPort {
 
 /// Fabric-level operations: remove, fabric identity, Thread credentials.
 abstract interface class MatterFabricPort {
-  Future<bool>  removeDevice(int nodeId);
+  Future<bool>  removeDevice(int nodeId, {DeviceKind kind});
 
   Future<String?> getFabricId();
 

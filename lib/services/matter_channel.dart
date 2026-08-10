@@ -1,5 +1,6 @@
 
 import 'package:flutter/foundation.dart';
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 import 'package:flutter/services.dart';
 
 import 'package:matter_home/models/basic_info.dart';
@@ -83,10 +84,13 @@ class MatterChannel implements MatterPort {
   // ── Subscription control ───────────────────────────────────────────────────
 
   @override
-  Future<bool> startSubscription(int nodeId) => _invoke('startSubscription', false, args: {'nodeId': nodeId});
+  // Local CHIP fabric — Matter-only by construction, so [kind] is ignored.
+  Future<bool> startSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) =>
+      _invoke('startSubscription', false, args: {'nodeId': nodeId});
 
   @override
-  Future<void> stopSubscription(int nodeId) => _invoke('stopSubscription', null, args: {'nodeId': nodeId});
+  Future<void> stopSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) =>
+      _invoke('stopSubscription', null, args: {'nodeId': nodeId});
 
   // ── Parse setup payload ────────────────────────────────────────────────────
 
@@ -393,7 +397,8 @@ class MatterChannel implements MatterPort {
           args: {'nodeId': nodeId, 'fabricIndex': fabricIndex});
 
   @override
-  Future<bool> removeDevice(int nodeId) => _invoke('removeDevice', false, args: {'nodeId': nodeId});
+  Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) =>
+      _invoke('removeDevice', false, args: {'nodeId': nodeId});
 
   @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);

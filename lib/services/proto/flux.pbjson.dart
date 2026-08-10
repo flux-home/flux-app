@@ -32,6 +32,22 @@ final $typed_data.Uint8List connectivityStateDescriptor = $convert.base64Decode(
     'RJVklUWV9ESVNDT1ZFUklORxABEhsKF0NPTk5FQ1RJVklUWV9TVUJTQ1JJQkVEEAISGQoVQ09O'
     'TkVDVElWSVRZX1JFVFJZSU5HEAM=');
 
+@$core.Deprecated('Use deviceKindDescriptor instead')
+const DeviceKind$json = {
+  '1': 'DeviceKind',
+  '2': [
+    {'1': 'DEVICE_KIND_UNKNOWN', '2': 0},
+    {'1': 'DEVICE_KIND_MATTER', '2': 1},
+    {'1': 'DEVICE_KIND_MODBUS', '2': 2},
+    {'1': 'DEVICE_KIND_CLOUD', '2': 3},
+  ],
+};
+
+/// Descriptor for `DeviceKind`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List deviceKindDescriptor = $convert.base64Decode(
+    'CgpEZXZpY2VLaW5kEhcKE0RFVklDRV9LSU5EX1VOS05PV04QABIWChJERVZJQ0VfS0lORF9NQV'
+    'RURVIQARIWChJERVZJQ0VfS0lORF9NT0RCVVMQAhIVChFERVZJQ0VfS0lORF9DTE9VRBAD');
+
 @$core.Deprecated('Use modbusProfileDescriptor instead')
 const ModbusProfile$json = {
   '1': 'ModbusProfile',
@@ -240,6 +256,78 @@ final $typed_data.Uint8List threadJoinResultDescriptor = $convert.base64Decode(
     'gMUgN0bHYSIQoMbmV0d29ya19uYW1lGAMgASgJUgtuZXR3b3JrTmFtZRIUCgVlcnJvchgEIAEo'
     'CVIFZXJyb3I=');
 
+@$core.Deprecated('Use threadEphemeralCandidateDescriptor instead')
+const ThreadEphemeralCandidate$json = {
+  '1': 'ThreadEphemeralCandidate',
+  '2': [
+    {'1': 'addr', '3': 1, '4': 1, '5': 9, '10': 'addr'},
+    {'1': 'port', '3': 2, '4': 1, '5': 13, '10': 'port'},
+    {'1': 'name', '3': 3, '4': 1, '5': 9, '10': 'name'},
+  ],
+};
+
+/// Descriptor for `ThreadEphemeralCandidate`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List threadEphemeralCandidateDescriptor =
+    $convert.base64Decode(
+        'ChhUaHJlYWRFcGhlbWVyYWxDYW5kaWRhdGUSEgoEYWRkchgBIAEoCVIEYWRkchISCgRwb3J0GA'
+        'IgASgNUgRwb3J0EhIKBG5hbWUYAyABKAlSBG5hbWU=');
+
+@$core.Deprecated('Use threadEphemeralListDescriptor instead')
+const ThreadEphemeralList$json = {
+  '1': 'ThreadEphemeralList',
+  '2': [
+    {
+      '1': 'candidates',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.ThreadEphemeralCandidate',
+      '10': 'candidates'
+    },
+  ],
+};
+
+/// Descriptor for `ThreadEphemeralList`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List threadEphemeralListDescriptor = $convert.base64Decode(
+    'ChNUaHJlYWRFcGhlbWVyYWxMaXN0Ej4KCmNhbmRpZGF0ZXMYASADKAsyHi5mbHV4LlRocmVhZE'
+    'VwaGVtZXJhbENhbmRpZGF0ZVIKY2FuZGlkYXRlcw==');
+
+@$core.Deprecated('Use openCommissioningWindowRequestDescriptor instead')
+const OpenCommissioningWindowRequest$json = {
+  '1': 'OpenCommissioningWindowRequest',
+  '2': [
+    {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
+    {'1': 'timeout_s', '3': 2, '4': 1, '5': 13, '10': 'timeoutS'},
+    {'1': 'iterations', '3': 3, '4': 1, '5': 13, '10': 'iterations'},
+    {'1': 'discriminator', '3': 4, '4': 1, '5': 13, '10': 'discriminator'},
+  ],
+};
+
+/// Descriptor for `OpenCommissioningWindowRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List openCommissioningWindowRequestDescriptor =
+    $convert.base64Decode(
+        'Ch5PcGVuQ29tbWlzc2lvbmluZ1dpbmRvd1JlcXVlc3QSFwoHbm9kZV9pZBgBIAEoBFIGbm9kZU'
+        'lkEhsKCXRpbWVvdXRfcxgCIAEoDVIIdGltZW91dFMSHgoKaXRlcmF0aW9ucxgDIAEoDVIKaXRl'
+        'cmF0aW9ucxIkCg1kaXNjcmltaW5hdG9yGAQgASgNUg1kaXNjcmltaW5hdG9y');
+
+@$core.Deprecated('Use openCommissioningWindowResultDescriptor instead')
+const OpenCommissioningWindowResult$json = {
+  '1': 'OpenCommissioningWindowResult',
+  '2': [
+    {'1': 'success', '3': 1, '4': 1, '5': 8, '10': 'success'},
+    {'1': 'manual_code', '3': 2, '4': 1, '5': 9, '10': 'manualCode'},
+    {'1': 'discriminator', '3': 3, '4': 1, '5': 13, '10': 'discriminator'},
+    {'1': 'error', '3': 4, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `OpenCommissioningWindowResult`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List openCommissioningWindowResultDescriptor =
+    $convert.base64Decode(
+        'Ch1PcGVuQ29tbWlzc2lvbmluZ1dpbmRvd1Jlc3VsdBIYCgdzdWNjZXNzGAEgASgIUgdzdWNjZX'
+        'NzEh8KC21hbnVhbF9jb2RlGAIgASgJUgptYW51YWxDb2RlEiQKDWRpc2NyaW1pbmF0b3IYAyAB'
+        'KA1SDWRpc2NyaW1pbmF0b3ISFAoFZXJyb3IYBCABKAlSBWVycm9y');
+
 @$core.Deprecated('Use fabricProvisionDescriptor instead')
 const FabricProvision$json = {
   '1': 'FabricProvision',
@@ -404,6 +492,14 @@ const Device$json = {
       '6': '.flux.ConnectivityState',
       '10': 'connectivity'
     },
+    {
+      '1': 'kind',
+      '3': 8,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
@@ -413,7 +509,7 @@ final $typed_data.Uint8List deviceDescriptor = $convert.base64Decode(
     'oJcmVhY2hhYmxlGAMgASgIUglyZWFjaGFibGUSGwoJdmVuZG9yX2lkGAQgASgNUgh2ZW5kb3JJ'
     'ZBIdCgpwcm9kdWN0X2lkGAUgASgNUglwcm9kdWN0SWQSHwoLZGV2aWNlX3R5cGUYBiABKA1SCm'
     'RldmljZVR5cGUSOwoMY29ubmVjdGl2aXR5GAcgASgOMhcuZmx1eC5Db25uZWN0aXZpdHlTdGF0'
-    'ZVIMY29ubmVjdGl2aXR5');
+    'ZVIMY29ubmVjdGl2aXR5EiQKBGtpbmQYCCABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQ=');
 
 @$core.Deprecated('Use deviceListDescriptor instead')
 const DeviceList$json = {
@@ -440,13 +536,21 @@ const RenameDeviceRequest$json = {
   '2': [
     {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
     {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {
+      '1': 'kind',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
 /// Descriptor for `RenameDeviceRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List renameDeviceRequestDescriptor = $convert.base64Decode(
     'ChNSZW5hbWVEZXZpY2VSZXF1ZXN0EhcKB25vZGVfaWQYASABKARSBm5vZGVJZBISCgRuYW1lGA'
-    'IgASgJUgRuYW1l');
+    'IgASgJUgRuYW1lEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQ=');
 
 @$core.Deprecated('Use registerNodeRequestDescriptor instead')
 const RegisterNodeRequest$json = {
@@ -558,6 +662,36 @@ final $typed_data.Uint8List modbusDiscoveredDescriptor = $convert.base64Decode(
     'ChBNb2RidXNEaXNjb3ZlcmVkEjUKCmNhbmRpZGF0ZXMYASADKAsyFS5mbHV4Lk1vZGJ1c0Nhbm'
     'RpZGF0ZVIKY2FuZGlkYXRlcw==');
 
+@$core.Deprecated('Use modbusRawDumpDescriptor instead')
+const ModbusRawDump$json = {
+  '1': 'ModbusRawDump',
+  '2': [
+    {'1': 'host', '3': 1, '4': 1, '5': 9, '10': 'host'},
+    {'1': 'unit_id', '3': 2, '4': 1, '5': 13, '10': 'unitId'},
+    {
+      '1': 'transport',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.ModbusTransport',
+      '10': 'transport'
+    },
+    {'1': 'base_addr', '3': 4, '4': 1, '5': 13, '10': 'baseAddr'},
+    {'1': 'reg_count', '3': 5, '4': 1, '5': 13, '10': 'regCount'},
+    {'1': 'registers', '3': 6, '4': 1, '5': 12, '10': 'registers'},
+    {'1': 'truncated', '3': 7, '4': 1, '5': 8, '10': 'truncated'},
+    {'1': 'error', '3': 8, '4': 1, '5': 9, '10': 'error'},
+  ],
+};
+
+/// Descriptor for `ModbusRawDump`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List modbusRawDumpDescriptor = $convert.base64Decode(
+    'Cg1Nb2RidXNSYXdEdW1wEhIKBGhvc3QYASABKAlSBGhvc3QSFwoHdW5pdF9pZBgCIAEoDVIGdW'
+    '5pdElkEjMKCXRyYW5zcG9ydBgDIAEoDjIVLmZsdXguTW9kYnVzVHJhbnNwb3J0Ugl0cmFuc3Bv'
+    'cnQSGwoJYmFzZV9hZGRyGAQgASgNUghiYXNlQWRkchIbCglyZWdfY291bnQYBSABKA1SCHJlZ0'
+    'NvdW50EhwKCXJlZ2lzdGVycxgGIAEoDFIJcmVnaXN0ZXJzEhwKCXRydW5jYXRlZBgHIAEoCFIJ'
+    'dHJ1bmNhdGVkEhQKBWVycm9yGAggASgJUgVlcnJvcg==');
+
 @$core.Deprecated('Use attrDescriptor instead')
 const Attr$json = {
   '1': 'Attr',
@@ -584,13 +718,21 @@ const AttrsUpdate$json = {
   '2': [
     {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
     {'1': 'attrs', '3': 2, '4': 3, '5': 11, '6': '.flux.Attr', '10': 'attrs'},
+    {
+      '1': 'kind',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
 /// Descriptor for `AttrsUpdate`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List attrsUpdateDescriptor = $convert.base64Decode(
     'CgtBdHRyc1VwZGF0ZRIXCgdub2RlX2lkGAEgASgEUgZub2RlSWQSIAoFYXR0cnMYAiADKAsyCi'
-    '5mbHV4LkF0dHJSBWF0dHJz');
+    '5mbHV4LkF0dHJSBWF0dHJzEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQ=');
 
 @$core.Deprecated('Use deviceStateEventDescriptor instead')
 const DeviceStateEvent$json = {
@@ -614,6 +756,14 @@ const DeviceStateEvent$json = {
       '10': 'update'
     },
     {'1': 'error', '3': 4, '4': 1, '5': 9, '10': 'error'},
+    {
+      '1': 'kind',
+      '3': 5,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
@@ -621,7 +771,8 @@ const DeviceStateEvent$json = {
 final $typed_data.Uint8List deviceStateEventDescriptor = $convert.base64Decode(
     'ChBEZXZpY2VTdGF0ZUV2ZW50EhcKB25vZGVfaWQYASABKARSBm5vZGVJZBIpCgR0eXBlGAIgAS'
     'gOMhUuZmx1eC5EZXZpY2VFdmVudFR5cGVSBHR5cGUSKQoGdXBkYXRlGAMgASgLMhEuZmx1eC5B'
-    'dHRyc1VwZGF0ZVIGdXBkYXRlEhQKBWVycm9yGAQgASgJUgVlcnJvcg==');
+    'dHRyc1VwZGF0ZVIGdXBkYXRlEhQKBWVycm9yGAQgASgJUgVlcnJvchIkCgRraW5kGAUgASgOMh'
+    'AuZmx1eC5EZXZpY2VLaW5kUgRraW5k');
 
 @$core.Deprecated('Use commandArgDescriptor instead')
 const CommandArg$json = {
@@ -662,6 +813,14 @@ const DeviceCommand$json = {
       '6': '.flux.CommandArg',
       '10': 'args'
     },
+    {
+      '1': 'kind',
+      '3': 6,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
@@ -670,7 +829,7 @@ final $typed_data.Uint8List deviceCommandDescriptor = $convert.base64Decode(
     'Cg1EZXZpY2VDb21tYW5kEhcKB25vZGVfaWQYASABKARSBm5vZGVJZBIfCgtlbmRwb2ludF9pZB'
     'gCIAEoDVIKZW5kcG9pbnRJZBIdCgpjbHVzdGVyX2lkGAMgASgNUgljbHVzdGVySWQSHQoKY29t'
     'bWFuZF9pZBgEIAEoDVIJY29tbWFuZElkEiQKBGFyZ3MYBSADKAsyEC5mbHV4LkNvbW1hbmRBcm'
-    'dSBGFyZ3M=');
+    'dSBGFyZ3MSJAoEa2luZBgGIAEoDjIQLmZsdXguRGV2aWNlS2luZFIEa2luZA==');
 
 @$core.Deprecated('Use writeAttrRequestDescriptor instead')
 const WriteAttrRequest$json = {
@@ -683,6 +842,14 @@ const WriteAttrRequest$json = {
     {'1': 'bool_val', '3': 5, '4': 1, '5': 8, '9': 0, '10': 'boolVal'},
     {'1': 'int_val', '3': 6, '4': 1, '5': 17, '9': 0, '10': 'intVal'},
     {'1': 'json_val', '3': 7, '4': 1, '5': 9, '10': 'jsonVal'},
+    {
+      '1': 'kind',
+      '3': 8,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
   '8': [
     {'1': 'value'},
@@ -694,8 +861,8 @@ final $typed_data.Uint8List writeAttrRequestDescriptor = $convert.base64Decode(
     'ChBXcml0ZUF0dHJSZXF1ZXN0EhcKB25vZGVfaWQYASABKARSBm5vZGVJZBIfCgtlbmRwb2ludF'
     '9pZBgCIAEoDVIKZW5kcG9pbnRJZBIdCgpjbHVzdGVyX2lkGAMgASgNUgljbHVzdGVySWQSFwoH'
     'YXR0cl9pZBgEIAEoDVIGYXR0cklkEhsKCGJvb2xfdmFsGAUgASgISABSB2Jvb2xWYWwSGQoHaW'
-    '50X3ZhbBgGIAEoEUgAUgZpbnRWYWwSGQoIanNvbl92YWwYByABKAlSB2pzb25WYWxCBwoFdmFs'
-    'dWU=');
+    '50X3ZhbBgGIAEoEUgAUgZpbnRWYWwSGQoIanNvbl92YWwYByABKAlSB2pzb25WYWwSJAoEa2lu'
+    'ZBgIIAEoDjIQLmZsdXguRGV2aWNlS2luZFIEa2luZEIHCgV2YWx1ZQ==');
 
 @$core.Deprecated('Use readRequestDescriptor instead')
 const ReadRequest$json = {
@@ -705,6 +872,14 @@ const ReadRequest$json = {
     {'1': 'endpoint_ids', '3': 2, '4': 3, '5': 13, '10': 'endpointIds'},
     {'1': 'cluster_ids', '3': 3, '4': 3, '5': 13, '10': 'clusterIds'},
     {'1': 'attr_ids', '3': 4, '4': 3, '5': 13, '10': 'attrIds'},
+    {
+      '1': 'kind',
+      '3': 5,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
@@ -712,7 +887,8 @@ const ReadRequest$json = {
 final $typed_data.Uint8List readRequestDescriptor = $convert.base64Decode(
     'CgtSZWFkUmVxdWVzdBIXCgdub2RlX2lkGAEgASgEUgZub2RlSWQSIQoMZW5kcG9pbnRfaWRzGA'
     'IgAygNUgtlbmRwb2ludElkcxIfCgtjbHVzdGVyX2lkcxgDIAMoDVIKY2x1c3RlcklkcxIZCghh'
-    'dHRyX2lkcxgEIAMoDVIHYXR0cklkcw==');
+    'dHRyX2lkcxgEIAMoDVIHYXR0cklkcxIkCgRraW5kGAUgASgOMhAuZmx1eC5EZXZpY2VLaW5kUg'
+    'RraW5k');
 
 @$core.Deprecated('Use boolResultDescriptor instead')
 const BoolResult$json = {
@@ -791,6 +967,14 @@ const EnergyDeviceSeries$json = {
     },
     {'1': 'name', '3': 3, '4': 1, '5': 9, '10': 'name'},
     {'1': 'wh', '3': 4, '4': 3, '5': 13, '10': 'wh'},
+    {
+      '1': 'kind',
+      '3': 5,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
@@ -798,7 +982,7 @@ const EnergyDeviceSeries$json = {
 final $typed_data.Uint8List energyDeviceSeriesDescriptor = $convert.base64Decode(
     'ChJFbmVyZ3lEZXZpY2VTZXJpZXMSFwoHbm9kZV9pZBgBIAEoBFIGbm9kZUlkEiMKA2NscxgCIA'
     'EoDjIRLmZsdXguRW5lcmd5Q2xhc3NSA2NscxISCgRuYW1lGAMgASgJUgRuYW1lEg4KAndoGAQg'
-    'AygNUgJ3aA==');
+    'AygNUgJ3aBIkCgRraW5kGAUgASgOMhAuZmx1eC5EZXZpY2VLaW5kUgRraW5k');
 
 @$core.Deprecated('Use energyHistoryDescriptor instead')
 const EnergyHistory$json = {
@@ -851,13 +1035,22 @@ const EnergyRoleEntry$json = {
       '6': '.flux.EnergyClass',
       '10': 'cls'
     },
+    {
+      '1': 'kind',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
   ],
 };
 
 /// Descriptor for `EnergyRoleEntry`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List energyRoleEntryDescriptor = $convert.base64Decode(
     'Cg9FbmVyZ3lSb2xlRW50cnkSFwoHbm9kZV9pZBgBIAEoBFIGbm9kZUlkEiMKA2NscxgCIAEoDj'
-    'IRLmZsdXguRW5lcmd5Q2xhc3NSA2Nscw==');
+    'IRLmZsdXguRW5lcmd5Q2xhc3NSA2NscxIkCgRraW5kGAMgASgOMhAuZmx1eC5EZXZpY2VLaW5k'
+    'UgRraW5k');
 
 @$core.Deprecated('Use energyRoleMapDescriptor instead')
 const EnergyRoleMap$json = {

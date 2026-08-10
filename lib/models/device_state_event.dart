@@ -13,15 +13,22 @@
 // are the stable Dart-side API over it.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
+
 sealed class DeviceStateEvent {
-  const DeviceStateEvent(this.nodeId);
+  const DeviceStateEvent(this.nodeId, {this.kind = DeviceKind.matter});
   final int nodeId;
+
+  /// With [nodeId], identifies the device the event belongs to. Events for a
+  /// Modbus device and a Matter node can share a nodeId, so matching on nodeId
+  /// alone would deliver one device's readings to the other.
+  final DeviceKind kind;
 }
 
 /// Subscription successfully established on [nodeId]; an initial data report
 /// will follow immediately as a [SubscriptionUpdateEvent].
 class SubscriptionEstablishedEvent extends DeviceStateEvent {
-  const SubscriptionEstablishedEvent(super.nodeId);
+  const SubscriptionEstablishedEvent(super.nodeId, {super.kind});
 }
 
 /// One or more attribute values changed on [nodeId].
@@ -30,7 +37,7 @@ class SubscriptionEstablishedEvent extends DeviceStateEvent {
 /// Keys are the camelCase strings defined in SubscriptionManager.kt
 /// (e.g. `'onOff'`, `'localTempCenti'`, `'co2Ppm'`).
 class SubscriptionUpdateEvent extends DeviceStateEvent {
-  const SubscriptionUpdateEvent(super.nodeId, this.attrs);
+  const SubscriptionUpdateEvent(super.nodeId, this.attrs, {super.kind});
   final Map<String, dynamic> attrs;
 }
 
@@ -38,13 +45,14 @@ class SubscriptionUpdateEvent extends DeviceStateEvent {
 ///
 /// [nextIntervalMs] is the SDK's back-off delay before the next attempt.
 class SubscriptionResubscribingEvent extends DeviceStateEvent {
-  const SubscriptionResubscribingEvent(super.nodeId, this.nextIntervalMs);
+  const SubscriptionResubscribingEvent(super.nodeId, this.nextIntervalMs, {super.kind});
   final int nextIntervalMs;
 }
 
 /// Subscription permanently failed on [nodeId]; a manual restart is needed.
 class SubscriptionErrorEvent extends DeviceStateEvent {
-  const SubscriptionErrorEvent(super.nodeId, this.message);
+  const SubscriptionErrorEvent(super.nodeId, this.message, {super.kind});
   final String message;
 }
+
 

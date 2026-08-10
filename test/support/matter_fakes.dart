@@ -62,13 +62,13 @@ class FakeMatterPort implements MatterPort {
   Stream<DeviceStateEvent> get deviceStateUpdates => _stateCtrl.stream;
 
   @override
-  Future<bool> startSubscription(int nodeId) async {
+  Future<bool> startSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) async {
     startedSubscriptions.add(nodeId);
     return startSubscriptionResult;
   }
 
   @override
-  Future<void> stopSubscription(int nodeId) async {
+  Future<void> stopSubscription(int nodeId, {DeviceKind kind = DeviceKind.matter}) async {
     stoppedSubscriptions.add(nodeId);
   }
 
@@ -106,7 +106,7 @@ class FakeMatterPort implements MatterPort {
   }
 
   @override
-  Future<bool> removeDevice(int nodeId) async {
+  Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) async {
     removeDeviceCalls.add(nodeId);
     return true;
   }

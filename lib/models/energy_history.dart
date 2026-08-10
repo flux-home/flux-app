@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
 /// One time bucket of the energy-history chart, expressed as **average power in
@@ -39,12 +40,16 @@ class EnergyHistoryPoint {
 @immutable
 class PvDeviceSeries {
   const PvDeviceSeries({
+    required this.kind,
     required this.nodeId,
     required this.name,
     required this.wattsPerBucket,
     required this.kwh,
   });
 
+  /// Identity is (kind, nodeId) — a PV inverter is usually Modbus, so nodeId
+  /// alone does not name it.
+  final DeviceKind kind;
   final int nodeId;
   final String name;
   final List<double> wattsPerBucket;
@@ -206,6 +211,7 @@ class EnergyHistoryData {
         watts.add(wh / perHour);
       }
       pvSeries.add(PvDeviceSeries(
+        kind: DeviceKind.fromWire(s.kind.value),
         nodeId: s.nodeId.toInt(),
         name: s.name.isNotEmpty ? s.name : 'PV ${s.nodeId.toInt()}',
         wattsPerBucket: watts,

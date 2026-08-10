@@ -61,6 +61,42 @@ enum ManagedBy {
 ///
 /// All live state — on/off, brightness, temperature, battery, product info —
 /// lives exclusively in [DeviceLiveData] and is accessed through [DeviceView].
+/// What kind of thing a device is, and therefore what [MatterDevice.nodeId]
+/// means for it. Mirrors `flux.DeviceKind` on the wire.
+///
+/// A device is identified by the PAIR (kind, nodeId): nodeId is scoped to its
+/// kind's namespace, so a Matter node 5 and a Modbus device 5 are different
+/// devices. This replaces reading the kind out of the *magnitude* of nodeId
+/// (`nodeId >= 0x0100000000000000`), a constant that was duplicated here, in
+/// the device provider, in flux-ctl and in the firmware — and was already stale and
+/// wrong in the integration tests.
+enum DeviceKind {
+  /// Never assume Matter here: an unset wire field decodes as this, so treating
+  /// it as Matter would silently mis-route anything that forgot to set it.
+  unknown,
+  matter,
+  modbus,
+  cloud;
+
+  static DeviceKind fromWire(int v) => switch (v) {
+        1 => DeviceKind.matter,
+        2 => DeviceKind.modbus,
+        3 => DeviceKind.cloud,
+        _ => DeviceKind.unknown,
+      };
+
+  int get wire => switch (this) {
+        DeviceKind.matter => 1,
+        DeviceKind.modbus => 2,
+        DeviceKind.cloud  => 3,
+        DeviceKind.unknown => 0,
+      };
+
+  static DeviceKind fromName(String? n) =>
+      DeviceKind.values.firstWhere((e) => e.name == n,
+          orElse: () => DeviceKind.unknown);
+}
+
 @immutable
 class MatterDevice {
   const MatterDevice({
@@ -70,6 +106,7 @@ class MatterDevice {
     required this.nodeId,
     required this.commissionedAt,
     required this.lastModified,
+    this.kind = DeviceKind.matter,
     this.isOnline = true,
     this.sharedWithGoogleHome = false,
     this.networkType = NetworkType.unknown,
@@ -85,6 +122,14 @@ class MatterDevice {
       name: json['name'] as String,
       deviceType: DeviceType.values.firstWhere((e) => e.name == json['deviceType'], orElse: () => DeviceType.unknown),
       nodeId: json['nodeId'] as int,
+      // Records written before kind existed: recover it the only way the old
+      // format allowed — the reserved synthetic range. This is the one place
+      // that inference is still the truth, because it IS the old format.
+      kind: json['kind'] != null
+          ? DeviceKind.fromName(json['kind'] as String?)
+          : ((json['nodeId'] as int) >= 0x0100000000000000
+              ? DeviceKind.modbus
+              : DeviceKind.matter),
       isOnline: json['isOnline'] as bool? ?? true,
       sharedWithGoogleHome: json['sharedWithGoogleHome'] as bool? ?? false,
       commissionedAt: commissionedAt,
@@ -108,6 +153,9 @@ class MatterDevice {
   final String name;
   final DeviceType deviceType;
   final int nodeId;
+
+  /// With [nodeId], identifies the device. See [DeviceKind].
+  final DeviceKind kind;
   final bool isOnline;
   final bool sharedWithGoogleHome;
   final DateTime commissionedAt;
@@ -118,17 +166,16 @@ class MatterDevice {
   final String roomId;
   final EnergyRole energyRole;
 
-  /// True for controller-side Modbus devices, which the controller registers
-  /// under a synthetic node id at/above `FLUX_MODBUS_NODE_BASE`
-  /// (`0x0100000000000000`) — well above the small operational node ids real
-  /// Matter devices get.
-  bool get isModbus => nodeId >= 0x0100000000000000;
+  /// True for controller-side Modbus devices — read from [kind], not inferred
+  /// from the size of [nodeId].
+  bool get isModbus => kind == DeviceKind.modbus;
 
   MatterDevice copyWith({
     String? id,
     String? name,
     DeviceType? deviceType,
     int? nodeId,
+    DeviceKind? kind,
     bool? isOnline,
     bool? sharedWithGoogleHome,
     DateTime? commissionedAt,
@@ -142,6 +189,7 @@ class MatterDevice {
     name: name ?? this.name,
     deviceType: deviceType ?? this.deviceType,
     nodeId: nodeId ?? this.nodeId,
+    kind: kind ?? this.kind,
     isOnline: isOnline ?? this.isOnline,
     sharedWithGoogleHome: sharedWithGoogleHome ?? this.sharedWithGoogleHome,
     commissionedAt: commissionedAt ?? this.commissionedAt,
@@ -157,6 +205,7 @@ class MatterDevice {
     'name': name,
     'deviceType': deviceType.name,
     'nodeId': nodeId,
+    'kind': kind.name,
     'isOnline': isOnline,
     'sharedWithGoogleHome': sharedWithGoogleHome,
     'commissionedAt': commissionedAt.toIso8601String(),
