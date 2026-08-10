@@ -39,16 +39,6 @@ private const val FABRIC_ID          = 1L
 private const val ROOT_ISSUER_ID     = 1L
 private const val ICAC_ISSUER_ID     = 2L
 private const val APP_NODE_ID        = 0x0001L
-private const val CONTROLLER_NODE_ID = 0x0002L
-
-data class ControllerCredentials(
-    val rootCaTlv: ByteArray,
-    val nocTlv:    ByteArray,
-    val opPrivKey: ByteArray,   // raw 32-byte P256 scalar
-    val ipk:       ByteArray,   // 16-byte IPK epoch key
-    val fabricId:  Long,
-)
-
 /**
  * Manages the app's persistent Matter fabric identity.
  *
@@ -122,40 +112,6 @@ object AppFabricManager {
             id.appNocTlv,
             id.ipk,
         )
-    }
-
-    /**
-     * Generates a one-time in-memory keypair for the controller (Node 0x0002),
-     * signs a NOC for it using the stored Root CA, and returns the credentials
-     * to send via POST /fabric/provision.
-     */
-    fun generateControllerCredentials(context: Context): ControllerCredentials {
-        val id = getOrCreate(context)
-        val rootCaDelegate = AppKeyPairDelegate(ALIAS_ROOT_CA)
-
-        val kp    = KeyPairGenerator.getInstance("EC")
-            .apply { initialize(ECGenParameterSpec("secp256r1")) }
-            .generateKeyPair()
-        val pub   = kp.public  as ECPublicKey
-        val priv  = kp.private as ECPrivateKey
-
-        val pubBytes = pubToUncompressed(pub)
-
-        val noc = ChipDeviceController.createOperationalCertificate(
-            rootCaDelegate, id.rootCaTlv, pubBytes,
-            id.fabricId, CONTROLLER_NODE_ID, emptyList(),
-            notBefore(), notAfter(),
-        )
-
-        val rawPriv = priv.s.toByteArray().let {
-            val t = if (it.size > 32 && it[0] == 0.toByte()) it.drop(1).toByteArray() else it
-            ByteArray((32 - t.size).coerceAtLeast(0)) + t
-        }
-
-        Log.i(TAG, "Generated controller NOC: fabricId=0x%016X node=0x%016X"
-            .format(id.fabricId, CONTROLLER_NODE_ID))
-
-        return ControllerCredentials(id.rootCaTlv, noc, rawPriv, id.ipk, id.fabricId)
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

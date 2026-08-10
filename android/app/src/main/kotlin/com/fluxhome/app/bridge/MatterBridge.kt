@@ -22,7 +22,6 @@ class MatterBridge(context: Context) {
 
     // ── Sub-bridges ───────────────────────────────────────────────────────────
     private val commissioning = CommissioningBridge(core)
-    private val ota           = OtaBridge(core)
     private val network       = NetworkBridge(core)
     private val diagnostics   = DiagnosticsBridge(core)
     private val deviceInfo    = DeviceInfoBridge(core)
@@ -32,26 +31,16 @@ class MatterBridge(context: Context) {
     fun setDeviceStateSink(sink: EventChannel.EventSink?) { core.deviceStateSink     = sink }
 
     // ── Commissioning ─────────────────────────────────────────────────────────
-    fun ping(result: MethodChannel.Result) =
-        commissioning.ping(result)
-
     fun commissionDevice(payload: String, wifiSsid: String?, wifiPassword: String?,
                          threadDatasetHex: String?, nodeId: Long, result: MethodChannel.Result) =
         commissioning.commissionDevice(payload, wifiSsid, wifiPassword, threadDatasetHex, nodeId, result)
-
-    fun commissionViaIp(ipAddress: String, port: Int, discriminator: Int, setupPinCode: Long,
-                        nodeId: Long, result: MethodChannel.Result) =
-        commissioning.commissionViaIp(ipAddress, port, discriminator, setupPinCode, nodeId, result)
-
-    fun commissionViaCode(setupCode: String, nodeId: Long, result: MethodChannel.Result) =
-        commissioning.commissionViaCode(setupCode, nodeId, result)
 
     fun removeDevice(nodeId: Long, result: MethodChannel.Result) =
         commissioning.removeDevice(nodeId, result)
 
     fun openCommissioningWindow(nodeId: Long, vendorId: Int, productId: Int,
-                                awaitReachable: Boolean, result: MethodChannel.Result) =
-        commissioning.openCommissioningWindow(nodeId, vendorId, productId, awaitReachable, result)
+                                result: MethodChannel.Result) =
+        commissioning.openCommissioningWindow(nodeId, vendorId, productId, result)
 
     fun removeFabric(nodeId: Long, fabricIndex: Int, result: MethodChannel.Result) =
         deviceInfo.removeFabric(nodeId, fabricIndex, result)
@@ -59,29 +48,11 @@ class MatterBridge(context: Context) {
     fun parsePayload(payload: String, result: MethodChannel.Result) =
         commissioning.parsePayload(payload, result)
 
-    // ── OTA ───────────────────────────────────────────────────────────────────
-    fun downloadAndFlash(nodeId: Long, otaUrl: String, targetVersion: Long,
-                         targetVersionString: String, dryRun: Boolean, otaEndpoint: Int,
-                         result: MethodChannel.Result) =
-        ota.downloadAndFlash(nodeId, otaUrl, targetVersion, targetVersionString, dryRun, otaEndpoint, result)
-
-    fun cancelOta(result: MethodChannel.Result) =
-        ota.cancelOta(result)
-
     // ── Network (Wi-Fi + Thread) ──────────────────────────────────────────────
     fun scanWifiNetworks(result: MethodChannel.Result) =
         network.scanWifiNetworks(result)
 
-    fun discoverThreadNetworks(result: MethodChannel.Result) =
-        network.discoverThreadNetworks(result)
-
     // ── Diagnostics ───────────────────────────────────────────────────────────
-    fun runNetworkDiagnostics(result: MethodChannel.Result) =
-        diagnostics.runNetworkDiagnostics(result)
-
-    fun readThreadNetworkDiagnostics(nodeId: Long, result: MethodChannel.Result) =
-        diagnostics.readThreadNetworkDiagnostics(nodeId, result)
-
     fun readClusters(nodeId: Long, result: MethodChannel.Result) =
         diagnostics.readClusters(nodeId, result)
 
@@ -107,12 +78,4 @@ class MatterBridge(context: Context) {
     fun getFabricId(result: MethodChannel.Result) =
         deviceInfo.getFabricId(result)
 
-    fun getVendorId(result: MethodChannel.Result) =
-        deviceInfo.getVendorId(result)
-
-    fun discoverCommissionableNodes(result: MethodChannel.Result) =
-        deviceInfo.discoverCommissionableNodes(result)
-
-    fun exportFabricForController(result: MethodChannel.Result) =
-        deviceInfo.exportFabricForController(result)
 }

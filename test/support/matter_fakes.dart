@@ -3,14 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter_home/models/basic_info.dart';
-import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
-import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/device_store.dart';
@@ -127,19 +125,6 @@ class FakeMatterPort implements MatterPort {
       CommissionResult.ok(nodeId: 0, deviceTypeId: 0);
 
   @override
-  Future<CommissionResult> commissionViaIp({
-    required String ipAddress,
-    required int discriminator,
-    required int setupPinCode,
-    int port = 5540,
-  }) async =>
-      CommissionResult.ok(nodeId: 0, deviceTypeId: 0);
-
-  @override
-  Future<CommissionResult> commissionViaCode({required String setupCode}) async =>
-      CommissionResult.ok(nodeId: 0, deviceTypeId: 0);
-
-  @override
   Future<List<WifiNetwork>> scanWifiNetworks() async => const [];
 
   @override
@@ -155,38 +140,10 @@ class FakeMatterPort implements MatterPort {
   // ── MatterFabricPort ──────────────────────────────────────────────────────
 
   @override
-  Future<ShareDeviceResult?> shareDevice(int nodeId,
-          {int vendorId = 0, int productId = 0}) async =>
-      null;
-
-  @override
-  Future<bool> downloadAndFlash({
-    required int nodeId,
-    required String otaUrl,
-    required int targetVersion,
-    required String targetVersionString,
-    bool dryRun = false,
-    int endpoint = 0,
-  }) async =>
-      false;
-
-  @override
-  Future<bool> cancelOta() async => false;
-
-  @override
   Future<String?> getFabricId() async => null;
 
   @override
-  Future<List<CommissionableDevice>> discoverCommissionableNodes() async => const [];
-
-  @override
-  Future<List<ThreadBorderRouter>> discoverThreadNetworks() async => const [];
-
-  @override
   Future<String?> readSystemThreadCredentials() async => null;
-
-  @override
-  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) async => null;
 
   @override
   Future<BasicInfo?> readBasicInfo(int nodeId) async => null;

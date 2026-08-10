@@ -1,9 +1,7 @@
 package com.fluxhome.app.bridge
 
 import android.util.Log
-import com.fluxhome.app.chip.AppFabricManager
 import com.fluxhome.app.chip.ChipClient
-import com.fluxhome.app.chip.MatterCommissionableScanner
 import com.fluxhome.app.chip.clusters.BasicInfoCluster
 import com.fluxhome.app.chip.clusters.DescriptorCluster
 import com.fluxhome.app.chip.clusters.IdentifyCluster
@@ -87,60 +85,4 @@ class DeviceInfoBridge(private val core: BridgeCore) {
         result.success("0x${id.toULong().toString(16).padStart(16, '0').uppercase()}")
     }
 
-    fun getVendorId(result: MethodChannel.Result) {
-        result.success(ChipClient.VENDOR_ID)
-    }
-
-    /**
-     * Discovers commissionable Matter devices on the local network via DNS-SD
-     * (_matterc._udp).  Fires the mDNS query, waits [scanMs] milliseconds for
-     * responses, then collects all results via [ChipDeviceController.getDiscoveredDevice].
-     *
-     * Returns a JSON array where each entry is a flat map with:
-     *   discriminator, ipAddress, port, deviceType, vendorId, productId,
-     *   commissioningMode (enum name), deviceName, instanceName.
-     */
-    /**
-     * Generates a one-time NOC + exports the Root CA and IPK so Dart can
-     * call POST /fabric/provision and install the app's fabric on the controller.
-     *
-     * Returns a map with ByteArray values: rootCaTlv, nocTlv, opPrivKey, ipk,
-     * and a Long fabricId.  The caller must treat opPrivKey as sensitive.
-     */
-    fun exportFabricForController(result: MethodChannel.Result) =
-        core.requireChip(result) {
-            val creds = AppFabricManager.generateControllerCredentials(core.context)
-            core.main.post {
-                result.success(mapOf(
-                    "rootCaTlv" to creds.rootCaTlv,
-                    "nocTlv"    to creds.nocTlv,
-                    "opPrivKey" to creds.opPrivKey,
-                    "ipk"       to creds.ipk,
-                    "fabricId"  to creds.fabricId,
-                ))
-            }
-        }
-
-    fun discoverCommissionableNodes(result: MethodChannel.Result, scanMs: Long = 5_000L) =
-        core.requireChip(result) {
-            Log.i(TAG, "discoverCommissionableNodes: scanning via NsdManager…")
-            val devices = MatterCommissionableScanner.scan(core.context)
-            Log.i(TAG, "discoverCommissionableNodes: found ${devices.size} device(s)")
-            val mapped = devices.map { d ->
-                mapOf(
-                    "discriminator"     to d.discriminator,
-                    "ipAddress"         to d.ipAddress,
-                    "port"              to d.port,
-                    "deviceType"        to d.deviceType,
-                    "vendorId"          to d.vendorId,
-                    "productId"         to d.productId,
-                    "commissioningMode" to d.commissioningMode,
-                    "deviceName"        to d.deviceName,
-                    "instanceName"      to d.instanceName,
-                    "pairingHint"       to d.pairingHint,
-                    "isIcd"             to d.isIcd,
-                )
-            }
-            core.main.post { result.success(mapped) }
-        }
 }

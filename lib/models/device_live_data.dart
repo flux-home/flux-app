@@ -66,16 +66,6 @@ class BasicInfoCache {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OtaStatus
-// ─────────────────────────────────────────────────────────────────────────────
-
-class OtaStatus {
-  const OtaStatus({this.supported, this.endpoint});
-  final bool? supported;
-  final int? endpoint;
-  static const OtaStatus absent = OtaStatus();
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DeviceLiveData
@@ -93,7 +83,7 @@ class OtaStatus {
 /// stores it automatically, and the renderer registry in `cluster_parser.dart`
 /// displays it.
 ///
-/// [basicInfo] and [ota] are structurally separate — they are never touched
+/// [basicInfo] is structurally separate — it is never touched
 /// by [merge].
 class DeviceLiveData {
   DeviceLiveData({
@@ -101,7 +91,6 @@ class DeviceLiveData {
     required this.isStale,
     Map<String, dynamic>? attrs,
     this.basicInfo = BasicInfoCache.empty,
-    this.ota = OtaStatus.absent,
   }) : attrs = attrs ?? const {};
 
   // ── Factories ─────────────────────────────────────────────────────────────
@@ -117,7 +106,6 @@ class DeviceLiveData {
   final Map<String, dynamic> attrs;
 
   final BasicInfoCache basicInfo;
-  final OtaStatus ota;
 
   // ── Typed accessors (stable API for dedicated cards & DeviceView) ─────────
 
@@ -181,23 +169,20 @@ class DeviceLiveData {
 
   // ── OTA delegation ────────────────────────────────────────────────────────
 
-  bool? get otaSupported => ota.supported;
-  int? get otaEndpoint => ota.endpoint;
 
   // ── Core operations ───────────────────────────────────────────────────────
 
   /// Returns a new instance with all keys in [update] merged in.
-  /// Sets [isStale] → false.  Does not touch [basicInfo] or [ota].
+  /// Sets [isStale] → false.  Does not touch [basicInfo].
   DeviceLiveData merge(Map<String, dynamic> update) => DeviceLiveData(
     updatedAt: DateTime.now(),
     isStale: false,
     attrs: {...attrs, ...update},
     basicInfo: basicInfo,
-    ota: ota,
   );
 
   DeviceLiveData markStale() =>
-      DeviceLiveData(updatedAt: updatedAt, isStale: true, attrs: attrs, basicInfo: basicInfo, ota: ota);
+      DeviceLiveData(updatedAt: updatedAt, isStale: true, attrs: attrs, basicInfo: basicInfo);
 
   // ── Targeted helpers for non-subscription sub-objects ─────────────────────
 
@@ -232,15 +217,6 @@ class DeviceLiveData {
       productUrl: productUrl ?? basicInfo.productUrl,
       uniqueId: uniqueId ?? basicInfo.uniqueId,
     ),
-    ota: ota,
-  );
-
-  DeviceLiveData withOtaSupported({required bool value, required int endpoint}) => DeviceLiveData(
-    updatedAt: updatedAt,
-    isStale: isStale,
-    attrs: attrs,
-    basicInfo: basicInfo,
-    ota: OtaStatus(supported: value, endpoint: value ? endpoint : null),
   );
 
   // ── Derived helpers ───────────────────────────────────────────────────────

@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.fluxhome.app.chip.ThreadBorderRouterScanner
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -117,33 +116,6 @@ class NetworkBridge(private val core: BridgeCore) {
             }
 
         return networks
-    }
-
-    // ── Thread border-router discovery ────────────────────────────────────────
-
-    fun discoverThreadNetworks(result: MethodChannel.Result) {
-        core.scope.launch {
-            try {
-                val routers = ThreadBorderRouterScanner.scan(core.context)
-                val arr = JSONArray()
-                for (r in routers) {
-                    val txt = JSONObject().apply { r.txt.forEach { (k, v) -> put(k, v) } }
-                    arr.put(JSONObject()
-                        .put("serviceName", r.serviceName)
-                        .put("networkName", r.networkName)
-                        .put("extPanId",    r.extPanId)
-                        .put("vendorName",  r.vendorName)
-                        .put("modelName",   r.modelName)
-                        .put("host",        r.host)
-                        .put("port",        r.port)
-                        .put("txt",         txt))
-                }
-                core.main.post { result.success(arr.toString()) }
-            } catch (e: Exception) {
-                Log.e(TAG, "discoverThreadNetworks error", e)
-                core.main.post { result.error("THREAD_SCAN_ERROR", e.message, null) }
-            }
-        }
     }
 
     companion object {

@@ -1,11 +1,9 @@
 import 'package:matter_home/models/basic_info.dart';
-import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
-import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,22 +29,16 @@ abstract interface class MatterCommissionPort {
 
   Future<ParsedPayload?> parsePayload(String payload);
 
+  /// BLE-commissions a device onto the phone's throwaway fabric (Pass 1 of
+  /// commission-then-handoff).  Devices already on the network never touch the
+  /// phone SDK — their pairing code is forwarded to the controller directly
+  /// (FluxCoapService.commission).
   Future<CommissionResult> commissionDevice(
     String payload, {
     String? wifiSsid,
     String? wifiPassword,
     String? threadDatasetHex,
   });
-
-  Future<CommissionResult> commissionViaIp({
-    required String ipAddress,
-    required int discriminator, required int setupPinCode, int port,
-  });
-
-  /// Commissions a device already on the network using DNS-SD discovery.
-  /// [setupCode] is the raw QR payload ("MT:…") or manual pairing code (11 or 21 digits).
-  /// No IP address required — the SDK discovers the device via [_matterc._udp].
-  Future<CommissionResult> commissionViaCode({required String setupCode});
 
   Future<List<WifiNetwork>> scanWifiNetworks();
 
@@ -109,27 +101,13 @@ abstract interface class MatterClusterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin});
 }
 
-/// Fabric-level operations: OTA, share/remove, diagnostics, fabric identity.
+/// Fabric-level operations: remove, fabric identity, Thread credentials.
 abstract interface class MatterFabricPort {
-  Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0});
   Future<bool>  removeDevice(int nodeId);
 
-  Future<bool>  downloadAndFlash({
-    required int    nodeId,
-    required String otaUrl,
-    required int    targetVersion,
-    required String targetVersionString,
-    bool            dryRun   = false,
-    int             endpoint = 0,
-  });
-  Future<bool>  cancelOta();
-
   Future<String?> getFabricId();
-  Future<List<CommissionableDevice>> discoverCommissionableNodes();
 
-  Future<List<ThreadBorderRouter>>  discoverThreadNetworks();
-  Future<String?>                   readSystemThreadCredentials();
-  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId);
+  Future<String?> readSystemThreadCredentials();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

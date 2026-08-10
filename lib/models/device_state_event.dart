@@ -48,20 +48,3 @@ class SubscriptionErrorEvent extends DeviceStateEvent {
   final String message;
 }
 
-/// OTA firmware update progress for [nodeId].
-///
-/// [phase] is one of: `download` | `querying` | `installing` | `applying` |
-///   `dryrun` | `complete` | `error`.
-/// [progress] is a 0–100 percentage, present during `download` / `installing`.
-/// [message] carries an error description when [phase] is `error`.
-class OtaProgressEvent extends DeviceStateEvent {
-  const OtaProgressEvent(
-    super.nodeId, {
-    required this.phase,
-    this.progress,
-    this.message,
-  });
-  final String phase;
-  final int? progress;
-  final String? message;
-}

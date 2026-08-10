@@ -6,7 +6,6 @@ import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/ui/screens/cluster_inspector_screen.dart' show ClusterInspectorScreen;
 import 'package:matter_home/ui/screens/device_settings_screen.dart' show DeviceSettingsScreen;
-import 'package:matter_home/ui/screens/thread_diag_screen.dart' show ThreadDiagScreen;
 
 /// Read-only merged view of a commissioned device's state.
 ///
@@ -36,7 +35,7 @@ class DeviceView {
 
   /// The underlying commissioning record.
   /// Pass this to screens that need a stable identity handle for navigation
-  /// (e.g. [ClusterInspectorScreen], [ThreadDiagScreen], [DeviceSettingsScreen]).
+  /// (e.g. [ClusterInspectorScreen], [DeviceSettingsScreen]).
   MatterDevice get device => _device;
 
   // ── Connectivity ───────────────────────────────────────────────────────────
@@ -77,8 +76,6 @@ class DeviceView {
 
   // ── OTA ───────────────────────────────────────────────────────────────────
 
-  bool? get otaSupported => _live?.otaSupported;
-  int?  get otaEndpoint  => _live?.otaEndpoint;
 
   // ── Sensors / thermostat ──────────────────────────────────────────────────
 

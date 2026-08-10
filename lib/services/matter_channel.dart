@@ -1,16 +1,13 @@
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:matter_home/models/basic_info.dart';
-import 'package:matter_home/models/commissionable_device.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
-import 'package:matter_home/models/thread_models.dart';
 import 'package:matter_home/models/wifi_network.dart';
 import 'package:matter_home/services/matter_port.dart';
 
@@ -68,12 +65,6 @@ class MatterChannel implements MatterPort {
           'error' => SubscriptionErrorEvent(
             nodeId,
             map['message'] as String? ?? 'unknown',
-          ),
-          'otaProgress' => OtaProgressEvent(
-            nodeId,
-            phase:    map['phase']    as String? ?? '',
-            progress: (map['progress'] as num?)?.toInt(),
-            message:  map['message']  as String?,
           ),
           // Default branch covers 'update' and any future attr event types.
           _ => SubscriptionUpdateEvent(nodeId, _stripEnvelope(map)),
@@ -149,40 +140,6 @@ class MatterChannel implements MatterPort {
       return CommissionResult.ok(nodeId: result['nodeId'] as int, deviceTypeId: result['deviceTypeId'] as int?);
     } on PlatformException catch (e) {
       return CommissionResult.err(e.message ?? 'Commission failed');
-    }
-  }
-
-  @override
-  Future<CommissionResult> commissionViaIp({
-    required String ipAddress,
-    required int discriminator,
-    required int setupPinCode,
-    int port = 5540,
-  }) async {
-    try {
-      final result = await _method.invokeMapMethod<String, dynamic>('commissionViaIp', {
-        'ipAddress': ipAddress,
-        'port': port,
-        'discriminator': discriminator,
-        'setupPinCode': setupPinCode,
-      });
-      if (result == null) return CommissionResult.err('No result from channel');
-      return CommissionResult.ok(nodeId: result['nodeId'] as int, deviceTypeId: result['deviceTypeId'] as int?);
-    } on PlatformException catch (e) {
-      return CommissionResult.err(e.message ?? 'IP commission failed');
-    }
-  }
-
-  @override
-  Future<CommissionResult> commissionViaCode({required String setupCode}) async {
-    try {
-      final result = await _method.invokeMapMethod<String, dynamic>(
-          'commissionViaCode', {'setupCode': setupCode});
-      if (result == null) return CommissionResult.err('No result from channel');
-      return CommissionResult.ok(
-          nodeId: result['nodeId'] as int, deviceTypeId: result['deviceTypeId'] as int?);
-    } on PlatformException catch (e) {
-      return CommissionResult.err(e.message ?? 'On-network commission failed');
     }
   }
 
@@ -343,27 +300,6 @@ class MatterChannel implements MatterPort {
   @override
   Future<String?> readSystemThreadCredentials() => _invoke<String?>('readSystemThreadCredentials', null);
 
-  @override
-  Future<List<ThreadBorderRouter>> discoverThreadNetworks() => _invoke<List<ThreadBorderRouter>>(
-    'discoverThreadNetworks',
-    [],
-    decode: (raw) {
-      if (raw == null) return [];
-      final list = json.decode(raw as String) as List<dynamic>;
-      return list.map((e) => ThreadBorderRouter.fromJson(e as Map<String, dynamic>)).toList();
-    },
-  );
-
-  @override
-  Future<ThreadNetworkDiagnostics?> readThreadNetworkDiagnostics(int nodeId) => _invoke<ThreadNetworkDiagnostics?>(
-    'readThreadNetworkDiagnostics',
-    null,
-    args: {'nodeId': nodeId},
-    decode: (raw) {
-      if (raw == null) return null;
-      return ThreadNetworkDiagnostics.fromJson(json.decode(raw as String) as Map<String, dynamic>);
-    },
-  );
 
   @override
   Future<String?> readClusters(int nodeId, {bool full = false}) =>
@@ -401,33 +337,6 @@ class MatterChannel implements MatterPort {
 
   // ── OTA update ─────────────────────────────────────────────────────────────
 
-  /// Downloads the OTA image from [otaUrl] and initiates the Matter BDX transfer.
-  /// Progress events arrive on [deviceStateUpdates] as `{type:"otaProgress", ...}`.
-  /// [targetVersion] is passed as a String to avoid 32/64-bit channel issues.
-  @override
-  Future<bool> downloadAndFlash({
-    required int nodeId,
-    required String otaUrl,
-    required int targetVersion,
-    required String targetVersionString,
-    bool dryRun = false,
-    int endpoint = 0,
-  }) => _invoke(
-    'downloadAndFlash',
-    false,
-    args: {
-      'nodeId': nodeId,
-      'otaUrl': otaUrl,
-      'targetVersion': targetVersion.toString(),
-      'targetVersionString': targetVersionString,
-      'dryRun': dryRun,
-      'endpoint': endpoint,
-    },
-  );
-
-  @override
-  Future<bool> cancelOta() => _invoke('cancelOta', false);
-
   // ── Share / remove / fabric ────────────────────────────────────────────────
 
   @override
@@ -450,23 +359,14 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<ShareDeviceResult?> shareDevice(int nodeId, {int vendorId = 0, int productId = 0}) =>
-      _openWindow(nodeId, vendorId: vendorId, productId: productId, awaitReachable: true);
+  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) => _openWindow(nodeId);
 
-  @override
-  Future<ShareDeviceResult?> openCommissioningWindow(int nodeId) =>
-      // Commission-then-handoff: scan for the device's CM=2 mDNS advertisement so
-      // we can hand the controller its IPv6 + port. The controller's own DNS-SD
-      // discovery can't identify the device — the OTBR's SRP->mDNS proxy strips
-      // the discriminator/CM TXT on its local query — so it PASEs this address
-      // directly instead.
-      _openWindow(nodeId, awaitReachable: true);
-
-  /// Opens an ECM window via the native `shareDevice` op.  [awaitReachable]
-  /// tells the bridge whether to block on the device's CM=2 mDNS advertisement
-  /// (needed for sharing; not for the controller handoff).
+  /// Opens an ECM window via the native `shareDevice` op and returns the
+  /// window's codes.  No address is resolved: the controller finds the device
+  /// itself (own SRP table + commissionable DNS-SD), so only the passcode and
+  /// discriminator are handed over.
   Future<ShareDeviceResult?> _openWindow(int nodeId,
-          {int vendorId = 0, int productId = 0, bool awaitReachable = true}) =>
+          {int vendorId = 0, int productId = 0}) =>
       _invoke<ShareDeviceResult?>(
         'shareDevice',
         null,
@@ -474,7 +374,6 @@ class MatterChannel implements MatterPort {
           'nodeId': nodeId,
           'vendorId': vendorId,
           'productId': productId,
-          'awaitReachable': awaitReachable,
         },
         decode: (raw) {
           if (raw == null) return null;
@@ -482,8 +381,6 @@ class MatterChannel implements MatterPort {
           return ShareDeviceResult(
             qrCodePayload:     map['qrCodePayload']     as String,
             manualPairingCode: map['manualPairingCode'] as String,
-            ipv6Address:       (map['ipv6Address'] as String?) ?? '',
-            port:              (map['port'] as num?)?.toInt() ?? 0,
             passcode:          (map['passcode'] as num?)?.toInt() ?? 0,
             discriminator:     (map['discriminator'] as num?)?.toInt() ?? 0,
           );
@@ -501,17 +398,4 @@ class MatterChannel implements MatterPort {
   @override
   Future<String?> getFabricId() => _invoke<String?>('getFabricId', null);
 
-  @override
-  Future<List<CommissionableDevice>> discoverCommissionableNodes() =>
-      _invoke<List<CommissionableDevice>>(
-        'discoverCommissionableNodes',
-        const [],
-        decode: (raw) {
-          if (raw == null) return const [];
-          return (raw as List<dynamic>)
-              .map((e) => CommissionableDevice.fromMap(
-                    Map<String, dynamic>.from(e as Map<Object?, Object?>)))
-              .toList();
-        },
-      );
 }
