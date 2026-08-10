@@ -1,0 +1,1 @@
+thread commissioning seems to work, just LAN/Wifi affected
