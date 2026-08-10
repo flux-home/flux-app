@@ -31,11 +31,20 @@ class IsolateTransport implements ControllerTransport {
   final _reconnects   = <int, Completer<void>>{};
   final _observeCtrls = <int, StreamController<TransportEvent>>{};
 
+  // Retained so dispose() can close them — an open ReceivePort keeps the
+  // isolate's message queue (and this object) alive.
+  ReceivePort? _rx;
+  ReceivePort? _errors;
+  ReceivePort? _exits;
+
   Future<void> _spawn() async {
     final rx = ReceivePort();
     rx.listen(_onMessage);
     final errors = ReceivePort()..listen((_) => _degrade('isolate error'));
     final exits  = ReceivePort()..listen((_) => _degrade('isolate exit'));
+    _rx = rx;
+    _errors = errors;
+    _exits = exits;
     try {
       _isolate = await Isolate.spawn(
         transportIsolateEntry,
@@ -96,15 +105,33 @@ class IsolateTransport implements ControllerTransport {
     }
   }
 
+  /// Grace added to the caller's own timeout before the main isolate gives up on
+  /// its own. The request timeout is enforced *inside* the isolate, so if the
+  /// isolate dies, is killed mid-request (dispose), or a reply is ever lost, the
+  /// completer would otherwise never complete and `await` would hang forever.
+  static const _deadlineSlack = Duration(seconds: 5);
+
   @override
   Future<TransportResponse> request(TransportRequest r) async {
     await _ready.future;
     if (_fallback != null) return _fallback!.request(r);
+    // Never enqueue onto a dead isolate — the send would vanish silently.
+    if (_disposed) return TransportResponse.unreachable;
     final id = _nextId++;
     final c = Completer<TransportResponse>();
     _pending[id] = c;
     _cmd!.send(ReqMsg(id, r));
-    return c.future;
+    return c.future.timeout(
+      Duration(milliseconds: r.timeoutMs) + _deadlineSlack,
+      onTimeout: () {
+        // Drop the orphan so the map cannot grow without bound.
+        _pending.remove(id);
+        debugPrint('IsolateTransport: no reply for ${r.path} within deadline');
+        return TransportResponse.unreachableBecause(
+            'transport isolate did not reply within '
+            '${(r.timeoutMs / 1000).toStringAsFixed(0)} s');
+      },
+    );
   }
 
   @override
@@ -151,11 +178,32 @@ class IsolateTransport implements ControllerTransport {
     _disposed = true;
     _cmd?.send(const DisposeMsg());
     await _fallback?.dispose();
+
+    // Fail everything still in flight. The isolate is about to be killed and
+    // will never reply, so leaving these pending strands the caller forever —
+    // e.g. a service swap mid-request used to permanently wedge
+    // DeviceProvider.syncWithController (its `finally` never ran).
+    for (final c in _pending.values) {
+      if (!c.isCompleted) c.complete(TransportResponse.unreachable);
+    }
+    _pending.clear();
+    for (final c in _reconnects.values) {
+      if (!c.isCompleted) c.complete();
+    }
+    _reconnects.clear();
+
     for (final ctrl in _observeCtrls.values) {
       if (!ctrl.isClosed) await ctrl.close();
     }
     _observeCtrls.clear();
-    // Give the isolate a moment to dispose its client, then kill it.
-    Future.delayed(const Duration(seconds: 1), () => _isolate?.kill());
+    // Give the isolate a moment to dispose its client, then kill it and release
+    // the ports (they keep the isolate's message queue alive otherwise).
+    Future.delayed(const Duration(seconds: 1), () {
+      _isolate?.kill();
+      _isolate = null;
+      _rx?.close();
+      _errors?.close();
+      _exits?.close();
+    });
   }
 }

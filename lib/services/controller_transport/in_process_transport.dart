@@ -52,6 +52,26 @@ class InProcessTransport implements ControllerTransport {
     return _reconnecting!;
   }
 
+  static String _secs(Duration d) => d.inMilliseconds < 1000
+      ? '${d.inMilliseconds} ms'
+      : '${(d.inMilliseconds / 1000).toStringAsFixed(0)} s';
+
+  /// Turn a transport exception into something a user can act on. The raw
+  /// toString() is kept as a suffix — it is the only clue when the cause is
+  /// something we haven't classified.
+  static String _describe(Object e) {
+    final s = e.toString();
+    final lower = s.toLowerCase();
+    if (lower.contains('handshake') || lower.contains('dtls')) {
+      return 'DTLS handshake failed — wrong pairing key? ($s)';
+    }
+    if (lower.contains('no route') || lower.contains('unreachable')) {
+      return 'network unreachable ($s)';
+    }
+    if (lower.contains('refused')) return 'connection refused ($s)';
+    return s;
+  }
+
   CoapRequest _build(TransportRequest r) {
     final uri = endpoint.coapUri(r.path, query: r.query);
     switch (r.method) {
@@ -76,19 +96,24 @@ class InProcessTransport implements ControllerTransport {
       resp = await _client.send(_build(r)).timeout(timeout);
     } on TimeoutException {
       unawaited(reconnect());
-      return TransportResponse.unreachable;
+      return TransportResponse.unreachableBecause(
+          'no reply within ${_secs(timeout)}');
     } on Exception catch (e) {
-      if (_disposed) return TransportResponse.unreachable;
+      if (_disposed) return TransportResponse.unreachableBecause('transport closed');
       if (!r.retryOnConnError) {
         unawaited(reconnect());
-        return TransportResponse.unreachable;
+        return TransportResponse.unreachableBecause(_describe(e));
       }
       debugPrint('InProcessTransport ${r.path}: $e — reconnecting + retry once');
       await reconnect();
       try {
         resp = await _client.send(_build(r)).timeout(timeout);
-      } on Exception {
-        return TransportResponse.unreachable;
+      } on TimeoutException {
+        return TransportResponse.unreachableBecause(
+            'no reply within ${_secs(timeout)} (after one retry)');
+      } on Exception catch (e2) {
+        return TransportResponse.unreachableBecause(
+            '${_describe(e2)} (after one retry)');
       }
     }
     return TransportResponse(

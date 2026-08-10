@@ -60,7 +60,12 @@ class TransportRequest {
 }
 
 class TransportResponse {
-  const TransportResponse({required this.ok, required this.success, this.payload});
+  const TransportResponse({
+    required this.ok,
+    required this.success,
+    this.payload,
+    this.error,
+  });
 
   /// A response was received — i.e. the controller is reachable.
   final bool ok;
@@ -70,8 +75,22 @@ class TransportResponse {
 
   final Uint8List? payload;
 
-  /// Timeout / connection failure — controller unreachable.
+  /// Why the request failed, when [ok] is false — e.g. 'timed out after 15s' or
+  /// the DTLS/socket exception. Null on success.
+  ///
+  /// Without this the connection UI could only ever say "the controller did not
+  /// answer": every failure mode (no route, wrong PSK, handshake rejected,
+  /// timeout) collapsed into the same const. Keep the strings short and
+  /// user-facing — they are rendered verbatim on the Connection screen.
+  final String? error;
+
+  /// Timeout / connection failure — controller unreachable, reason unknown.
+  /// Prefer [unreachableBecause] so the cause survives to the UI.
   static const unreachable = TransportResponse(ok: false, success: false);
+
+  /// Timeout / connection failure, carrying the reason.
+  static TransportResponse unreachableBecause(String reason) =>
+      TransportResponse(ok: false, success: false, error: reason);
 }
 
 enum TransportEventKind { data, error, done }

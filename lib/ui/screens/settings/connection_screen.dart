@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/remote_access_screen.dart';
 import 'package:provider/provider.dart';
@@ -141,6 +142,66 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             ]),
           ),
 
+          // ── Last connection metrics ──────────────────────────────────────
+          const SizedBox(height: 20),
+          _label(cs, 'LAST CONNECTION'),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              _valueRow(cs, 'Attempt',
+                  hub.lastConnectAt == null
+                      ? 'none yet'
+                      : '${hub.lastConnectOk == true ? "ok" : "failed"}'
+                          ' · ${_ago(hub.lastConnectAt!)} ago'),
+              _divider(cs),
+              _valueRow(cs, 'Setup time', _ms(hub.lastConnectDuration)),
+              _divider(cs),
+              _valueRow(cs, 'Via',
+                  hub.lastConnectKind == null || hub.lastConnectOk != true
+                      ? '—'
+                      : hub.lastConnectKind == ConnectionKind.remote
+                          ? 'remote tunnel'
+                          : 'local network'),
+              _divider(cs),
+              _valueRow(cs, 'Heartbeat',
+                  hub.lastProbeAt == null
+                      ? '—'
+                      : hub.lastProbeRtt != null
+                          ? '${_ms(hub.lastProbeRtt)} · ${_ago(hub.lastProbeAt!)} ago'
+                          : 'failed · ${_ago(hub.lastProbeAt!)} ago'),
+              _divider(cs),
+              _valueRow(cs, 'Attempts',
+                  '${hub.connectAttempts} total · ${hub.connectFailures} failed'),
+              if (hub.probeFailStreak > 0) ...[
+                _divider(cs),
+                _valueRow(cs, 'Missed beats', '${hub.probeFailStreak}'),
+              ],
+              if (hub.lastConnectError != null) ...[
+                _divider(cs),
+                _valueRow(cs, 'Last error', hub.lastConnectError!),
+              ],
+            ]),
+          ),
+
+          // ── Where the last attempt got to ────────────────────────────────
+          if (hub.lastAttemptSteps.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            _label(cs, 'LAST ATTEMPT'),
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final step in hub.lastAttemptSteps) _stepRow(cs, step),
+                  _divider(cs),
+                  _CopyDiagnosticsTile(hub: hub),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 40),
         ],
       ),
@@ -175,4 +236,119 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   Widget _divider(ColorScheme cs) =>
       Divider(height: 1, indent: 16, endIndent: 16, color: cs.outlineVariant);
+
+  /// One stage of the last attempt: what it was, whether it passed, and — the
+  /// part that was missing before — why it didn't.
+  Widget _stepRow(ColorScheme cs, ConnectStep step) {
+    final (IconData icon, Color tint) = switch (step.outcome) {
+      ConnectStepOutcome.ok      => (Icons.check, _onlineColor),
+      ConnectStepOutcome.failed  => (Icons.close, _offlineColor),
+      ConnectStepOutcome.skipped => (Icons.remove, cs.onSurfaceVariant),
+    };
+    final ms = step.duration;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(icon, size: 16, color: tint),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(step.stage.label,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: step.isFailure
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: step.isFailure ? tint : cs.onSurface)),
+                  ),
+                  if (ms != null)
+                    Text(_ms(ms),
+                        style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11.5,
+                            color: cs.onSurfaceVariant)),
+                ]),
+                if (step.detail != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(step.detail!,
+                        style: TextStyle(
+                            fontSize: 12, color: cs.onSurfaceVariant)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _ms(Duration? d) => d == null
+      ? '—'
+      : d.inMilliseconds < 1000
+          ? '${d.inMilliseconds} ms'
+          : '${(d.inMilliseconds / 1000).toStringAsFixed(1)} s';
+
+  static String _ago(DateTime t) {
+    final s = DateTime.now().difference(t).inSeconds;
+    if (s < 60) return '${s}s';
+    if (s < 3600) return '${s ~/ 60}m';
+    return '${s ~/ 3600}h';
+  }
+}
+
+/// Copies the full trace of the last attempt to the clipboard.
+///
+/// The point is being able to report a failure from the phone that is failing —
+/// which is usually the one that is off the LAN, nowhere near a machine with
+/// adb attached.
+class _CopyDiagnosticsTile extends StatelessWidget {
+  const _CopyDiagnosticsTile({required this.hub});
+
+  final HubConnection hub;
+
+  String _report() {
+    final b = StringBuffer()
+      ..writeln('flux connection diagnostics')
+      ..writeln('status: ${hub.status.name}  via: ${hub.connectionKind.name}')
+      ..writeln('attempts: ${hub.connectAttempts}  failures: ${hub.connectFailures}');
+    if (hub.lastConnectAt != null) {
+      b.writeln('last attempt: ${hub.lastConnectAt!.toIso8601String()} '
+          '(${hub.lastConnectOk == true ? "ok" : "failed"})');
+    }
+    if (hub.lastConnectError != null) b.writeln('error: ${hub.lastConnectError}');
+    b.writeln('--- stages ---');
+    for (final s in hub.lastAttemptSteps) {
+      b.writeln('${s.outcome.name.padRight(7)} ${s.stage.label}'
+          '${s.duration != null ? " (${s.duration!.inMilliseconds} ms)" : ""}'
+          '${s.detail != null ? " — ${s.detail}" : ""}');
+    }
+    final trace = hub.lastRemoteDiagnostics;
+    if (trace.isNotEmpty) b..writeln('--- trace ---')..writeln(trace);
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.copy_all_outlined, size: 20),
+      title: const Text('Copy diagnostics'),
+      subtitle: const Text('Full trace of the last attempt'),
+      onTap: () async {
+        await Clipboard.setData(ClipboardData(text: _report()));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Diagnostics copied')));
+      },
+    );
+  }
 }

@@ -88,8 +88,10 @@ Future<void> transportIsolateEntry(TransportInit init) async {
     if (msg is ReqMsg) {
       transport.request(msg.request).then(
           (resp) => init.replyPort.send(RespMsg(msg.id, resp)),
-          onError: (_) =>
-              init.replyPort.send(RespMsg(msg.id, TransportResponse.unreachable)));
+          // Carry the reason across the isolate boundary: dropping it here is
+          // why the UI could only ever say "the controller did not answer".
+          onError: (Object e) => init.replyPort.send(RespMsg(
+              msg.id, TransportResponse.unreachableBecause(e.toString()))));
     } else if (msg is ObserveMsg) {
       observes[msg.observeId] = transport
           .observe(msg.path, query: msg.query)

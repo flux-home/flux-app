@@ -70,3 +70,11 @@ ld_workaround
 
 # Stale build artifacts
 /chip/
+
+# Local-only build secrets (TURN relay credentials etc). Consumed via
+# `flutter build --dart-define-from-file=dart_defines.local.json`; never commit.
+dart_defines.local.json
+
+# Local tooling artifacts (editor/agent caches — tens of MB, never useful in git)
+.entire/
+.opencode/

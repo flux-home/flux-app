@@ -2,19 +2,9 @@ import 'dart:typed_data';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Optional manual IP override for the Flux Controller.
-///
-/// The primary discovery path is mDNS ([FluxControllerDiscovery]).
-/// This is only consulted when mDNS times out — useful on networks where
-/// multicast is blocked or the user is on a different subnet.
+/// Per-controller credentials and remote-access settings, keyed by controller ID
+/// (the mDNS hostname). Discovery itself is mDNS-only ([FluxControllerDiscovery]).
 class ControllerSettings {
-  const ControllerSettings({required this.host, required this.port});
-
-  final String host;
-  final int    port;
-
-  static const _kHost        = 'ctrl_host';
-  static const _kPort        = 'ctrl_port';
   static const _kPsk         = 'ctrl_psk';          // hex32 keyed by controller ID
   static const _kDtlsId      = 'ctrl_dtls_id';      // DTLS identity — same as controller ID
   static const _kRzvUrl      = 'ctrl_rzv_url';      // rendezvous URL keyed by controller ID (ADR-0006)
@@ -23,12 +13,6 @@ class ControllerSettings {
   static const _kTurnUser    = 'ctrl_turn_user';    // TURN username
   static const _kTurnPass    = 'ctrl_turn_pass';    // TURN credential
 
-  static Future<ControllerSettings?> loadManualOverride() async {
-    final prefs = await SharedPreferences.getInstance();
-    final host  = prefs.getString(_kHost);
-    if (host == null || host.isEmpty) return null;
-    return ControllerSettings(host: host, port: prefs.getInt(_kPort) ?? 5684);
-  }
 
   /// Returns the stored PSK for the given controller [hostname], or null if
   /// no PSK has been configured (plain CoAP — migration phase).
@@ -66,6 +50,31 @@ class ControllerSettings {
   static Future<void> clearPsk(String hostname) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('${_kPsk}_$hostname');
+  }
+
+  /// Forgets one controller: removes every per-controller key (PSK, DTLS id,
+  /// rendezvous URL, STUN/TURN) for [controllerId]. [clearPsk] alone left the
+  /// DTLS id and remote-access config behind.
+  static Future<void> clearController(String controllerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final k in [
+      _kPsk, _kDtlsId, _kRzvUrl, _kStun, _kTurn, _kTurnUser, _kTurnPass,
+    ]) {
+      await prefs.remove('${k}_$controllerId');
+    }
+  }
+
+  /// Nukes every controller-related key (all `ctrl_*`): PSKs, DTLS ids,
+  /// rendezvous URLs, STUN/TURN and the manual host/port override. Backs the
+  /// "Remove controller" action's fallback so no orphaned key — e.g. a PSK the
+  /// targeted clear missed because the live id was unknown — can keep the app
+  /// believing a hub is still configured.
+  static Future<void> clearAllControllers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith('ctrl_')).toList();
+    for (final k in keys) {
+      await prefs.remove(k);
+    }
   }
 
   /// The DTLS identity stored for [controllerId] (defaults to the id itself).
@@ -136,29 +145,4 @@ class ControllerSettings {
     return key.isEmpty ? null : key.substring('${_kPsk}_'.length);
   }
 
-  /// Every controller ID that has a stored PSK — i.e. every hub paired at some
-  /// point. Backs the Settings → Controllers list (UI is multi-controller-ready
-  /// even though the live connection is single-active for now).
-  static Future<List<String>> allControllerIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final pfx = '${_kPsk}_';
-    final ids = prefs.getKeys()
-        .where((k) => k.startsWith(pfx))
-        .map((k) => k.substring(pfx.length))
-        .toList()
-      ..sort();
-    return ids;
-  }
-
-  Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kHost, host);
-    await prefs.setInt   (_kPort, port);
-  }
-
-  static Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kHost);
-    await prefs.remove(_kPort);
-  }
 }

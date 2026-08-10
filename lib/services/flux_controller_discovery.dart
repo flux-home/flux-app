@@ -27,20 +27,6 @@ class FluxControllerDiscovery {
     final fromMdns = await _discoverViaMdns();
     if (fromMdns != null) return fromMdns;
 
-    final manual = await ControllerSettings.loadManualOverride();
-    if (manual != null) {
-      debugPrint('FluxControllerDiscovery: mDNS failed, trying manual '
-          '${manual.host}:${manual.port}');
-      // For manual overrides we don't know the controller ID from mDNS.
-      // Try loading the PSK by any stored ID (first match) or fall back to
-      // the host string as the key.
-      return _probeWithPsk(
-        host:         manual.host,
-        port:         manual.port,
-        controllerId: manual.host,  // user must have stored PSK under this key
-      );
-    }
-
     return null;
   }
 
