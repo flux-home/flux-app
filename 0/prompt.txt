@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbxyzuemu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f/tasks/bbxyzuemu.output</output-file>
+<status>killed</status>
+<summary>Background command "Wait for controller boot, then show key log lines" was stopped</summary>
+</task-notification>
