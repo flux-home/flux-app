@@ -1,0 +1,1 @@
+Can you move the home energy view in a separate view, it should be accessible through a menu with buttons like in apple home, below the app title but abvce the tiles, there should be buttons for energy, lighting, climate, the buttons should be pastell yellow outline + yellow text black background, climate pastell blue, lighting pastell orange
