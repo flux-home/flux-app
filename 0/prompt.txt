@@ -1,0 +1,1 @@
+the energy graph should update automatically in the app and the self sufficiency calculation should be based on overall kwh consumed by the home vs produced, integrated
