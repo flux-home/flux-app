@@ -1,0 +1,1 @@
+the controller now has an interface to get energy prices, can you add a second graph in the app, that shows consumed energy, price levels
