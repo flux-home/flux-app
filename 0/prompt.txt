@@ -1,0 +1,1 @@
+the energy graph is not showing anything, just a spinner forever
