@@ -1,0 +1,62 @@
+<task-notification>
+<task-id>a7efb8142d8dc5e7d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/a735038c-53a0-4ecd-a5f7-8dac96fdf905/tasks/a7efb8142d8dc5e7d.output</output-file>
+<status>completed</status>
+<summary>Agent "Find unused services and methods" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Audit complete. Findings below, all grep-verified.
+
+## (a) Fully dead — zero call sites anywhere (lib + test)
+
+| Location | Symbol | Evidence |
+|---|---|---|
+| `/home/tado/workspace/flux/flux-app/lib/services/controller_settings.dart:167` | `ControllerSettings.allControllerIds()` | Only textual mention is a *comment* in `test/services/controller_settings_test.dart:42`. No call. |
+| `/home/tado/workspace/flux/flux-app/lib/services/controller_settings.dart:178` | `ControllerSettings.save()` (instance) | `ControllerSettings(...)` is only constructed at its own line 30 (inside `loadManualOverride`); no `.save()` call anywhere. |
+| `/home/tado/workspace/flux/flux-app/lib/services/controller_settings.dart:184` | `ControllerSettings.clear()` (static) | Zero `ControllerSettings.clear()` call sites. Superseded by `clearController`/`clearAllControllers`. The `_kHost`/`_kPort` keys are now written by nothing. |
+| `/home/tado/workspace/flux/flux-app/lib/services/thread_settings_service.dart:162` | `ThreadSettingsService.hasActiveSelection()` | Zero references outside its own declaration. |
+| `/home/tado/workspace/flux/flux-app/lib/services/null_matter_port.dart:44` | `NullMatterPort.commissionViaIp()` | Not declared on any `Matter*Port` interface (see `matter_port.dart` — `MatterCommissionPort` has no such method), and zero callers. The `@override` is a false one. |
+| `/home/tado/workspace/flux/flux-app/lib/services/null_matter_port.dart:52` | `NullMatterPort.commissionViaCode()` | Same as above — not on the interface, zero callers. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:613` | `DeviceProvider.removeRule()` | Zero references. (`upsertRule` is used; remove path never wired.) |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:1132` | `DeviceProvider.refreshAll()` | Zero references. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:1152` | `DeviceProvider.renameRoom()` | Zero references. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:1163` | `DeviceProvider.deleteRoom()` | Zero references. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:1216` | `DeviceProvider.shareWithGoogleHome()` | Zero references. Its body is the *only* caller of `_channel.shareDevice` — see (c). |
+| `/home/tado/workspace/flux/flux-app/lib/providers/device_provider.dart:69` | `DeviceProvider.errorMessage` (field) | Write-only: assigned at line 948, never read in `lib/` or `test/`. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/commissioning_controller.dart:221` | `CommissioningController.threadExtPanId` (field) | Write-only: set at 465, nulled at 334/634, never read. (`threadNetworkName` IS read internally at line 739 — keep.) |
+
+## (b) Test-only (production callers: zero)
+
+| Location | Symbol | Evidence |
+|---|---|---|
+| `/home/tado/workspace/flux/flux-app/lib/services/controller_settings.dart:66` | `ControllerSettings.clearPsk()` | **Confirmed dead in production.** Only real call is `test/services/controller_settings_test.dart:44` (which uses it deliberately to *construct* the stale-key regression). Other hits are a doc comment at `controller_settings.dart:72` and the unrelated generated `flux.pb.dart:1031`. |
+| `/home/tado/workspace/flux/flux-app/lib/providers/commissioning_controller.dart:651` | `CommissioningController.parseThreadDatasetInfo()` | Public only for tests (6 call sites in `commissioning_controller_test.dart`); the sole production caller is internal at line 462 → could be private. Not dead, but public surface is test-driven. |
+
+## (c) Transitively dead / unreachable by type
+
+- `/home/tado/workspace/flux/flux-app/lib/services/matter_channel.dart` — **~28 of its 40 `@override` methods are unreachable.** `MatterChannel` is registered in `lib/main.dart:68-72` only as `MatterChannel`, `MatterSubscriptionPort`, and `MatterCommissionPort`. `MatterClusterPort`/`MatterFabricPort` are proxied from `hub.service ?? nullChannel` (`main.dart:80-85`), i.e. `FluxCoapService`/`NullMatterPort` — never `MatterChannel`. `DeviceProvider._channel` is likewise `NullMatterPort` → `FluxCoapService`. The only `context.read&lt;MatterChannel&gt;()` calls are `discoverCommissionableNodes` (matter_settings_screen:60), `discoverThreadNetworks` (thread_settings_screen:124), `readSystemThreadCredentials` (thread_settings_screen:205, commission_screen:1476), `getFabricId` (matter_settings_screen:47). Everything else on `MatterChannel` (all cluster reads/writes, all commands, `shareDevice`, `removeDevice`, `removeFabric`, `downloadAndFlash`, `cancelOta`, `readThreadNetworkDiagnostics`, `startSubscription`/`stopSubscription`/`deviceStateUpdates`) has no reachable Dart caller.
+- `/home/tado/workspace/flux/flux-app/lib/services/matter_channel.dart:419` `shareDevice` — reachable only from the dead `DeviceProvider.shareWithGoogleHome`.
+- `/home/tado/workspace/flux/flux-app/lib/main.dart:71` `Provider&lt;MatterSubscriptionPort&gt;.value(...)` — **`MatterSubscriptionPort` is never `read`/injected anywhere.** The interface (`matter_port.dart:17`) is only satisfied transitively via `MatterPort`. Dead provider registration + an abstraction with no consumer.
+
+## (d) Interface obligation (keep, but note the feature is a no-op)
+
+`FluxCoapService` (`flux_coap_service.dart:846-894`) stubs that return `null`/`false`/`[]`. Because `MatterClusterPort`/`MatterFabricPort` resolve to `FluxCoapService` (or `NullMatterPort`), these stubs are what production actually hits:
+
+- `shareDevice` (848) — called at `device_settings_screen.dart:904` via `MatterFabricPort` → always `null`. Share-device UI is functionally dead.
+- `downloadAndFlash` (864) / `cancelOta` (869) — called at `device_settings_screen.dart:646/831` via `MatterFabricPort` → always `false`. **The whole OTA flow, including `DclService`, is a no-op in production.**
+- `readThreadNetworkDiagnostics` (872) — called at `thread_diag_screen.dart:101` via `MatterFabricPort` → always `null`. Thread diag screen can never show data.
+- `discoverCommissionableNodes` (856), `discoverThreadNetworks` (870), `readSystemThreadCredentials` (871), `openCommissioningWindow` (877), `removeFabric` (881), `parsePayload` (885), `commissionDevice` (888), `scanWifiNetworks` (892), `provideCredentials` (893) — pure interface obligations; their real callers all go through `MatterChannel` or `MatterCommissionPort` (= `MatterChannel`), so these bodies are never entered. Keep.
+
+Same category for the corresponding `NullMatterPort` overrides (all are legitimate interface obligations except the two false-`@override` methods listed in (a)).
+
+## Suspects that are NOT dead (verified)
+
+- **`thread_sync_service.dart` is alive.** `ThreadSyncService(svc).ensureInSync(...)` is called from `/home/tado/workspace/flux/flux-app/lib/main.dart:114-117`, and `thread.status` + `thread.message` are both read there. `ThreadSyncStatus` values are only compared in tests, but the enum is load-bearing via `.name` at main.dart:116. Keep the whole file.
+- **`controller_settings.dart`**: `loadManualOverride` (→ `flux_controller_discovery.dart:30`), `loadDtlsId` (→ `hub_connection.dart:295`), `hasAnyPsk` (→ hub_connection 131/151), `firstControllerId` (4 sites), `saveStunServer` (→ `remote_access_screen.dart:112`), `loadStunServer`, `saveTurn`/`loadTurn`, `saveRendezvousUrl`/`loadRendezvousUrl` — all have real production callers.
+- **`flux_coap_service.dart`**: every one of its own (non-stub) public methods has ≥1 production caller. `postThreadDataset` is live — `_pushToController` is still wired at `thread_settings_screen.dart:698` (`onTap: _pushing ? null : _pushToController`) *and* `thread_sync_service.dart:80`. `getThreadDataset` → thread_sync_service:49 + thread_settings_screen:78. `getThreadDatasetHex` → `commissioning_controller.dart:443`.
+- **`matter_port.dart`**: all 42 interface methods have at least one production call site. No dead interface methods (but see (c) re: `MatterSubscriptionPort` the *type*).
+- **`thread_settings_service.dart`**: `loadDatasets`, `setActive`, `loadActive`, `load`, `addDataset`, `removeDataset`, `updateDataset`, `loadRouters`/`saveRouters`, `ThreadTlvDecoder.decode`/`networkName` all still have production callers (`commission_screen.dart`, `thread_settings_screen.dart`, `device_info_screen.dart`, `thread_sync_service.dart`). `save()` has exactly one production caller: `thread_sync_service.dart:68`. Only `hasActiveSelection` is dead; `saveDatasets` has no *external* caller (only internal at lines 242/251/271/290) → candidate for `private`.
+- **Files never imported**: none, with one exception — `/home/tado/workspace/flux/flux-app/lib/services/proto/flux.pbjson.dart` is imported by zero `lib/` files (generated artifact; harmless, protoc emits it).
+- Also live-but-internal-only (candidates for `private`, not dead): `DeviceProvider.adoptHubMode` (58), `updateOtaSupport` (707), `stepBrightness` (1348/1350), `nextFreeSlot` (1443); `HubConnection.setService` (389).</result>
+<usage><subagent_tokens>88361</subagent_tokens><tool_uses>49</tool_uses><duration_ms>389212</duration_ms></usage>
+</task-notification>
