@@ -1,0 +1,1 @@
+I actually also want to see fine grained commissioning steps when the controller commissioning is ongoing, can you suggest a solution
