@@ -1,0 +1,1 @@
+the app should also use/sync device names from the controller
