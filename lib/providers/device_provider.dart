@@ -364,10 +364,75 @@ class DeviceProvider extends ChangeNotifier {
     if (_syncInFlight) return;
     _syncInFlight = true;
     try {
+      // Hand the local layout over BEFORE reconciling. Reconcile takes the
+      // controller's room and role as authoritative, and on the very first sync
+      // those are empty — so the other order would wipe this phone's layout a
+      // moment before uploading it.
+      await _uploadLocalLayoutOnce();
       await _reconcileWithController();
     } finally {
       _syncInFlight = false;
     }
+  }
+
+  /// Hands this phone's pre-existing rooms and energy roles to the controller,
+  /// exactly once.
+  ///
+  /// Before rooms moved, both lived only here. On the first sync with a
+  /// room-capable controller the layout would otherwise simply be gone: room
+  /// UUIDs cannot be translated locally, and the controller has no rooms yet.
+  ///
+  /// Deliberately one-shot and recorded persistently. Re-running it later would
+  /// resurrect rooms the user had since deleted on the controller — the upload
+  /// is a hand-off, not a sync.
+  ///
+  /// Skipped entirely if the controller already has rooms: that means another
+  /// phone has already done this, and its layout wins over this one's stale copy.
+  Future<void> _uploadLocalLayoutOnce() async {
+    final svc = _ctrlService;
+    if (svc == null || _store.layoutUploaded) return;
+
+    final existing = await svc.getRooms();
+    if (existing == null) return;          // transport failure — try again later
+
+    final legacyRooms = _store.loadLegacyRooms();
+    final assignments = _store.loadLegacyRoomAssignments();
+
+    if (existing.isEmpty && legacyRooms.isNotEmpty) {
+      final stored = await svc.setRooms(
+          [for (final (_, name) in legacyRooms) $proto.Room(name: name)]);
+      if (stored == null) return;
+
+      // setRooms answers in the order sent, so position maps a legacy UUID to
+      // the id the controller just issued.
+      final uuidToId = <String, int>{};
+      for (var i = 0; i < legacyRooms.length && i < stored.length; i++) {
+        uuidToId[legacyRooms[i].$1] = stored[i].id;
+      }
+      _rooms = [Room.noRoom, for (final r in stored) Room(id: r.id, name: r.name)];
+      await _persistRooms();
+
+      for (var i = 0; i < _devices.length; i++) {
+        final newId = uuidToId[assignments[_devices[i].id]];
+        if (newId == null) continue;
+        if (await svc.setDeviceMeta(_devices[i].nodeId,
+            kind: _devices[i].kind, roomId: newId)) {
+          _devices[i] = _devices[i].copyWith(roomId: newId);
+        }
+      }
+      debugPrint('DeviceProvider: uploaded ${stored.length} local room(s)');
+    }
+
+    // Energy roles survive locally (they are an enum, not a UUID), so push them
+    // regardless of whether there were rooms to move.
+    for (final d in _devices) {
+      if (d.energyRole == EnergyRole.none) continue;
+      await svc.setDeviceMeta(d.nodeId, kind: d.kind, energyRole: d.energyRole);
+    }
+
+    await _store.markLayoutUploaded();
+    await _persist();
+    notifyListeners();
   }
 
   /// Reconciles the local device list with the controller’s list so the two
@@ -424,6 +489,11 @@ class DeviceProvider extends ChangeNotifier {
           networkType:    networkType,
           managedBy:      ManagedBy.controller,
           isOnline:       cd.reachable,
+          // The controller owns these, so adopt them rather than defaulting —
+          // otherwise a re-added device comes back roomless and unassigned,
+          // which is the bug this whole move fixes.
+          roomId:         cd.roomId,
+          energyRole:     EnergyRole.fromWire(cd.energyRole.value),
         );
         _devices.add(device);
         changed = true;
@@ -434,7 +504,22 @@ class DeviceProvider extends ChangeNotifier {
         debugPrint('DeviceProvider: added controller device '
             '$nodeId (${device.name})');
       } else {
-        // Already known — re-seed online state from controller’s reachable flag.
+        // Already known — re-seed from the controller, which owns room and
+        // energy role. Local edits already went through it, so it is never
+        // behind: taking its answer here is what keeps two phones in agreement.
+        //
+        // Suppressed until the hand-off has happened: until then the local copy
+        // is the only copy, and adopting the controller's empty answer would
+        // destroy it. A failed upload leaves the flag clear, so this stays
+        // suppressed and the layout survives to be retried.
+        final ctrlRole = EnergyRole.fromWire(cd.energyRole.value);
+        if (_store.layoutUploaded &&
+            (_devices[idx].roomId != cd.roomId ||
+             _devices[idx].energyRole != ctrlRole)) {
+          _devices[idx] =
+              _devices[idx].copyWith(roomId: cd.roomId, energyRole: ctrlRole);
+          changed = true;
+        }
         if (_devices[idx].isOnline != cd.reachable) {
           _devices[idx] = _devices[idx].copyWith(isOnline: cd.reachable);
           changed = true;
@@ -489,9 +574,9 @@ class DeviceProvider extends ChangeNotifier {
       notifyListeners();
     }
 
-    // Keep the controller's energy-log classification in sync with the user's
-    // role assignments (cheap; the controller just replaces its override map).
-    unawaited(_syncEnergyRoles());
+    // No role push from here any more: the controller owns the assignment and
+    // this method just reconciled against it. Pushing a phone-side copy back is
+    // what let the two drift apart.
   }
 
   /// Local-only removal of a controller-managed device that the controller has
@@ -1118,53 +1203,96 @@ class DeviceProvider extends ChangeNotifier {
 
   // ── Room management ───────────────────────────────────────────────────────────────────
 
-  /// Creates a new room with [name] and appends it in creation order.
-  Future<Room> createRoom(String name) async {
-    final room = Room(id: _uuid.v4(), name: name);
-    _rooms = [..._rooms, room];
+  /// Creates a room and returns it with the controller-issued id.
+  ///
+  /// Returns null if the controller is unreachable: the id can only come from
+  /// it, so there is nothing sensible to invent locally — a phone-side id would
+  /// be exactly the divergence this replaced.
+  Future<Room?> createRoom(String name) async {
+    final svc = _ctrlService;
+    if (svc == null) return null;
+
+    final wire = [
+      for (final r in _rooms.where((r) => !r.isNoRoom))
+        $proto.Room(id: r.id, name: r.name),
+      $proto.Room(name: name),   // id 0 → create
+    ];
+    final stored = await svc.setRooms(wire);
+    if (stored == null) return null;
+
+    _rooms = [Room.noRoom, for (final r in stored) Room(id: r.id, name: r.name)];
     await _persistRooms();
     notifyListeners();
-    return room;
+    // The new room is the one whose name matches and whose id we did not have.
+    final knownIds = wire.map((r) => r.id).where((id) => id != 0).toSet();
+    for (final r in stored) {
+      if (!knownIds.contains(r.id)) return Room(id: r.id, name: r.name);
+    }
+    return null;
+  }
+
+  /// Deletes [roomId]. Devices in it fall back to No Room, controller-side.
+  Future<bool> deleteRoom(int roomId) async {
+    final svc = _ctrlService;
+    if (svc == null) return false;
+    final stored = await svc.setRooms([
+      for (final r in _rooms.where((r) => !r.isNoRoom && r.id != roomId))
+        $proto.Room(id: r.id, name: r.name),
+    ]);
+    if (stored == null) return false;
+    _rooms = [Room.noRoom, for (final r in stored) Room(id: r.id, name: r.name)];
+    for (var i = 0; i < _devices.length; i++) {
+      if (_devices[i].roomId == roomId) {
+        _devices[i] = _devices[i].copyWith(roomId: Room.noRoomId);
+      }
+    }
+    await _persistRooms();
+    await _persist();
+    notifyListeners();
+    return true;
   }
 
   /// Assigns [deviceId] to [roomId].  Pass [Room.noRoomId] to unassign.
-  Future<void> assignRoom(String deviceId, String roomId) async {
+  ///
+  /// Writes through to the controller first: it owns the membership, and a
+  /// local-only assignment is what used to vanish on re-add.
+  Future<bool> assignRoom(String deviceId, int roomId) async {
     final idx = _indexById(deviceId);
-    if (idx < 0) return;
-    _devices[idx] = _devices[idx].copyWith(roomId: roomId);
+    if (idx < 0) return false;
+    final d = _devices[idx];
+
+    final svc = _ctrlService;
+    if (svc != null) {
+      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, roomId: roomId);
+      if (!ok) return false;
+    }
+    _devices[idx] = d.copyWith(roomId: roomId);
     await _persist();
     notifyListeners();
+    return true;
   }
 
   /// Assigns [deviceId] an [EnergyRole] for the home energy-flow overview.
   /// Pass [EnergyRole.none] to remove it from the overview.
-  Future<void> assignEnergyRole(String deviceId, EnergyRole role) async {
+  Future<bool> assignEnergyRole(String deviceId, EnergyRole role) async {
     final idx = _indexById(deviceId);
-    if (idx < 0) return;
-    _devices[idx] = _devices[idx].copyWith(energyRole: role);
+    if (idx < 0) return false;
+    final d = _devices[idx];
+
+    final svc = _ctrlService;
+    if (svc != null) {
+      // The controller stores the role itself (not just the derived log class),
+      // so the difference between e.g. a car charger and a heat pump survives a
+      // reinstall instead of living only on this phone.
+      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, energyRole: role);
+      if (!ok) return false;
+    }
+    _devices[idx] = d.copyWith(energyRole: role);
     await _persist();
     notifyListeners();
-    // Push the full role map so the controller classifies the energy log by
-    // role (fixes e.g. a PV source on a Matter plug). Fire-and-forget; a full
-    // resync also runs on every controller reconcile.
-    unawaited(_syncEnergyRoles());
+    return true;
   }
 
-  /// Sends the current energy-role assignments to the controller (full set).
-  /// No-op without a controller.
-  Future<void> _syncEnergyRoles() async {
-    final svc = _ctrlService;
-    if (svc == null) return;
-    // Keyed by the whole device key: the controller matches roles on
-    // (kind, node_id), so sending nodeId alone would push kind=UNKNOWN and the
-    // override would silently never apply.
-    final map = <(DeviceKind, int), int>{};
-    for (final d in _devices) {
-      final cls = d.energyRole.controllerClass;
-      if (cls != null) map[(d.kind, d.nodeId)] = cls;
-    }
-    await svc.setEnergyRoles(map);
-  }
   // ── Share / rename / remove ───────────────────────────────────────────────
 
 

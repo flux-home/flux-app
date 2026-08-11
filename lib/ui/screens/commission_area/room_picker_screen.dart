@@ -18,7 +18,7 @@ class RoomPickerScreen extends StatefulWidget {
 
 class _RoomPickerScreenState extends State<RoomPickerScreen> {
   /// Currently highlighted room — defaults to "No Room".
-  String _selectedRoomId = Room.noRoomId;
+  int _selectedRoomId = Room.noRoomId;
   bool _confirming = false;
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -62,6 +62,13 @@ class _RoomPickerScreenState extends State<RoomPickerScreen> {
     );
     if (name == null || name.isEmpty || !mounted) return;
     final room = await context.read<DeviceProvider>().createRoom(name);
+    if (!mounted) return;
+    if (room == null) {
+      // Room ids come from the controller, so there is nothing to select.
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't reach the controller — room not created")));
+      return;
+    }
     setState(() => _selectedRoomId = room.id);
   }
 
@@ -96,7 +103,7 @@ class _RoomPickerScreenState extends State<RoomPickerScreen> {
                 if (i < rooms.length) {
                   final room     = rooms[i];
                   final selected = room.id == _selectedRoomId;
-                  return RadioListTile<String>(
+                  return RadioListTile<int>(
                     value:       room.id,
                     groupValue:  _selectedRoomId,
                     title:       Text(room.name),

@@ -14,6 +14,7 @@ class DeviceStore {
   static const _kSnapshots = 'device_snapshots';
   static const _kRooms     = 'rooms';
   static const _kRules     = 'automation_rules_v1';
+  static const _kLayoutUp  = 'layout_uploaded_v1';
 
   final SharedPreferences _prefs;
 
@@ -47,11 +48,46 @@ class DeviceStore {
     final raw = _prefs.getStringList(_kRooms) ?? [];
     return raw
         .map((s) {
+          // Catches Error too, not just Exception: rooms persisted before the
+          // controller owned them carry a UUID string id, and `as int` on those
+          // throws a TypeError — an Error, which `on Exception` would let
+          // escape and take the whole load with it.
           try { return Room.fromJson(jsonDecode(s) as Map<String, dynamic>); }
-          on Exception catch (_) { return null; }
+          catch (_) { return null; }
         })
         .whereType<Room>()
         .toList();
+  }
+
+  /// Rooms persisted before the controller owned them, as (uuid, name).
+  ///
+  /// Read raw rather than through [Room], which cannot represent them: their ids
+  /// are UUIDs. Used once, to re-create the layout on the controller — see
+  /// DeviceProvider.migrateLocalLayout.
+  List<(String, String)> loadLegacyRooms() {
+    final out = <(String, String)>[];
+    for (final s in _prefs.getStringList(_kRooms) ?? <String>[]) {
+      try {
+        final j = jsonDecode(s) as Map<String, dynamic>;
+        final id = j['id'], name = j['name'];
+        if (id is String && name is String) out.add((id, name));
+      } catch (_) { /* skip unreadable entry */ }
+    }
+    return out;
+  }
+
+  /// Device-id → legacy room UUID, for devices assigned before the move.
+  /// [MatterDevice] drops the string form, so this reads the raw records.
+  Map<String, String> loadLegacyRoomAssignments() {
+    final out = <String, String>{};
+    for (final s in _prefs.getStringList(_kDevices) ?? <String>[]) {
+      try {
+        final j = jsonDecode(s) as Map<String, dynamic>;
+        final id = j['id'], room = j['roomId'];
+        if (id is String && room is String && room != 'no-room') out[id] = room;
+      } catch (_) { /* skip unreadable entry */ }
+    }
+    return out;
   }
 
   Future<void> saveRooms(List<Room> rooms) async {
@@ -61,6 +97,12 @@ class DeviceStore {
         .toList();
     await _prefs.setStringList(_kRooms, raw);
   }
+
+  /// Whether this phone's pre-existing rooms and energy roles have already been
+  /// uploaded to a controller. One-way and permanent: re-running it after the
+  /// user has edited the layout on the controller would resurrect deleted rooms.
+  bool get layoutUploaded => _prefs.getBool(_kLayoutUp) ?? false;
+  Future<void> markLayoutUploaded() => _prefs.setBool(_kLayoutUp, true);
 
   // ── Automation rules ───────────────────────────────────────────────────────
 

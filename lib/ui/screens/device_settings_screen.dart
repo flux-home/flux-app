@@ -309,6 +309,14 @@ class _RoomPickerSheetState extends State<_RoomPickerSheet> {
     if (name == null || name.isEmpty || !context.mounted) return;
     final room = await context.read<DeviceProvider>().createRoom(name);
     if (!context.mounted) return;
+    if (room == null) {
+      // The controller issues room ids, so an unreachable controller means the
+      // room genuinely does not exist yet — better to say so than to show one
+      // that would vanish on the next sync.
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't reach the controller — room not created")));
+      return;
+    }
     await context.read<DeviceProvider>().assignRoom(widget.deviceId, room.id);
     if (context.mounted) Navigator.pop(context);
   }
@@ -353,7 +361,7 @@ class _RoomPickerSheetState extends State<_RoomPickerSheet> {
               shrinkWrap: true,
               children: [
                 for (final room in rooms)
-                  RadioListTile<String>(
+                  RadioListTile<int>(
                     value:      room.id,
                     groupValue: currentRoomId,
                     secondary:  Icon(

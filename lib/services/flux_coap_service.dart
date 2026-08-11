@@ -10,6 +10,7 @@ import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/commission_models.dart';
 import 'package:matter_home/models/device_state_event.dart';
 import 'package:matter_home/models/matter_device.dart' show DeviceKind;
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/fabric_descriptor.dart';
 import 'package:matter_home/models/share_result.dart';
 import 'package:matter_home/models/thermostat_models.dart';
@@ -42,6 +43,9 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// DEL  /thread/epskc                 → (stop the ephemeral-key session)
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
+/// POST /devices/meta                 ← DeviceMeta → StatusResponse
+/// GET  /rooms                        → RoomList
+/// PUT  /rooms                        ← RoomList → RoomList (ids assigned)
 /// DEL  /devices?id=<hex>             → StatusResponse
 /// POST /commission                   ← CommissionRequest → CommissionResult
 /// GET  /events?id=<hex>    Observe   → DeviceStateEvent
@@ -353,20 +357,57 @@ class FluxCoapService implements MatterPort {
   /// from the Modbus profile. [nodeToClass] maps node id → flux_EnergyClass code
   /// (1=grid, 2=pv, 3=load, 4=battery); it's the full set (replaces the stored
   /// map). See POST /energy/roles.
-  /// Push the user's energy-role assignments. Keyed by (kind, nodeId): the
-  /// controller looks roles up by the full key, so an entry sent without its kind
-  /// would never match and the role would silently have no effect.
-  Future<bool> setEnergyRoles(Map<(DeviceKind, int), int> deviceToClass) async {
-    final map = $proto.EnergyRoleMap(
-      entries: deviceToClass.entries.map((e) => $proto.EnergyRoleEntry(
-            nodeId: Int64(e.key.$2),
-            kind: $proto.DeviceKind.valueOf(e.key.$1.wire) ??
-                $proto.DeviceKind.DEVICE_KIND_UNKNOWN,
-            cls: $proto.EnergyClass.valueOf(e.value) ??
-                $proto.EnergyClass.ENERGY_CLASS_UNKNOWN,
-          )),
-    );
-    final resp = await _post('/energy/roles', map.writeToBuffer());
+  // ── Rooms & device metadata ────────────────────────────────────────────
+  // The controller owns rooms, room membership and energy roles; the app caches
+  // them. Held phone-side they disagreed between phones and were wiped whenever
+  // a device was re-added.
+
+  /// The controller's room list (GET /rooms). Null on a transport failure —
+  /// distinct from an empty list, which means "no rooms yet".
+  Future<List<$proto.Room>?> getRooms() async {
+    final b = await _get('/rooms');
+    if (b == null) return null;
+    try { return $proto.RoomList.fromBuffer(b).rooms; }
+    on Exception catch (e) { debugPrint('FluxCoapService getRooms: $e'); return null; }
+  }
+
+  /// Replace the whole room list (PUT /rooms) and return it as stored.
+  ///
+  /// A room with id 0 is a creation request; the controller assigns the id, so
+  /// the reply is the only way to learn it — hence a list back rather than a
+  /// bool. Omitting an existing room deletes it, and any device left pointing at
+  /// it falls back to No Room controller-side.
+  Future<List<$proto.Room>?> setRooms(List<$proto.Room> rooms) async {
+    final body = $proto.RoomList(rooms: rooms).writeToBuffer();
+    final b = await _put('/rooms', body);
+    if (b == null) return null;
+    try { return $proto.RoomList.fromBuffer(b).rooms; }
+    on Exception catch (e) { debugPrint('FluxCoapService setRooms: $e'); return null; }
+  }
+
+  /// Partial update of controller-owned device metadata (POST /devices/meta).
+  ///
+  /// Only the arguments passed are written. That distinction matters: 0 is a
+  /// real value for both room ("No Room") and energy role ("none"), so clearing
+  /// either has to be expressible without also clearing the other.
+  Future<bool> setDeviceMeta(
+    int nodeId, {
+    required DeviceKind kind,
+    String? name,
+    int? roomId,
+    EnergyRole? energyRole,
+  }) async {
+    final meta = $proto.DeviceMeta()
+      ..nodeId = Int64(nodeId)
+      ..kind   = $proto.DeviceKind.valueOf(kind.wire) ??
+                 $proto.DeviceKind.DEVICE_KIND_UNKNOWN;
+    if (name != null)       meta.name    = name;
+    if (roomId != null)     meta.roomId  = roomId;
+    if (energyRole != null) {
+      meta.energyRole = $proto.EnergyRole.valueOf(energyRole.wire) ??
+                        $proto.EnergyRole.ENERGY_ROLE_UNSPECIFIED;
+    }
+    final resp = await _post('/devices/meta', meta.writeToBuffer());
     return resp != null;
   }
 

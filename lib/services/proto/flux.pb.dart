@@ -1802,6 +1802,8 @@ class Device extends $pb.GeneratedMessage {
     $core.int? deviceType,
     ConnectivityState? connectivity,
     DeviceKind? kind,
+    $core.int? roomId,
+    EnergyRole? energyRole,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -1812,6 +1814,8 @@ class Device extends $pb.GeneratedMessage {
     if (deviceType != null) result.deviceType = deviceType;
     if (connectivity != null) result.connectivity = connectivity;
     if (kind != null) result.kind = kind;
+    if (roomId != null) result.roomId = roomId;
+    if (energyRole != null) result.energyRole = energyRole;
     return result;
   }
 
@@ -1839,6 +1843,9 @@ class Device extends $pb.GeneratedMessage {
         enumValues: ConnectivityState.values)
     ..aE<DeviceKind>(8, _omitFieldNames ? '' : 'kind',
         enumValues: DeviceKind.values)
+    ..aI(9, _omitFieldNames ? '' : 'roomId', fieldType: $pb.PbFieldType.OU3)
+    ..aE<EnergyRole>(10, _omitFieldNames ? '' : 'energyRole',
+        enumValues: EnergyRole.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1930,6 +1937,28 @@ class Device extends $pb.GeneratedMessage {
   $core.bool hasKind() => $_has(7);
   @$pb.TagNumber(8)
   void clearKind() => $_clearField(8);
+
+  /// Per-device metadata the controller owns (see DeviceMeta). The app caches
+  /// these for offline display but is not their source of truth: rooms and
+  /// energy roles used to be phone-local, so two phones disagreed forever and
+  /// re-adding a device silently wiped both.
+  @$pb.TagNumber(9)
+  $core.int get roomId => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set roomId($core.int value) => $_setUnsignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasRoomId() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearRoomId() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  EnergyRole get energyRole => $_getN(9);
+  @$pb.TagNumber(10)
+  set energyRole(EnergyRole value) => $_setField(10, value);
+  @$pb.TagNumber(10)
+  $core.bool hasEnergyRole() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearEnergyRole() => $_clearField(10);
 }
 
 /// GET /devices
@@ -1979,6 +2008,242 @@ class DeviceList extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(1)
   $pb.PbList<Device> get devices => $_getList(0);
+}
+
+/// ─── Rooms ──────────────────────────────────────────────────────────────────
+/// A room is a named group devices are assigned to. The controller owns both the
+/// list and the membership so the layout survives a reinstall and agrees across
+/// phones. IDs are small controller-issued integers, not UUIDs: Device.room_id
+/// sits in a fixed-size record, where 2 bytes beats 37.
+///
+/// id 0 is the reserved "No Room" sentinel. It is never stored and never sent in
+/// a RoomList — every device that has not been assigned carries room_id 0.
+/// Membership lives on the device (room_id), NOT as a room→devices list, so there
+/// is only one copy of the relationship to keep consistent.
+class Room extends $pb.GeneratedMessage {
+  factory Room({
+    $core.int? id,
+    $core.String? name,
+  }) {
+    final result = create();
+    if (id != null) result.id = id;
+    if (name != null) result.name = name;
+    return result;
+  }
+
+  Room._();
+
+  factory Room.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory Room.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Room',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'id', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Room clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Room copyWith(void Function(Room) updates) =>
+      super.copyWith((message) => updates(message as Room)) as Room;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static Room create() => Room._();
+  @$core.override
+  Room createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static Room getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Room>(create);
+  static Room? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get id => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set id($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => $_clearField(2);
+}
+
+/// GET /rooms → RoomList ;  PUT /rooms ← RoomList
+/// PUT is a FULL REPLACE, mirroring how the app holds the list. An entry with
+/// id 0 is a request to create (the controller assigns the id and returns the
+/// new list); omitting an existing room deletes it, and any device left pointing
+/// at a deleted room falls back to room_id 0 rather than dangling.
+class RoomList extends $pb.GeneratedMessage {
+  factory RoomList({
+    $core.Iterable<Room>? rooms,
+  }) {
+    final result = create();
+    if (rooms != null) result.rooms.addAll(rooms);
+    return result;
+  }
+
+  RoomList._();
+
+  factory RoomList.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory RoomList.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'RoomList',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..pPM<Room>(1, _omitFieldNames ? '' : 'rooms', subBuilder: Room.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RoomList clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  RoomList copyWith(void Function(RoomList) updates) =>
+      super.copyWith((message) => updates(message as RoomList)) as RoomList;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static RoomList create() => RoomList._();
+  @$core.override
+  RoomList createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static RoomList getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RoomList>(create);
+  static RoomList? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<Room> get rooms => $_getList(0);
+}
+
+/// POST /devices/meta — partial update of the metadata the controller owns.
+/// Every field is `optional` so "not sent" is distinguishable from "set to the
+/// default": clearing a room (room_id 0) and clearing an energy role
+/// (ENERGY_CLASS_UNKNOWN) are both legitimate writes, and without presence they
+/// would be indistinguishable from an untouched field.
+class DeviceMeta extends $pb.GeneratedMessage {
+  factory DeviceMeta({
+    $fixnum.Int64? nodeId,
+    DeviceKind? kind,
+    $core.String? name,
+    $core.int? roomId,
+    EnergyRole? energyRole,
+  }) {
+    final result = create();
+    if (nodeId != null) result.nodeId = nodeId;
+    if (kind != null) result.kind = kind;
+    if (name != null) result.name = name;
+    if (roomId != null) result.roomId = roomId;
+    if (energyRole != null) result.energyRole = energyRole;
+    return result;
+  }
+
+  DeviceMeta._();
+
+  factory DeviceMeta.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory DeviceMeta.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'DeviceMeta',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aE<DeviceKind>(2, _omitFieldNames ? '' : 'kind',
+        enumValues: DeviceKind.values)
+    ..aOS(3, _omitFieldNames ? '' : 'name')
+    ..aI(4, _omitFieldNames ? '' : 'roomId', fieldType: $pb.PbFieldType.OU3)
+    ..aE<EnergyRole>(5, _omitFieldNames ? '' : 'energyRole',
+        enumValues: EnergyRole.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeviceMeta clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  DeviceMeta copyWith(void Function(DeviceMeta) updates) =>
+      super.copyWith((message) => updates(message as DeviceMeta)) as DeviceMeta;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static DeviceMeta create() => DeviceMeta._();
+  @$core.override
+  DeviceMeta createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static DeviceMeta getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<DeviceMeta>(create);
+  static DeviceMeta? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get nodeId => $_getI64(0);
+  @$pb.TagNumber(1)
+  set nodeId($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasNodeId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearNodeId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  DeviceKind get kind => $_getN(1);
+  @$pb.TagNumber(2)
+  set kind(DeviceKind value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasKind() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearKind() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get name => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set name($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasName() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearName() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get roomId => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set roomId($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRoomId() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRoomId() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  EnergyRole get energyRole => $_getN(4);
+  @$pb.TagNumber(5)
+  set energyRole(EnergyRole value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasEnergyRole() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearEnergyRole() => $_clearField(5);
 }
 
 /// POST /devices/{id}/name
@@ -3920,142 +4185,6 @@ class EnergyHistory extends $pb.GeneratedMessage {
   /// per-class totals. Capped — excess devices simply aren't broken out.
   @$pb.TagNumber(8)
   $pb.PbList<EnergyDeviceSeries> get deviceSeries => $_getList(7);
-}
-
-/// ─── Energy roles ─────────────────────────────────────────────────────────────
-/// POST /energy/roles — the app pushes the user's energy-role assignments so the
-/// controller can classify the energy log correctly (which device is PV / a
-/// battery / the grid meter), overriding the Modbus-profile heuristic. The app
-/// sends the full set; it replaces the stored map. Nodes not listed fall back to
-/// the heuristic. Returns StatusResponse.
-class EnergyRoleEntry extends $pb.GeneratedMessage {
-  factory EnergyRoleEntry({
-    $fixnum.Int64? nodeId,
-    EnergyClass? cls,
-    DeviceKind? kind,
-  }) {
-    final result = create();
-    if (nodeId != null) result.nodeId = nodeId;
-    if (cls != null) result.cls = cls;
-    if (kind != null) result.kind = kind;
-    return result;
-  }
-
-  EnergyRoleEntry._();
-
-  factory EnergyRoleEntry.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory EnergyRoleEntry.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'EnergyRoleEntry',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
-      createEmptyInstance: create)
-    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
-        defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aE<EnergyClass>(2, _omitFieldNames ? '' : 'cls',
-        enumValues: EnergyClass.values)
-    ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
-        enumValues: DeviceKind.values)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EnergyRoleEntry clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EnergyRoleEntry copyWith(void Function(EnergyRoleEntry) updates) =>
-      super.copyWith((message) => updates(message as EnergyRoleEntry))
-          as EnergyRoleEntry;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static EnergyRoleEntry create() => EnergyRoleEntry._();
-  @$core.override
-  EnergyRoleEntry createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static EnergyRoleEntry getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<EnergyRoleEntry>(create);
-  static EnergyRoleEntry? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $fixnum.Int64 get nodeId => $_getI64(0);
-  @$pb.TagNumber(1)
-  set nodeId($fixnum.Int64 value) => $_setInt64(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasNodeId() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearNodeId() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  EnergyClass get cls => $_getN(1);
-  @$pb.TagNumber(2)
-  set cls(EnergyClass value) => $_setField(2, value);
-  @$pb.TagNumber(2)
-  $core.bool hasCls() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearCls() => $_clearField(2);
-
-  @$pb.TagNumber(3)
-  DeviceKind get kind => $_getN(2);
-  @$pb.TagNumber(3)
-  set kind(DeviceKind value) => $_setField(3, value);
-  @$pb.TagNumber(3)
-  $core.bool hasKind() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearKind() => $_clearField(3);
-}
-
-class EnergyRoleMap extends $pb.GeneratedMessage {
-  factory EnergyRoleMap({
-    $core.Iterable<EnergyRoleEntry>? entries,
-  }) {
-    final result = create();
-    if (entries != null) result.entries.addAll(entries);
-    return result;
-  }
-
-  EnergyRoleMap._();
-
-  factory EnergyRoleMap.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory EnergyRoleMap.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'EnergyRoleMap',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
-      createEmptyInstance: create)
-    ..pPM<EnergyRoleEntry>(1, _omitFieldNames ? '' : 'entries',
-        subBuilder: EnergyRoleEntry.create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EnergyRoleMap clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  EnergyRoleMap copyWith(void Function(EnergyRoleMap) updates) =>
-      super.copyWith((message) => updates(message as EnergyRoleMap))
-          as EnergyRoleMap;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static EnergyRoleMap create() => EnergyRoleMap._();
-  @$core.override
-  EnergyRoleMap createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static EnergyRoleMap getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<EnergyRoleMap>(create);
-  static EnergyRoleMap? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $pb.PbList<EnergyRoleEntry> get entries => $_getList(0);
 }
 
 /// GET /prices — the current + upcoming day-ahead curve.

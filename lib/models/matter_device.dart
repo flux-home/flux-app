@@ -145,7 +145,10 @@ class MatterDevice {
         (e) => e.name == (json['managedBy'] as String?),
         orElse: () => ManagedBy.phone,
       ),
-      roomId: json['roomId'] as String? ?? Room.noRoomId,
+      // Pre-rooms-on-controller records held a UUID string here. There is no
+      // way to map one to a controller id locally, so it resolves to No Room;
+      // the one-time upload in DeviceProvider re-creates the layout instead.
+      roomId: json['roomId'] is int ? json['roomId'] as int : Room.noRoomId,
       energyRole: EnergyRole.fromName(json['energyRole'] as String?),
     );
   }
@@ -163,7 +166,7 @@ class MatterDevice {
   final DateTime lastModified;
   final NetworkType networkType;
   final ManagedBy   managedBy;
-  final String roomId;
+  final int roomId;
   final EnergyRole energyRole;
 
   /// True for controller-side Modbus devices — read from [kind], not inferred
@@ -182,7 +185,7 @@ class MatterDevice {
     DateTime? lastModified,
     NetworkType? networkType,
     ManagedBy?   managedBy,
-    String? roomId,
+    int? roomId,
     EnergyRole? energyRole,
   }) => MatterDevice(
     id: id ?? this.id,

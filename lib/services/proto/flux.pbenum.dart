@@ -81,6 +81,50 @@ class DeviceKind extends $pb.ProtobufEnum {
   const DeviceKind._(super.value, super.name);
 }
 
+/// What the user says a device IS, in energy terms. Deliberately finer than
+/// EnergyClass: a car charger and a heat pump are both `load` to the energy log,
+/// but they are not the same thing to the person assigning them, and storing only
+/// the coarse class would force the app to keep its own copy of the distinction —
+/// which is exactly the split that let rooms and roles drift out of sync.
+/// The controller derives the EnergyClass from this when classifying a reading.
+class EnergyRole extends $pb.ProtobufEnum {
+  static const EnergyRole ENERGY_ROLE_UNSPECIFIED =
+      EnergyRole._(0, _omitEnumNames ? '' : 'ENERGY_ROLE_UNSPECIFIED');
+  static const EnergyRole ENERGY_ROLE_GRID =
+      EnergyRole._(1, _omitEnumNames ? '' : 'ENERGY_ROLE_GRID');
+  static const EnergyRole ENERGY_ROLE_PV =
+      EnergyRole._(2, _omitEnumNames ? '' : 'ENERGY_ROLE_PV');
+  static const EnergyRole ENERGY_ROLE_CAR_CHARGER =
+      EnergyRole._(3, _omitEnumNames ? '' : 'ENERGY_ROLE_CAR_CHARGER');
+  static const EnergyRole ENERGY_ROLE_HEAT_PUMP =
+      EnergyRole._(4, _omitEnumNames ? '' : 'ENERGY_ROLE_HEAT_PUMP');
+  static const EnergyRole ENERGY_ROLE_HOME_BATTERY =
+      EnergyRole._(5, _omitEnumNames ? '' : 'ENERGY_ROLE_HOME_BATTERY');
+
+  /// A consumer with no more specific role. Not offered in the app's picker —
+  /// it is where a pre-rooms role override lands, whose stored form was the
+  /// coarse class and so cannot say which kind of consumer it was.
+  static const EnergyRole ENERGY_ROLE_LOAD =
+      EnergyRole._(6, _omitEnumNames ? '' : 'ENERGY_ROLE_LOAD');
+
+  static const $core.List<EnergyRole> values = <EnergyRole>[
+    ENERGY_ROLE_UNSPECIFIED,
+    ENERGY_ROLE_GRID,
+    ENERGY_ROLE_PV,
+    ENERGY_ROLE_CAR_CHARGER,
+    ENERGY_ROLE_HEAT_PUMP,
+    ENERGY_ROLE_HOME_BATTERY,
+    ENERGY_ROLE_LOAD,
+  ];
+
+  static final $core.List<EnergyRole?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 6);
+  static EnergyRole? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const EnergyRole._(super.value, super.name);
+}
+
 /// Register-map profile that tells the controller how to decode a device.
 /// (SUNSPEC stays 0 for wire/NVS compatibility; UNKNOWN is discovery-only.)
 class ModbusProfile extends $pb.ProtobufEnum {

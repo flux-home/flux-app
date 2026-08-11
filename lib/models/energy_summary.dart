@@ -85,6 +85,10 @@ class EnergySummary {
       if (!d.isOnline) continue;
       final w = (d.activePowerMw ?? 0) / 1000.0;
       switch (d.energyRole) {
+        // `load` is a plain consumer reported by the controller (a legacy
+        // override that never recorded which kind it was), so it aggregates
+        // like the other consumer roles.
+        case EnergyRole.load:
         case EnergyRole.grid:
           gridNet += w;
           gridN++;
