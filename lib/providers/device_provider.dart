@@ -128,12 +128,17 @@ class DeviceProvider extends ChangeNotifier {
   List<DeviceView> get modbusDevices =>
       deviceViews.where((v) => v.isModbus).toList();
 
-  /// The app's (authoritative, user-editable) name for the device with [nodeId],
-  /// or null if unknown. Lets views resolve names locally instead of trusting
-  /// stale names baked into controller-side data (e.g. the energy-history log).
-  String? deviceNameForNode(int nodeId) {
+  /// The current name for the device, or null if unknown.
+  ///
+  /// Reads the local cache, which now tracks the controller — the point is no
+  /// longer local authority but freshness: names baked into controller-side
+  /// *data* (e.g. a row written into the energy-history log weeks ago) are
+  /// snapshots and go stale, while this follows renames.
+  ///
+  /// Keyed by (kind, nodeId): a node id alone does not identify a device.
+  String? deviceNameForNode(int nodeId, {DeviceKind kind = DeviceKind.matter}) {
     for (final d in _devices) {
-      if (d.nodeId == nodeId) return d.name;
+      if (d.nodeId == nodeId && d.kind == kind) return d.name;
     }
     return null;
   }
@@ -435,6 +440,31 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Pushes this phone's device names to the controller, once.
+  ///
+  /// Names were app-authoritative, so before adoption starts the controller must
+  /// be given the ones the user actually chose. Only devices the controller
+  /// already knows are touched, and only where the local name differs — a
+  /// device the user never renamed keeps whatever the controller has.
+  Future<void> _uploadLocalNamesOnce(
+      FluxCoapService svc, List<$proto.Device> raw) async {
+    if (_store.namesUploaded) return;
+
+    var pushed = 0;
+    for (final cd in raw) {
+      final nodeId = cd.nodeId.toInt();
+      final kind   = DeviceKind.fromWire(cd.kind.value);
+      final idx = _devices.indexWhere((d) => d.nodeId == nodeId && d.kind == kind);
+      if (idx == -1) continue;
+
+      final local = _devices[idx].name;
+      if (local.isEmpty || local == cd.name) continue;
+      if (await svc.setDeviceMeta(nodeId, kind: kind, name: local)) pushed++;
+    }
+    await _store.markNamesUploaded();
+    if (pushed > 0) debugPrint('DeviceProvider: uploaded $pushed device name(s)');
+  }
+
   /// Reconciles the local device list with the controller’s list so the two
   /// stay in sync without an app restart.  Three things happen:
   ///  1. Controller devices not in the local store are added automatically
@@ -453,6 +483,12 @@ class DeviceProvider extends ChangeNotifier {
 
     final raw = await svc.getDeviceList();
     if (raw == null) return; // transient failure — never wipe on a failed read
+
+    // Hand this phone's names over before the adoption below can overwrite
+    // them. The controller's name for a Matter device comes from Basic Info at
+    // commissioning ("IKEA of Sweden", "Test Vendor 1"), so adopting first would
+    // replace the user's own names with vendor strings.
+    await _uploadLocalNamesOnce(svc, raw);
 
     // Refresh the room cache from the controller, which owns the list. Without
     // this the cache is only ever written by this phone's own create/delete, so
@@ -538,6 +574,14 @@ class DeviceProvider extends ChangeNotifier {
              _devices[idx].energyRole != ctrlRole)) {
           _devices[idx] =
               _devices[idx].copyWith(roomId: cd.roomId, energyRole: ctrlRole);
+          changed = true;
+        }
+        // Name is in the same controller-owned record. Only adopt a non-empty
+        // one: an empty name means the controller never learned it, and
+        // adopting that would blank a perfectly good local name.
+        if (_store.namesUploaded &&
+            cd.name.isNotEmpty && _devices[idx].name != cd.name) {
+          _devices[idx] = _devices[idx].copyWith(name: cd.name);
           changed = true;
         }
         if (_devices[idx].isOnline != cd.reachable) {
@@ -1316,12 +1360,27 @@ class DeviceProvider extends ChangeNotifier {
   // ── Share / rename / remove ───────────────────────────────────────────────
 
 
-  Future<void> renameDevice(String deviceId, String newName) async {
+  /// Renames a device, writing through to the controller.
+  ///
+  /// The name lives in the same controller-owned metadata record as room and
+  /// energy role, so a local-only rename would be undone by the next sync.
+  /// Returns false if the controller rejected it or was unreachable — in which
+  /// case the local name is left alone rather than showing an edit that will
+  /// silently revert.
+  Future<bool> renameDevice(String deviceId, String newName) async {
     final idx = _indexById(deviceId);
-    if (idx == -1) return;
-    _devices[idx] = _devices[idx].copyWith(name: newName, lastModified: DateTime.now());
+    if (idx == -1) return false;
+    final d = _devices[idx];
+
+    final svc = _ctrlService;
+    if (svc != null && d.managedBy == ManagedBy.controller) {
+      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, name: newName);
+      if (!ok) return false;
+    }
+    _devices[idx] = d.copyWith(name: newName, lastModified: DateTime.now());
     await _persist();
     notifyListeners();
+    return true;
   }
 
   Future<bool> removeDevice(String deviceId) async {

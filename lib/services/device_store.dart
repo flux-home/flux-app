@@ -15,6 +15,7 @@ class DeviceStore {
   static const _kRooms     = 'rooms';
   static const _kRules     = 'automation_rules_v1';
   static const _kLayoutUp  = 'layout_uploaded_v1';
+  static const _kNamesUp   = 'names_uploaded_v1';
 
   final SharedPreferences _prefs;
 
@@ -103,6 +104,15 @@ class DeviceStore {
   /// user has edited the layout on the controller would resurrect deleted rooms.
   bool get layoutUploaded => _prefs.getBool(_kLayoutUp) ?? false;
   Future<void> markLayoutUploaded() => _prefs.setBool(_kLayoutUp, true);
+
+  /// Whether this phone's device names have been handed to the controller.
+  ///
+  /// Deliberately a SEPARATE flag from [layoutUploaded]: phones that already ran
+  /// the rooms/roles hand-off must still upload their names, and sharing the
+  /// flag would skip them — silently replacing the user's names with the
+  /// vendor-derived ones the controller learned at commissioning.
+  bool get namesUploaded => _prefs.getBool(_kNamesUp) ?? false;
+  Future<void> markNamesUploaded() => _prefs.setBool(_kNamesUp, true);
 
   // ── Automation rules ───────────────────────────────────────────────────────
 

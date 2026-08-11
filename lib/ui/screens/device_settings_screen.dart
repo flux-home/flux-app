@@ -88,8 +88,17 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
       ),
     );
     if (newName != null && newName.isNotEmpty && context.mounted) {
-      await context.read<DeviceProvider>().renameDevice(widget.device.id, newName);
-      if (context.mounted) Navigator.pop(context);
+      final ok =
+          await context.read<DeviceProvider>().renameDevice(widget.device.id, newName);
+      if (!context.mounted) return;
+      if (!ok) {
+        // The controller owns the name, so a rename it didn't accept would be
+        // undone by the next sync — say so instead of showing it briefly.
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't reach the controller — name not changed")));
+        return;
+      }
+      Navigator.pop(context);
     }
   }
 

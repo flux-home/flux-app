@@ -217,8 +217,11 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
     );
   }
 
+  // The series carries its kind, so resolve on the whole key — a PV inverter is
+  // usually Modbus, and its node id alone could collide with a Matter node's.
   String _pvName(BuildContext context, PvDeviceSeries s) =>
-      context.read<DeviceProvider>().deviceNameForNode(s.nodeId) ?? s.name;
+      context.read<DeviceProvider>().deviceNameForNode(s.nodeId, kind: s.kind) ??
+      s.name;
 
   // ── Legend ────────────────────────────────────────────────────────────────
   Widget _legend(BuildContext context, EnergyHistoryData data) {
