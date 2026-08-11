@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01KZQJX28RMVFAT8E306E5YJA2",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "flux-interface",
+    "lib/models/energy_role.dart",
+    "lib/models/energy_summary.dart",
+    "lib/models/matter_device.dart",
+    "lib/models/room.dart",
+    "lib/providers/device_provider.dart",
+    "lib/services/device_store.dart",
+    "lib/services/flux_coap_service.dart",
+    "lib/services/proto/flux.pb.dart",
+    "lib/services/proto/flux.pbenum.dart",
+    "lib/services/proto/flux.pbjson.dart",
+    "lib/ui/screens/commission_area/room_picker_screen.dart",
+    "lib/ui/screens/device_settings_screen.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 244,
+    "cache_creation_tokens": 236765,
+    "cache_read_tokens": 23040584,
+    "output_tokens": 76480,
+    "api_call_count": 122
+  }
+}
