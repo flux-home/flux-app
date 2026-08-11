@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/app_info_screen.dart';
+import 'package:matter_home/ui/screens/settings/rooms_screen.dart';
 import 'package:matter_home/ui/screens/settings/connection_screen.dart';
 import 'package:matter_home/ui/screens/settings/device_info_screen.dart';
 import 'package:matter_home/ui/screens/settings/matter_settings_screen.dart';
@@ -44,6 +45,10 @@ class SettingsScreen extends StatelessWidget {
               _navTile(context, 'Matter', () => const MatterSettingsScreen()),
               _divider(cs),
               _navTile(context, 'Thread', () => const ThreadSettingsScreen()),
+              _divider(cs),
+              // Under CONTROLLER because that is where rooms live — the
+              // controller owns the list and the membership.
+              _navTile(context, 'Rooms', () => const RoomsScreen()),
               _divider(cs),
               _navTile(context, 'Remote access', () => const RemoteAccessScreen()),
             ])
