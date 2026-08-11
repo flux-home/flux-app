@@ -454,7 +454,27 @@ class DeviceProvider extends ChangeNotifier {
     final raw = await svc.getDeviceList();
     if (raw == null) return; // transient failure — never wipe on a failed read
 
+    // Refresh the room cache from the controller, which owns the list. Without
+    // this the cache is only ever written by this phone's own create/delete, so
+    // a room made on another phone (or with flux-ctl) would never appear here —
+    // which is the disagreement the move to the controller was meant to end.
+    // Null means a failed read, so keep the cached list rather than blanking it.
     var changed = false;
+
+    final ctrlRooms = await svc.getRooms();
+    if (ctrlRooms != null) {
+      final fresh = [
+        Room.noRoom,
+        for (final r in ctrlRooms) Room(id: r.id, name: r.name),
+      ];
+      if (fresh.length != _rooms.length ||
+          !fresh.every((r) => _rooms.any((c) => c.id == r.id && c.name == r.name))) {
+        _rooms = fresh;
+        await _persistRooms();
+        changed = true;
+      }
+    }
+
     final now   = DateTime.now();
     final controllerNodeIds = <int>{};
 
