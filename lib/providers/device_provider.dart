@@ -359,6 +359,10 @@ class DeviceProvider extends ChangeNotifier {
 
   bool _syncInFlight = false;
 
+  /// Consecutive syncs where the controller reported zero devices while we knew
+  /// of some. Guards the purge below against a one-off empty answer.
+  int _emptyListStreak = 0;
+
   /// Public entry point for refreshing the device list from the controller.
   ///
   /// Safe to call from anywhere and as often as needed — pull-to-refresh, the
@@ -512,12 +516,12 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     final now   = DateTime.now();
-    final controllerNodeIds = <int>{};
+    final controllerKeys = <(DeviceKind, int)>{};
 
     for (final cd in raw) {
       final nodeId = cd.nodeId.toInt();
-      controllerNodeIds.add(nodeId);
       final cdKind = DeviceKind.fromWire(cd.kind.value);
+      controllerKeys.add((cdKind, nodeId));
       final idx = _devices.indexWhere(
           (d) => d.nodeId == nodeId && d.kind == cdKind);
 
@@ -622,10 +626,32 @@ class DeviceProvider extends ChangeNotifier {
     // Drop controller-managed devices the controller no longer reports.
     // Phone-commissioned devices are never auto-removed here — they live in the
     // local CHIP fabric and are owned by this app.
+    //
+    // Matched on the whole key (kind, nodeId), like every other lookup: a node
+    // id alone does not identify a device.
+    //
+    // One empty list never purges. It used to: an empty-but-non-null reply was
+    // treated as authoritative, so a single odd answer from a controller that
+    // was up but not yet serving its registry would delete every device here.
+    // They come back on the next sync, but as NEW records — new ids, so the
+    // live-state cache keyed by id is orphaned and every card goes blank. Two
+    // consecutive empty answers are needed before believing the home is empty.
+    if (raw.isEmpty && _devices.any((d) => d.managedBy == ManagedBy.controller)) {
+      _emptyListStreak++;
+      if (_emptyListStreak < 2) {
+        debugPrint('DeviceProvider: controller reported 0 devices while '
+            '${_devices.length} are known — ignoring once');
+        if (changed) { await _persist(); notifyListeners(); }
+        return;
+      }
+    } else {
+      _emptyListStreak = 0;
+    }
+
     final stale = _devices
         .where((d) =>
             d.managedBy == ManagedBy.controller &&
-            !controllerNodeIds.contains(d.nodeId))
+            !controllerKeys.contains((d.kind, d.nodeId)))
         .map((d) => d.id)
         .toList();
     for (final id in stale) {
@@ -842,8 +868,20 @@ class DeviceProvider extends ChangeNotifier {
   // ── Subscription event handler ────────────────────────────────────────────
 
   void _onDeviceStateEvent(DeviceStateEvent event) {
-    final candidates = _devices
+    // Match on the full key (kind, nodeId).
+    //
+    // An event whose kind is `unknown` comes from a controller that does not set
+    // it. Fall back to the node id and say so, loudly: strict matching here
+    // dropped EVERY live update against such a controller, and the symptom was
+    // blank device cards with a perfectly healthy connection — nothing in the
+    // logs, nothing failing. A noisy line beats silent data loss.
+    var candidates = _devices
         .where((d) => d.nodeId == event.nodeId && d.kind == event.kind);
+    if (candidates.isEmpty && event.kind == DeviceKind.unknown) {
+      debugPrint('DeviceProvider: event for ${event.nodeId} carries no kind — '
+          'controller too old? falling back to node-id match');
+      candidates = _devices.where((d) => d.nodeId == event.nodeId);
+    }
     if (candidates.isEmpty) return;
     final device = candidates.first;
 
