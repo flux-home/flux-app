@@ -1,0 +1,1 @@
+the app shows that now device is connected / sonar view, can you investigate
