@@ -23,6 +23,7 @@ class EnergySummary {
     this.batteryCharge = 0,
     this.batteryDischarge = 0,
     this.batterySocPercent,
+    this.carSocPercent,
     this.carCharging = 0,
     this.heatPump = 0,
     this.gridCount = 0,
@@ -37,7 +38,14 @@ class EnergySummary {
   final double pvProduction;     // W produced by PV
   final double batteryCharge;    // W flowing into the battery
   final double batteryDischarge; // W flowing out of the battery
+  /// Charge level of the home battery, averaged across battery devices.
   final int?   batterySocPercent;
+
+  /// Charge level of the car, when a wallbox reports it. Same mechanism as the
+  /// home battery (a `batPercentRaw` attribute on the car-charger device), so a
+  /// wallbox that publishes the vehicle's level needs no further plumbing —
+  /// and one that does not simply leaves this null and the gauge hidden.
+  final int?   carSocPercent;
   final double carCharging;      // W consumed by car chargers
   final double heatPump;         // W consumed by heat pumps
 
@@ -78,6 +86,7 @@ class EnergySummary {
     double gridNet = 0, pv = 0, batNet = 0, car = 0, heat = 0;
     var gridN = 0, pvN = 0, batN = 0, carN = 0, heatN = 0;
     var socSum = 0, socCount = 0;
+    var carSocSum = 0, carSocCount = 0;
 
     for (final d in devices) {
       // Skip unreachable devices — their last-known reading isn't current, so
@@ -85,10 +94,13 @@ class EnergySummary {
       if (!d.isOnline) continue;
       final w = (d.activePowerMw ?? 0) / 1000.0;
       switch (d.energyRole) {
-        // `load` is a plain consumer reported by the controller (a legacy
-        // override that never recorded which kind it was), so it aggregates
-        // like the other consumer roles.
+        // A plain consumer with no more specific role. It contributes no
+        // dedicated node: its draw is already inside the energy balance, so it
+        // lands in `restOfHome`. Adding it anywhere here would double-count.
+        // (Stacked case labels share a body in Dart — this used to sit on top
+        // of `grid`, which silently counted a consumer as grid import.)
         case EnergyRole.load:
+          break;
         case EnergyRole.grid:
           gridNet += w;
           gridN++;
@@ -103,6 +115,8 @@ class EnergySummary {
         case EnergyRole.carCharger:
           car += w.abs();
           carN++;
+          final carSoc = d.batteryPercent;
+          if (carSoc != null) { carSocSum += carSoc; carSocCount++; }
         case EnergyRole.heatPump:
           heat += w.abs();
           heatN++;
@@ -118,6 +132,7 @@ class EnergySummary {
       batteryCharge:    batNet > 0 ? batNet : 0,
       batteryDischarge: batNet < 0 ? -batNet : 0,
       batterySocPercent: socCount > 0 ? (socSum / socCount).round() : null,
+      carSocPercent: carSocCount > 0 ? (carSocSum / carSocCount).round() : null,
       carCharging:      car,
       heatPump:         heat,
       gridCount:        gridN,

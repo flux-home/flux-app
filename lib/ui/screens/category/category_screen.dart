@@ -5,7 +5,7 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/home/energy_history_card.dart';
 import 'package:matter_home/ui/screens/home/energy_price_card.dart';
-import 'package:matter_home/ui/screens/home/house_energy_scene.dart';
+import 'package:matter_home/ui/screens/home/energy_flow_card.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
 import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
@@ -14,7 +14,7 @@ import 'package:provider/provider.dart';
 
 /// A single top-level category surface (Energy / Lighting / Climate).
 ///
-/// Energy leads with the illustrated [HouseEnergyScene]; every category then
+/// Energy leads with the [EnergyFlowCard] ledger; every category then
 /// lists its matching devices in a grid. Reached from the home-screen
 /// [CategoryBar].
 class CategoryScreen extends StatelessWidget {
@@ -28,8 +28,8 @@ class CategoryScreen extends StatelessWidget {
     final devices  = provider.deviceViews.where(category.matches).toList();
     final color    = category.color;
 
-    // The Energy view always leads with the house scene (all slots shown, the
-    // unconfigured ones dimmed), so it's never "empty".
+    // The Energy view always leads with the flow ledger (which says so itself
+    // when no roles are assigned), so it is never "empty".
     final showScene = category == HomeCategory.energy;
     final isEmpty = devices.isEmpty && !showScene;
 
@@ -46,7 +46,7 @@ class CategoryScreen extends StatelessWidget {
           : CustomScrollView(
               slivers: [
                 if (showScene) ...[
-                  const SliverToBoxAdapter(child: HouseEnergyScene()),
+                  const SliverToBoxAdapter(child: EnergyFlowCard()),
                   const SliverToBoxAdapter(child: EnergyHistoryCard()),
                   const SliverToBoxAdapter(child: EnergyPriceCard()),
                   const SliverToBoxAdapter(child: _EnergySetupCard()),

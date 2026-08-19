@@ -78,3 +78,6 @@ dart_defines.local.json
 # Local tooling artifacts (editor/agent caches — tens of MB, never useful in git)
 .entire/
 .opencode/
+
+# Design canvases and their seeded payloads (large, regenerated on demand)
+.design/
