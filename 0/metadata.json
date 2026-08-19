@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M0DXCH9CXH7RGA47H5QWA05J",
+  "session_id": "9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-19T21:03:56.804033597Z",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "lib/models/energy_flow.dart",
+    "lib/ui/screens/home/energy_flow_card.dart"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5[1m]",
+  "turn_id": "fc9335ed0460",
+  "checkpoint_transcript_start": 7900,
+  "transcript_lines_at_start": 7900,
+  "compact_transcript_start": 1836,
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 11344,
+    "cache_read_tokens": 5704817,
+    "output_tokens": 7509,
+    "api_call_count": 11
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_011T2uhfZ2UDNzda2GQZyVmr",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "fc9335ed0460",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7471,
+        "end": 7472,
+        "entry_ids": [
+          "600b13a8-6604-46a4-9371-97b3407f92c3"
+        ],
+        "tool_use_id": "toolu_011T2uhfZ2UDNzda2GQZyVmr"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011T2uhfZ2UDNzda2GQZyVmr"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01MtV7yD5nku6dhi9k2XN13z",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-capabilities"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "fc9335ed0460",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7519,
+        "end": 7520,
+        "entry_ids": [
+          "5bdaaffa-4908-410a-ba64-fce790eb7199"
+        ],
+        "tool_use_id": "toolu_01MtV7yD5nku6dhi9k2XN13z"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01MtV7yD5nku6dhi9k2XN13z"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-capabilities",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-19T21:03:55.765004143Z",
+    "agent_lines": 18,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 10,
+    "total_committed": 18,
+    "total_lines_changed": 29,
+    "agent_percentage": 65.51724137931035,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 13,
+      "user_lines_removed": 10,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "lib/models/energy_flow.dart": 1,
+        "lib/ui/screens/home/energy_flow_card.dart": 12
+      },
+      "user_removed_per_file": {
+        "lib/models/energy_flow.dart": 1,
+        "lib/ui/screens/home/energy_flow_card.dart": 9
+      }
+    }
+  ]
+}

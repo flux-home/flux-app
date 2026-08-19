@@ -1,0 +1,5 @@
+can you use home instead of rest of home, and remove soc from the battery charge state, the charge state should be in a different color then the bars
+
+---
+
+battery state should show charging, discharging
