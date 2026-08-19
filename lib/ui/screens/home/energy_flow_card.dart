@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -24,8 +26,71 @@ const _homeColor   = Color(0xFFF3B8D6); // pink
 /// Charge levels are deliberately NOT rows in that list: a charge level is a
 /// state, not a flow, so it keeps its own line and stays visible when nothing
 /// is moving to or from it — a car still reads 78% while drawing nothing.
-class EnergyFlowCard extends StatelessWidget {
+class EnergyFlowCard extends StatefulWidget {
   const EnergyFlowCard({super.key});
+
+  @override
+  State<EnergyFlowCard> createState() => _EnergyFlowCardState();
+}
+
+class _EnergyFlowCardState extends State<EnergyFlowCard> {
+  /// How long a transfer stays on screen after it stops, and how long it then
+  /// takes to fade. A flow that ends should not yank the rows below it upward
+  /// mid-glance — the eye is usually still on the number when it goes.
+  static const _hold     = Duration(seconds: 10);
+  static const _fade     = Duration(milliseconds: 1500);
+  static const _collapse = Duration(milliseconds: 300);
+
+  /// Rows in display order, including ones that have stopped and are on their
+  /// way out. Order is deliberately sticky: a row never moves once placed, so
+  /// nothing under the finger shifts. New transfers join at the end.
+  final List<_RowState> _rows = [];
+  Timer? _ticker;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  /// Folds the current attribution into [_rows], keeping stopped ones alive
+  /// until they have finished fading.
+  void _sync(List<EnergyTransfer> transfers) {
+    final now = DateTime.now();
+    final seen = <_RowKey>{};
+
+    for (final t in transfers) {
+      final key = (t.from, t.to);
+      seen.add(key);
+      final i = _rows.indexWhere((r) => r.key == key);
+      if (i == -1) {
+        _rows.add(_RowState(key, t.watts));
+      } else {
+        _rows[i]
+          ..watts = t.watts
+          ..stoppedAt = null;   // came back before it finished fading
+      }
+    }
+
+    for (final r in _rows) {
+      if (seen.contains(r.key)) continue;
+      r.watts = 0;
+      r.stoppedAt ??= now;
+    }
+    _rows.removeWhere((r) => r.stoppedAt != null &&
+        now.difference(r.stoppedAt!) > _hold + _fade + _collapse);
+
+    // Only tick while something is on its way out; a steady house costs nothing.
+    final fading = _rows.any((r) => r.stoppedAt != null);
+    if (fading && _ticker == null) {
+      _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!fading) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,22 +109,50 @@ class EnergyFlowCard extends StatelessWidget {
       );
     }
 
-    final transfers = attributeEnergy(s);
-    final gauges    = _gauges(s);
+    _sync(attributeEnergy(s));
+    final gauges = _gauges(s);
+    final now = DateTime.now();
 
     return _Frame(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _HouseTotal(watts: s.houseLoad),
-          if (transfers.isEmpty)
+          if (_rows.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Text('Nothing is moving right now.',
                   style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
             )
           else
-            for (final t in transfers) _TransferRow(transfer: t),
+            // A stopped row leaves in three beats: it rests at 0 W long enough
+            // to be seen doing it, fades, and only then gives up its height.
+            // Collapsing at the same moment it fades would still move the rows
+            // below it while the eye is on them.
+            for (final r in _rows)
+              Builder(builder: (_) {
+                final since = r.stoppedAt == null
+                    ? Duration.zero
+                    : now.difference(r.stoppedAt!);
+                final leaving = r.stoppedAt != null && since >= _hold;
+                final gone    = r.stoppedAt != null && since >= _hold + _fade;
+                return AnimatedSize(
+                  duration: _collapse,
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topCenter,
+                  child: gone
+                      ? const SizedBox(width: double.infinity, height: 0)
+                      : AnimatedOpacity(
+                          duration: _fade,
+                          curve: Curves.easeOut,
+                          opacity: leaving ? 0 : 1,
+                          child: _TransferRow(
+                            transfer:
+                                EnergyTransfer(r.key.$1, r.key.$2, r.watts),
+                          ),
+                        ),
+                );
+              }),
           if (gauges.isNotEmpty) const SizedBox(height: 6),
           for (final g in gauges) _GaugeRow(gauge: g),
         ],
@@ -85,6 +178,16 @@ class EnergyFlowCard extends StatelessWidget {
             note: s.carCharging > 20 ? 'charging' : 'plugged in',
           ),
       ];
+}
+
+typedef _RowKey = (EnergyEndpoint, EnergyEndpoint);
+
+class _RowState {
+  _RowState(this.key, this.watts);
+  final _RowKey key;
+  double watts;
+  /// When this transfer stopped, or null while it is still flowing.
+  DateTime? stoppedAt;
 }
 
 Color _colorFor(EnergyEndpoint e, {required bool asSource}) => switch (e) {
