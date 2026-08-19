@@ -90,3 +90,23 @@ List<EnergyTransfer> attributeEnergy(EnergySummary s) {
 /// otherwise earn a row of its own next to a 3 kW one.
 const _minWatts = 20.0;
 const _epsilon = 0.001;
+
+/// Net power for a participant that can flow both ways (the grid, a battery).
+///
+/// Positive = consuming, negative = supplying, and anything within [deadbandW]
+/// of zero is reported as exactly zero.
+///
+/// The deadband is what makes a zero-feed-in house readable. Such a house
+/// regulates the grid to nothing on purpose, so the raw sign flips every few
+/// seconds between a few watts of import and a few watts of export — a true
+/// reading that carries no information and, drawn honestly, makes the display
+/// twitch continuously. Inside the band the answer people actually want is
+/// "balanced", so that is what this returns.
+double netFlow({
+  required double consuming,
+  required double supplying,
+  double deadbandW = 40,
+}) {
+  final net = consuming - supplying;
+  return net.abs() < deadbandW ? 0 : net;
+}

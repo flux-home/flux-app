@@ -5,6 +5,7 @@ import 'package:matter_home/models/energy_summary.dart';
 /// The attribution is the story the Energy screen tells, so it is pinned here
 /// rather than left to whatever the widget happens to render.
 void main() {
+  _netFlowTests();
   group('attributeEnergy', () {
     test('solar covers the house first, then appliances, then the battery', () {
       // 6.2 kW of sun: 0.9 house + 1.4 heat pump + 3.6 car + 0.3 into battery.
@@ -58,6 +59,29 @@ void main() {
 
     test('no roles assigned means nothing to attribute', () {
       expect(attributeEnergy(const EnergySummary()), isEmpty);
+    });
+  });
+}
+
+/// The behaviour that makes a zero-feed-in house readable: the grid sits at
+/// zero instead of flipping sign every few seconds.
+void _netFlowTests() {
+  group('netFlow', () {
+    test('a house regulating to zero reads balanced, whichever way it leans', () {
+      for (final w in [5.0, 20.0, 39.0]) {
+        expect(netFlow(consuming: w, supplying: 0), 0, reason: '+${w}W');
+        expect(netFlow(consuming: 0, supplying: w), 0, reason: '-${w}W');
+      }
+    });
+
+    test('a real flow keeps its sign and its magnitude', () {
+      expect(netFlow(consuming: 0, supplying: 900), -900);
+      expect(netFlow(consuming: 1200, supplying: 0), 1200);
+    });
+
+    test('the band applies to the NET, not to either side alone', () {
+      // Importing and exporting at once is measurement skew, not two flows.
+      expect(netFlow(consuming: 1010, supplying: 1000), 0);
     });
   });
 }
