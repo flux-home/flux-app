@@ -15,6 +15,11 @@ const _carColor     = Color(0xFFCDBBEF); // lavender
 const _heatColor    = Color(0xFFA9D8EE); // sky
 const _homeColor    = Color(0xFFF3B8D6); // pink
 
+/// Charge state is not a flow, so it deliberately sits outside the flow palette
+/// — a neutral readout rather than another coloured participant. Sharing the
+/// battery's mint made a level look like the power moving in or out of it.
+const _chargeColor  = Color(0xFFDCE3DF); // near-white
+
 /// Live energy flow: one fixed row per participant, each a bar growing out from
 /// a shared centre line — left when it is **supplying** the house, right when it
 /// is **consuming**.
@@ -142,7 +147,7 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
                 : [_Seg(1, _batteryColor)],
             _balanceNote(
                 s.batteryCharge - s.batteryDischarge, 'discharging', 'charging')),
-      _Row('home', 'REST OF HOME', s.restOfHome,
+      _Row('home', 'HOME', s.restOfHome,
           segs(EnergyEndpoint.restOfHome, _homeColor), null),
       if (s.hasHeatPump)
         _Row('heat', 'HEAT PUMP', s.heatPump,
@@ -160,10 +165,26 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
 
   List<_Gauge> _gauges(EnergySummary s) => [
         if (s.batterySocPercent != null)
-          _Gauge(name: 'BATTERY', color: _batteryColor,
-              percent: s.batterySocPercent!),
+          _Gauge(
+            name: 'BATTERY',
+            percent: s.batterySocPercent!,
+            // What the level is DOING, next to what it is. Read off the same
+            // deadband as the bar above, so the two can never disagree — the
+            // bar cannot sit at "balanced" while this claims it is charging.
+            note: switch (netFlow(
+                consuming: s.batteryCharge, supplying: s.batteryDischarge,
+                deadbandW: _deadbandW)) {
+              > 0 => 'charging',
+              < 0 => 'discharging',
+              _   => 'idle',
+            },
+          ),
         if (s.carSocPercent != null)
-          _Gauge(name: 'CAR', color: _carColor, percent: s.carSocPercent!),
+          _Gauge(
+            name: 'CAR',
+            percent: s.carSocPercent!,
+            note: s.carCharging > _deadbandW ? 'charging' : 'plugged in',
+          ),
       ];
 }
 
@@ -360,10 +381,10 @@ class _HouseTotal extends StatelessWidget {
 }
 
 class _Gauge {
-  const _Gauge({required this.name, required this.color, required this.percent});
+  const _Gauge({required this.name, required this.percent, required this.note});
   final String name;
-  final Color  color;
   final int    percent;
+  final String note;
 }
 
 class _GaugeRow extends StatelessWidget {
@@ -386,9 +407,9 @@ class _GaugeRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 82,
-            child: Text('${gauge.name} SOC', style: TextStyle(
+            child: Text(gauge.name, style: const TextStyle(
                 fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w700,
-                letterSpacing: 0.5, color: gauge.color)),
+                letterSpacing: 0.5, color: _chargeColor)),
           ),
           Expanded(
             child: Row(
@@ -399,7 +420,7 @@ class _GaugeRow extends StatelessWidget {
                     height: 12,
                     decoration: BoxDecoration(
                       color: i < filled
-                          ? gauge.color
+                          ? _chargeColor
                           : cs.onSurface.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(2),
                     ),
@@ -410,10 +431,19 @@ class _GaugeRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           SizedBox(
-            width: 72,
+            width: 44,
             child: Text('${gauge.percent}%',
                 textAlign: TextAlign.right,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 74,
+            child: Text(gauge.note,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontFamily: 'monospace', fontSize: 9.5,
+                    color: cs.onSurfaceVariant)),
           ),
         ],
       ),

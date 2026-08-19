@@ -19,7 +19,7 @@ enum EnergyEndpoint {
   solar('Solar'),
   grid('Grid'),
   battery('Battery'),
-  restOfHome('Rest of home'),
+  restOfHome('Home'),
   heatPump('Heat pump'),
   car('Car');
 
