@@ -1,0 +1,25 @@
+can you mirror the screen of my app on the desktop
+
+---
+
+179:5555
+
+---
+
+please install on 194:40303
+
+---
+
+In the energy view, i want to see the battery state of charge, I'm just about to add this on controller side in parallel. in general I want to improve the view of the energy flow, please use the design skill for that. I don't want to make it complex but I want to understand where the energy is flowing, can you make a suggestion
+
+---
+
+i cannot open the visuals?
+
+---
+
+Let's go for C1
+
+---
+
+please also look at the latest changes in flux-controller regarding battery soc
