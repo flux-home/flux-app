@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M0DWWS8F4RGC5ZPGE5V9HG9S",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "lib/models/energy_flow.dart",
+    "lib/ui/screens/home/energy_flow_card.dart",
+    "test/energy_flow_test.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 14729,
+    "cache_read_tokens": 4037607,
+    "output_tokens": 13830,
+    "api_call_count": 8
+  }
+}
