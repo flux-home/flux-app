@@ -1,0 +1,5 @@
+just write setpoints at schedule transitions, don't care about 3rd party apps
+
+---
+
+just write setpoints at schedule transitions, don't care about 3rd party apps, setpoint per room
