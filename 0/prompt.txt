@@ -1,0 +1,1 @@
+consumers should not be added to the energy flow view, but rather in another widget
