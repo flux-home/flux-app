@@ -6,6 +6,7 @@ import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/home/energy_history_card.dart';
 import 'package:matter_home/ui/screens/home/energy_price_card.dart';
 import 'package:matter_home/ui/screens/home/energy_flow_card.dart';
+import 'package:matter_home/ui/screens/home/house_breakdown_card.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
 import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
@@ -47,6 +48,7 @@ class CategoryScreen extends StatelessWidget {
               slivers: [
                 if (showScene) ...[
                   const SliverToBoxAdapter(child: EnergyFlowCard()),
+                  const SliverToBoxAdapter(child: HouseBreakdownCard()),
                   const SliverToBoxAdapter(child: EnergyHistoryCard()),
                   const SliverToBoxAdapter(child: EnergyPriceCard()),
                   const SliverToBoxAdapter(child: _EnergySetupCard()),

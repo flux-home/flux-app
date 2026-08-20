@@ -83,6 +83,18 @@ class EnergySummary {
   /// Consumption not attributed to a monitored consumer role (the "rest of
   /// home" node).  Clamped at 0 — a negative value just means the monitored
   /// consumers exceed the computed balance (measurement skew).
+  /// The house's draw excluding the two named *assets* (car, heat pump) but
+  /// still including whatever the user has labelled as house consumers.
+  ///
+  /// This is what a balance view wants: assets get their own rows, and everything
+  /// else is one "home" figure. [restOfHome] is the wrong number there — it also
+  /// removes labelled consumers, so a balance built on it develops a hole as soon
+  /// as a device is named.
+  double get homeExcludingAssets {
+    final v = houseLoad - carCharging - heatPump;
+    return v > 0 ? v : 0;
+  }
+
   double get restOfHome {
     final rest = houseLoad - carCharging - heatPump - homeConsumers;
     return rest > 0 ? rest : 0;
