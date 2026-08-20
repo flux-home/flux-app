@@ -1,0 +1,5 @@
+let me start with user stories first, maybe we can create something similar to adrs for user stories: I have a home battery, a flexible energy tariff and a PV system with 18kwp. In German law I have a certain cap on PV feed in to 60 percent. My battery is 16kWp. From October Mispel gets active in Germany. Can you create an adr
+
+---
+
+let me start with user stories first, maybe we can create something similar to adrs for user stories: I have a home battery, a flexible energy tariff and a PV system with 18kwp. In German law I have a certain cap on PV feed in to 60 percent. My battery is 16kWp. From October Mispel gets active in Germany. Can you create an adr, please grill me on that to create a user story
