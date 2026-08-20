@@ -15,6 +15,8 @@ class EnergyHistoryPoint {
     required this.gridImportW,
     required this.gridExportW,
     required this.loadW,
+    this.batteryChargeW = 0,
+    this.batteryDischargeW = 0,
   });
 
   final DateTime time;
@@ -22,16 +24,34 @@ class EnergyHistoryPoint {
   final double gridImportW; // drawn from the grid
   final double gridExportW; // fed to the grid
   final double loadW;       // home consumption
+  final double batteryChargeW;    // into the battery
+  final double batteryDischargeW; // out of the battery
 
   double get maxSeries =>
       [pvW, gridImportW, gridExportW, loadW].reduce((a, b) => a > b ? a : b);
 
   /// Whole-home consumption for this bucket (average W), from the energy
-  /// balance: generation + import − export. Clamped ≥ 0. (Battery isn't in the
-  /// per-bucket series, so it's omitted here — fine for the price overlay.)
+  /// balance: everything arriving minus everything leaving.
+  ///
+  /// The battery belongs on both sides — a discharge feeds the house, a charge
+  /// consumes from it — and omitting it does not merely lose detail, it makes the
+  /// figure wrong in opposite directions at different times of day: consumption
+  /// reads high while the battery charges on solar, and low while it carries the
+  /// house through the evening.
   double get consumptionW {
-    final c = pvW + gridImportW - gridExportW;
+    final c = pvW + gridImportW + batteryDischargeW - gridExportW - batteryChargeW;
     return c > 0 ? c : 0;
+  }
+
+  /// Energy the house used in this bucket that it did not buy (average W).
+  ///
+  /// Equal to [consumptionW] − import, which expands to
+  /// `pv + discharge − export − charge`. Charging subtracts here and discharging
+  /// adds later, so a kWh that goes PV → battery → house is counted once, when it
+  /// is actually used, rather than at both ends.
+  double get selfSuppliedW {
+    final s = pvW + batteryDischargeW - gridExportW - batteryChargeW;
+    return s > 0 ? s : 0;
   }
 }
 
@@ -196,6 +216,8 @@ class EnergyHistoryData {
         gridImportW: watts(b.gridImportWh),
         gridExportW: watts(b.gridExportWh),
         loadW: watts(b.loadWh),
+        batteryChargeW: watts(b.batteryChargeWh),
+        batteryDischargeW: watts(b.batteryDischargeWh),
       ));
     }
     // Per-device PV breakdown (index-aligned to buckets), if the controller

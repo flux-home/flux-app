@@ -136,15 +136,18 @@ class ModbusProfile extends $pb.ProtobufEnum {
   /// (discovery result only — not decodable)
   static const ModbusProfile MODBUS_PROFILE_VM3P75CT =
       ModbusProfile._(2, _omitEnumNames ? '' : 'MODBUS_PROFILE_VM3P75CT');
+  static const ModbusProfile MODBUS_PROFILE_VICTRON_VENUS =
+      ModbusProfile._(3, _omitEnumNames ? '' : 'MODBUS_PROFILE_VICTRON_VENUS');
 
   static const $core.List<ModbusProfile> values = <ModbusProfile>[
     MODBUS_PROFILE_SUNSPEC,
     MODBUS_PROFILE_UNKNOWN,
     MODBUS_PROFILE_VM3P75CT,
+    MODBUS_PROFILE_VICTRON_VENUS,
   ];
 
   static final $core.List<ModbusProfile?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 2);
+      $pb.ProtobufEnum.$_initByValueList(values, 3);
   static ModbusProfile? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

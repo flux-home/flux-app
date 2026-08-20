@@ -76,13 +76,15 @@ const ModbusProfile$json = {
     {'1': 'MODBUS_PROFILE_SUNSPEC', '2': 0},
     {'1': 'MODBUS_PROFILE_UNKNOWN', '2': 1},
     {'1': 'MODBUS_PROFILE_VM3P75CT', '2': 2},
+    {'1': 'MODBUS_PROFILE_VICTRON_VENUS', '2': 3},
   ],
 };
 
 /// Descriptor for `ModbusProfile`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List modbusProfileDescriptor = $convert.base64Decode(
     'Cg1Nb2RidXNQcm9maWxlEhoKFk1PREJVU19QUk9GSUxFX1NVTlNQRUMQABIaChZNT0RCVVNfUF'
-    'JPRklMRV9VTktOT1dOEAESGwoXTU9EQlVTX1BST0ZJTEVfVk0zUDc1Q1QQAg==');
+    'JPRklMRV9VTktOT1dOEAESGwoXTU9EQlVTX1BST0ZJTEVfVk0zUDc1Q1QQAhIgChxNT0RCVVNf'
+    'UFJPRklMRV9WSUNUUk9OX1ZFTlVTEAM=');
 
 @$core.Deprecated('Use modbusTransportDescriptor instead')
 const ModbusTransport$json = {
@@ -1090,6 +1092,30 @@ final $typed_data.Uint8List energyDeviceSeriesDescriptor = $convert.base64Decode
     'EoDjIRLmZsdXguRW5lcmd5Q2xhc3NSA2NscxISCgRuYW1lGAMgASgJUgRuYW1lEg4KAndoGAQg'
     'AygNUgJ3aBIkCgRraW5kGAUgASgOMhAuZmx1eC5EZXZpY2VLaW5kUgRraW5k');
 
+@$core.Deprecated('Use batterySocSeriesDescriptor instead')
+const BatterySocSeries$json = {
+  '1': 'BatterySocSeries',
+  '2': [
+    {'1': 'node_id', '3': 1, '4': 1, '5': 4, '10': 'nodeId'},
+    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'soc_pct', '3': 3, '4': 1, '5': 12, '10': 'socPct'},
+    {
+      '1': 'kind',
+      '3': 4,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.DeviceKind',
+      '10': 'kind'
+    },
+  ],
+};
+
+/// Descriptor for `BatterySocSeries`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List batterySocSeriesDescriptor = $convert.base64Decode(
+    'ChBCYXR0ZXJ5U29jU2VyaWVzEhcKB25vZGVfaWQYASABKARSBm5vZGVJZBISCgRuYW1lGAIgAS'
+    'gJUgRuYW1lEhcKB3NvY19wY3QYAyABKAxSBnNvY1BjdBIkCgRraW5kGAQgASgOMhAuZmx1eC5E'
+    'ZXZpY2VLaW5kUgRraW5k');
+
 @$core.Deprecated('Use energyHistoryDescriptor instead')
 const EnergyHistory$json = {
   '1': 'EnergyHistory',
@@ -1116,6 +1142,14 @@ const EnergyHistory$json = {
       '6': '.flux.EnergyDeviceSeries',
       '10': 'deviceSeries'
     },
+    {
+      '1': 'battery_soc',
+      '3': 9,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.BatterySocSeries',
+      '10': 'batterySoc'
+    },
   ],
 };
 
@@ -1126,7 +1160,8 @@ final $typed_data.Uint8List energyHistoryDescriptor = $convert.base64Decode(
     'bxIfCgt0aW1lX3N5bmNlZBgFIAEoCFIKdGltZVN5bmNlZBIcCgl0cnVuY2F0ZWQYBiABKAhSCX'
     'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHMS'
     'PQoNZGV2aWNlX3NlcmllcxgIIAMoCzIYLmZsdXguRW5lcmd5RGV2aWNlU2VyaWVzUgxkZXZpY2'
-    'VTZXJpZXM=');
+    'VTZXJpZXMSNwoLYmF0dGVyeV9zb2MYCSADKAsyFi5mbHV4LkJhdHRlcnlTb2NTZXJpZXNSCmJh'
+    'dHRlcnlTb2M=');
 
 @$core.Deprecated('Use priceCurveDescriptor instead')
 const PriceCurve$json = {

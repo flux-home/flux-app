@@ -89,12 +89,15 @@ class EnergyPrices {
   /// is why this is typically several times [exportRevenueCents] for the same kWh.
   ///
   /// This is a counterfactual, not a cash flow — unlike [exportRevenueCents],
-  /// no money changed hands. Battery round-trips are excluded: the controller
-  /// reports battery only as a window total, not per bucket, so a discharge
-  /// can't be priced by the time it happened.
+  /// no money changed hands.
   ///
-  /// Cannot overstate itself: `consumptionW = pv + import − export`, so
-  /// `pv − export ≤ consumptionW` for any non-negative import.
+  /// Battery round-trips ARE included, and this is what makes the figure right
+  /// for a house with storage: energy is credited when the house uses it, not
+  /// when it is generated. Charging subtracts from the bucket that charges and
+  /// discharging adds to the bucket that discharges, so a kWh stored at midday
+  /// and used at 20:00 is valued at the 20:00 price — the price actually avoided
+  /// — and is counted exactly once. Valuing it at generation time would both
+  /// double-count it and price it at the cheapest hour of the day.
   double? selfConsumptionSavingCents(EnergyHistoryData? history) {
     if (history == null || history.points.isEmpty || points.isEmpty) return null;
     final bucketHours = history.bucket.inSeconds / 3600.0;
@@ -103,7 +106,7 @@ class EnergyPrices {
     for (final p in history.points) {
       final price = currentAt(p.time);
       if (price == null) continue; // spot varies by hour → only where priced
-      final selfW = p.pvW - p.gridExportW; // generated, minus what left the house
+      final selfW = p.selfSuppliedW; // used here, and not bought
       if (selfW <= 0) continue;
       cents += selfW * bucketHours / 1000.0 * price.ctPerKwh;
       any = true;
