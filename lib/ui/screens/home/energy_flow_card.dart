@@ -131,36 +131,28 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
 
     return [
       if (s.hasPv)
-        _Row('solar', 'SOLAR', -s.pvProduction, [_Seg(1, _solarColor)], null),
+        _Row('solar', 'SOLAR', -s.pvProduction, [_Seg(1, _solarColor)]),
       if (s.hasGrid)
         // ONE row for the grid, signed: importing pulls it left, exporting
         // pushes it right. This is the row that used to thrash.
         _Row('grid', 'GRID', netFlow(consuming: s.gridExport, supplying: s.gridImport, deadbandW: _deadbandW),
             s.gridExport > s.gridImport
                 ? segs(EnergyEndpoint.grid, _exportColor)
-                : [_Seg(1, _importColor)],
-            _balanceNote(s.gridExport - s.gridImport, 'importing', 'exporting')),
+                : [_Seg(1, _importColor)]),
       if (s.hasBattery)
         _Row('battery', 'BATTERY', netFlow(consuming: s.batteryCharge, supplying: s.batteryDischarge, deadbandW: _deadbandW),
             s.batteryCharge > s.batteryDischarge
                 ? segs(EnergyEndpoint.battery, _batteryColor)
-                : [_Seg(1, _batteryColor)],
-            _balanceNote(
-                s.batteryCharge - s.batteryDischarge, 'discharging', 'charging')),
+                : [_Seg(1, _batteryColor)]),
       _Row('home', 'HOME', s.restOfHome,
-          segs(EnergyEndpoint.restOfHome, _homeColor), null),
+          segs(EnergyEndpoint.restOfHome, _homeColor)),
       if (s.hasHeatPump)
         _Row('heat', 'HEAT PUMP', s.heatPump,
-            segs(EnergyEndpoint.heatPump, _heatColor), null),
+            segs(EnergyEndpoint.heatPump, _heatColor)),
       if (s.hasCar)
         _Row('car', 'CAR', s.carCharging,
-            segs(EnergyEndpoint.car, _carColor), null),
+            segs(EnergyEndpoint.car, _carColor)),
     ];
-  }
-
-  String? _balanceNote(double net, String whenSupplying, String whenConsuming) {
-    if (net.abs() < _deadbandW) return 'balanced';
-    return net > 0 ? whenConsuming : whenSupplying;
   }
 
   List<_Gauge> _gauges(EnergySummary s) => [
@@ -204,13 +196,12 @@ class _Seg {
 }
 
 class _Row {
-  const _Row(this.key, this.label, this.watts, this.segments, this.note);
+  const _Row(this.key, this.label, this.watts, this.segments);
   final String     key;
   final String     label;
   /// Negative = supplying the house (bar grows left), positive = consuming.
   final double     watts;
   final List<_Seg> segments;
-  final String?    note;
 }
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
@@ -259,12 +250,14 @@ class _BarRow extends StatelessWidget {
           SizedBox(
             width: 72,
             child: Text(
-              idle ? (row.note ?? '—') : '$v $u',
+              // A balanced/idle flow reads as a plain "0 W" at the SAME font size
+              // as any value — no word-label or font-size swap — so the row never
+              // resizes when a flow settles to zero (it just dims).
+              idle ? '0 W' : '$v $u',
               textAlign: TextAlign.right,
               maxLines: 1, overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: idle ? 10 : 14,
-                fontFamily: idle ? 'monospace' : null,
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: idle ? cs.onSurfaceVariant : cs.onSurface,
               ),
