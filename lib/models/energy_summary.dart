@@ -26,11 +26,13 @@ class EnergySummary {
     this.carSocPercent,
     this.carCharging = 0,
     this.heatPump = 0,
+    this.homeConsumers = 0,
     this.gridCount = 0,
     this.pvCount = 0,
     this.batteryCount = 0,
     this.carCount = 0,
     this.heatPumpCount = 0,
+    this.homeConsumerCount = 0,
   });
 
   final double gridImport;       // W drawn from the grid
@@ -49,22 +51,29 @@ class EnergySummary {
   final double carCharging;      // W consumed by car chargers
   final double heatPump;         // W consumed by heat pumps
 
+  /// Sum of devices marked as a measured part of the house load. Attribution,
+  /// not a flow: already inside [houseLoad], so it is subtracted from
+  /// [restOfHome] rather than added anywhere.
+  final double homeConsumers;
+
   // How many devices are tagged with each role (drives which nodes render).
   final int gridCount;
   final int pvCount;
   final int batteryCount;
   final int carCount;
   final int heatPumpCount;
+  final int homeConsumerCount;
 
   bool get hasGrid    => gridCount    > 0;
   bool get hasPv      => pvCount      > 0;
   bool get hasBattery => batteryCount > 0;
   bool get hasCar     => carCount     > 0;
   bool get hasHeatPump => heatPumpCount > 0;
+  bool get hasHomeConsumers => homeConsumerCount > 0;
 
   /// True when at least one device carries an energy role — gates the overview.
   bool get hasAnyRole =>
-      hasGrid || hasPv || hasBattery || hasCar || hasHeatPump;
+      hasGrid || hasPv || hasBattery || hasCar || hasHeatPump || hasHomeConsumers;
 
   /// Total power the house is consuming right now (energy balance):
   /// production + imports + battery discharge − exports − battery charge.
@@ -75,7 +84,7 @@ class EnergySummary {
   /// home" node).  Clamped at 0 — a negative value just means the monitored
   /// consumers exceed the computed balance (measurement skew).
   double get restOfHome {
-    final rest = houseLoad - carCharging - heatPump;
+    final rest = houseLoad - carCharging - heatPump - homeConsumers;
     return rest > 0 ? rest : 0;
   }
 
@@ -83,8 +92,8 @@ class EnergySummary {
   /// (or without live power) contribute nothing to the sums but a tagged
   /// device still counts toward node presence.
   factory EnergySummary.fromDevices(Iterable<DeviceView> devices) {
-    double gridNet = 0, pv = 0, batNet = 0, car = 0, heat = 0;
-    var gridN = 0, pvN = 0, batN = 0, carN = 0, heatN = 0;
+    double gridNet = 0, pv = 0, batNet = 0, car = 0, heat = 0, consumers = 0;
+    var gridN = 0, pvN = 0, batN = 0, carN = 0, heatN = 0, consumerN = 0;
     var socSum = 0, socCount = 0;
     var carSocSum = 0, carSocCount = 0;
 
@@ -112,6 +121,11 @@ class EnergySummary {
           batN++;
           final soc = d.batteryPercent;
           if (soc != null) { socSum += soc; socCount++; }
+        case EnergyRole.homeConsumer:
+          // Attribution only — see [homeConsumers]. Summed so it can be taken
+          // OUT of the unattributed remainder, never added to the balance.
+          consumers += w.abs();
+          consumerN++;
         case EnergyRole.carCharger:
           car += w.abs();
           carN++;
@@ -135,11 +149,13 @@ class EnergySummary {
       carSocPercent: carSocCount > 0 ? (carSocSum / carSocCount).round() : null,
       carCharging:      car,
       heatPump:         heat,
+      homeConsumers:    consumers,
       gridCount:        gridN,
       pvCount:          pvN,
       batteryCount:     batN,
       carCount:         carN,
       heatPumpCount:    heatN,
+      homeConsumerCount: consumerN,
     );
   }
 }

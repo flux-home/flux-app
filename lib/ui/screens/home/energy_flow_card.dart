@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:matter_home/models/energy_flow.dart';
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/utils/power_format.dart';
@@ -86,7 +87,14 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
       (byUse[t.to] ??= []).add(t);
     }
 
-    final rows = _buildRows(s, byUse);
+    // (id, name, watts) per device the user marked as part of the house load.
+    final consumers = <(String, String, double)>[
+      for (final d in context.read<DeviceProvider>().deviceViews)
+        if (d.energyRole == EnergyRole.homeConsumer && d.isOnline)
+          (d.id, d.name, ((d.activePowerMw ?? 0) / 1000.0).abs()),
+    ]..sort((a, b) => b.$3.compareTo(a.$3));
+
+    final rows = _buildRows(s, byUse, consumers);
     final scale = rows.fold<double>(
         200, (m, r) => r.watts.abs() > m ? r.watts.abs() : m);
 
@@ -122,7 +130,8 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
   /// The fixed row set. Order is supply-ish first, then the house and its
   /// appliances — and it never changes, whatever the numbers do.
   List<_Row> _buildRows(
-      EnergySummary s, Map<EnergyEndpoint, List<EnergyTransfer>> byUse) {
+      EnergySummary s, Map<EnergyEndpoint, List<EnergyTransfer>> byUse,
+      List<(String, String, double)> consumers) {
     List<_Seg> segs(EnergyEndpoint use, Color fallback) {
       final ts = byUse[use];
       if (ts == null || ts.isEmpty) return [_Seg(1, fallback)];
@@ -144,7 +153,13 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
             s.batteryCharge > s.batteryDischarge
                 ? segs(EnergyEndpoint.battery, _batteryColor)
                 : [_Seg(1, _batteryColor)]),
-      _Row('home', 'HOME', s.restOfHome,
+      // Named parts of the house first, then whatever is left unexplained. The
+      // remainder shrinks as devices are labelled, which is the point of the
+      // Home Consumer role — an unlabelled house is one big "HOME" bar.
+      for (final c in consumers)
+        _Row('hc-${c.$1}', c.$2.toUpperCase(), c.$3,
+            segs(EnergyEndpoint.restOfHome, _homeColor)),
+      _Row('home', consumers.isEmpty ? 'HOME' : 'UNACCOUNTED', s.restOfHome,
           segs(EnergyEndpoint.restOfHome, _homeColor)),
       if (s.hasHeatPump)
         _Row('heat', 'HEAT PUMP', s.heatPump,

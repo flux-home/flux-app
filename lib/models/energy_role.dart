@@ -20,7 +20,17 @@ enum EnergyRole {
   /// only ever reported by the controller, where a pre-rooms override landed
   /// whose stored form was the coarse log class and so cannot say which kind of
   /// consumer it was. Reassigning the device replaces it.
-  load;
+  load,
+
+  /// A measured part of the house load — one appliance, or a sub-circuit meter.
+  ///
+  /// Unlike [grid], [pv] and [homeBattery] this is **attribution, not a flow**.
+  /// The energy is already inside the house total that the grid meter and PV
+  /// imply, so a device marked this way explains part of that total instead of
+  /// adding to it: it is subtracted from the unattributed remainder, never summed
+  /// as a source or a sink. Getting that backwards would double-count every
+  /// appliance the user labels.
+  homeConsumer;
 
   /// Human-readable label for pickers and the overview.
   String get label => switch (this) {
@@ -31,6 +41,7 @@ enum EnergyRole {
         EnergyRole.heatPump    => 'Heat Pump',
         EnergyRole.homeBattery => 'Home Battery',
         EnergyRole.load        => 'Consumer',
+        EnergyRole.homeConsumer => 'Home Consumer',
       };
 
   IconData get icon => switch (this) {
@@ -41,6 +52,7 @@ enum EnergyRole {
         EnergyRole.heatPump    => Icons.heat_pump_outlined,
         EnergyRole.homeBattery => Icons.battery_charging_full_outlined,
         EnergyRole.load        => Icons.power_outlined,
+        EnergyRole.homeConsumer => Icons.outlet_outlined,
       };
 
   /// The controller's energy-log class code for this role (mirrors
@@ -53,6 +65,7 @@ enum EnergyRole {
         EnergyRole.carCharger  => 3,
         EnergyRole.heatPump    => 3,
         EnergyRole.load        => 3,
+        EnergyRole.homeConsumer => 3,
         EnergyRole.homeBattery => 4,
         EnergyRole.none        => null,
       };
@@ -68,6 +81,7 @@ enum EnergyRole {
         EnergyRole.heatPump    => 4,
         EnergyRole.homeBattery => 5,
         EnergyRole.load        => 6,
+        EnergyRole.homeConsumer => 7,
       };
 
   static EnergyRole fromWire(int v) => switch (v) {
@@ -77,6 +91,7 @@ enum EnergyRole {
         4 => EnergyRole.heatPump,
         5 => EnergyRole.homeBattery,
         6 => EnergyRole.load,
+        7 => EnergyRole.homeConsumer,
         _ => EnergyRole.none,
       };
 
@@ -87,5 +102,9 @@ enum EnergyRole {
       );
 
   /// The roles a user can assign, in display order ([none] last as "clear").
-  static const assignable = [grid, pv, carCharger, heatPump, homeBattery, none];
+  /// Roles the user can assign, in display order ([none] last as "clear").
+  /// [load] is absent deliberately — it exists only as a landing spot for legacy
+  /// controller data, and [homeConsumer] is the one to pick going forward.
+  static const assignable =
+      [grid, pv, homeConsumer, carCharger, heatPump, homeBattery, none];
 }

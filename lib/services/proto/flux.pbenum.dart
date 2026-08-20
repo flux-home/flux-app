@@ -107,6 +107,16 @@ class EnergyRole extends $pb.ProtobufEnum {
   static const EnergyRole ENERGY_ROLE_LOAD =
       EnergyRole._(6, _omitEnumNames ? '' : 'ENERGY_ROLE_LOAD');
 
+  /// A measured part of the house load: one appliance, or a sub-circuit meter.
+  ///
+  /// Unlike grid/pv/battery this is ATTRIBUTION, not a new flow. The energy is
+  /// already inside the house total the grid meter and PV imply, so a consumer
+  /// marked this way explains part of that total rather than adding to it —
+  /// whoever sums the balance must subtract it from the unattributed remainder,
+  /// never add it as a source or a sink.
+  static const EnergyRole ENERGY_ROLE_HOME_CONSUMER =
+      EnergyRole._(7, _omitEnumNames ? '' : 'ENERGY_ROLE_HOME_CONSUMER');
+
   static const $core.List<EnergyRole> values = <EnergyRole>[
     ENERGY_ROLE_UNSPECIFIED,
     ENERGY_ROLE_GRID,
@@ -115,10 +125,11 @@ class EnergyRole extends $pb.ProtobufEnum {
     ENERGY_ROLE_HEAT_PUMP,
     ENERGY_ROLE_HOME_BATTERY,
     ENERGY_ROLE_LOAD,
+    ENERGY_ROLE_HOME_CONSUMER,
   ];
 
   static final $core.List<EnergyRole?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 6);
+      $pb.ProtobufEnum.$_initByValueList(values, 7);
   static EnergyRole? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

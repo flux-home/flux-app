@@ -59,6 +59,7 @@ const EnergyRole$json = {
     {'1': 'ENERGY_ROLE_HEAT_PUMP', '2': 4},
     {'1': 'ENERGY_ROLE_HOME_BATTERY', '2': 5},
     {'1': 'ENERGY_ROLE_LOAD', '2': 6},
+    {'1': 'ENERGY_ROLE_HOME_CONSUMER', '2': 7},
   ],
 };
 
@@ -67,7 +68,7 @@ final $typed_data.Uint8List energyRoleDescriptor = $convert.base64Decode(
     'CgpFbmVyZ3lSb2xlEhsKF0VORVJHWV9ST0xFX1VOU1BFQ0lGSUVEEAASFAoQRU5FUkdZX1JPTE'
     'VfR1JJRBABEhIKDkVORVJHWV9ST0xFX1BWEAISGwoXRU5FUkdZX1JPTEVfQ0FSX0NIQVJHRVIQ'
     'AxIZChVFTkVSR1lfUk9MRV9IRUFUX1BVTVAQBBIcChhFTkVSR1lfUk9MRV9IT01FX0JBVFRFUl'
-    'kQBRIUChBFTkVSR1lfUk9MRV9MT0FEEAY=');
+    'kQBRIUChBFTkVSR1lfUk9MRV9MT0FEEAYSHQoZRU5FUkdZX1JPTEVfSE9NRV9DT05TVU1FUhAH');
 
 @$core.Deprecated('Use modbusProfileDescriptor instead')
 const ModbusProfile$json = {

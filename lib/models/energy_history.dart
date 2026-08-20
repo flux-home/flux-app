@@ -55,6 +55,34 @@ class EnergyHistoryPoint {
   }
 }
 
+/// One battery's state of charge over the same time base — the level at each
+/// bucket's end, index-aligned to [EnergyHistoryData.points].
+///
+/// A level, not a flow: it is carried forward across gaps rather than summed, and
+/// a bucket with no sample is null rather than zero. Zero would draw an empty
+/// battery where the truth is "we did not hear from it".
+@immutable
+class BatterySocSeries {
+  const BatterySocSeries({
+    required this.kind,
+    required this.nodeId,
+    required this.name,
+    required this.percentPerBucket,
+  });
+
+  final DeviceKind kind;
+  final int nodeId;
+  final String name;
+  final List<int?> percentPerBucket;
+
+  int? get latest {
+    for (var i = percentPerBucket.length - 1; i >= 0; i--) {
+      if (percentPerBucket[i] != null) return percentPerBucket[i];
+    }
+    return null;
+  }
+}
+
 /// One PV inverter's generation over the same time base — average power (W) per
 /// bucket, index-aligned to [EnergyHistoryData.points].
 @immutable
@@ -96,6 +124,7 @@ class EnergyHistoryData {
     this.batteryChargeKwh = 0,
     this.batteryDischargeKwh = 0,
     this.pvSeries = const [],
+    this.batterySoc = const [],
   });
 
   final List<EnergyHistoryPoint> points;
@@ -115,6 +144,30 @@ class EnergyHistoryData {
   /// Per-inverter PV breakdown, when the controller reports it. Empty → only the
   /// summed PV total ([pvKwh] / [EnergyHistoryPoint.pvW]) is available.
   final List<PvDeviceSeries> pvSeries;
+
+  /// Per-battery charge level over the window. Empty when the controller reported
+  /// none (older firmware, or no battery).
+  final List<BatterySocSeries> batterySoc;
+
+  /// Charge level per bucket averaged across batteries, or null where no battery
+  /// reported in that bucket. Most houses have one battery, in which case this is
+  /// simply that battery's line.
+  List<double?> get socPerBucket {
+    if (batterySoc.isEmpty) return const [];
+    return [
+      for (var i = 0; i < points.length; i++)
+        () {
+          var sum = 0, n = 0;
+          for (final s in batterySoc) {
+            final v = i < s.percentPerBucket.length ? s.percentPerBucket[i] : null;
+            if (v != null) { sum += v; n++; }
+          }
+          return n == 0 ? null : sum / n;
+        }(),
+    ];
+  }
+
+  bool get hasSoc => batterySoc.isNotEmpty;
 
   /// True when the controller reported a per-device PV breakdown — then the
   /// individual inverter lines are drawn (by device name) instead of the summed
@@ -241,6 +294,24 @@ class EnergyHistoryData {
       ));
     }
 
+    // Per-battery SOC. One byte per bucket; 255 means "no sample", which must
+    // stay distinguishable from 0% — an empty battery and an unheard-from battery
+    // are different facts.
+    final socSeries = <BatterySocSeries>[];
+    for (final s in h.batterySoc) {
+      final pct = <int?>[
+        for (var i = 0; i < points.length; i++)
+          (i < s.socPct.length && s.socPct[i] != 255) ? s.socPct[i] : null,
+      ];
+      if (pct.every((v) => v == null)) continue;
+      socSeries.add(BatterySocSeries(
+        kind: DeviceKind.fromWire(s.kind.value),
+        nodeId: s.nodeId.toInt(),
+        name: s.name.isNotEmpty ? s.name : 'Battery ${s.nodeId.toInt()}',
+        percentPerBucket: pct,
+      ));
+    }
+
     return EnergyHistoryData(
       points: points,
       bucket: Duration(seconds: bucketSec),
@@ -253,6 +324,7 @@ class EnergyHistoryData {
       batteryChargeKwh: batChgWh / 1000.0,
       batteryDischargeKwh: batDisWh / 1000.0,
       pvSeries: pvSeries,
+      batterySoc: socSeries,
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:matter_home/models/energy_history.dart';
+import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -82,7 +83,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
             else ...[
               _readout(context, data),
               const SizedBox(height: 8),
-              _chart(data),
+              _decks(context, data),
               const SizedBox(height: 12),
               _legend(context, data),
               const SizedBox(height: 14),
@@ -185,36 +186,73 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
   }
 
   // ── Chart ───────────────────────────────────────────────────────────────────
-  Widget _chart(EnergyHistoryData data) {
-    return AspectRatio(
-      aspectRatio: 1.7,
-      child: LayoutBuilder(builder: (context, constraints) {
-        final cs = Theme.of(context).colorScheme;
-        void selectAt(Offset local) {
-          final n = data.points.length;
-          if (n < 2) return;
-          final frac = (local.dx / constraints.maxWidth).clamp(0.0, 1.0);
-          setState(() => _selected = (frac * (n - 1)).round());
-        }
+  /// Energy, charge level and price as three decks over ONE time axis.
+  ///
+  /// Deliberately not one plot: energy (kWh) and price (ct/kWh) have unrelated
+  /// scales, and putting them on two y-axes in one frame — the shape this
+  /// replaces — makes their crossings look meaningful when they are an artefact
+  /// of whatever ranges each axis happened to pick. Separate decks keep every
+  /// scale honest while the shared x lets the eye read down a column: expensive
+  /// hour, empty battery, nothing generated.
+  ///
+  /// One crosshair spans all three, because the question is always about a
+  /// moment rather than about a series.
+  Widget _decks(BuildContext context, EnergyHistoryData data) {
+    final cs = Theme.of(context).colorScheme;
+    final prices = context.watch<DeviceProvider>().energyPrices;
 
-        return GestureDetector(
-          onHorizontalDragStart: (d) => selectAt(d.localPosition),
-          onHorizontalDragUpdate: (d) => selectAt(d.localPosition),
-          onHorizontalDragEnd: (_) => setState(() => _selected = null),
-          onHorizontalDragCancel: () => setState(() => _selected = null),
-          onTapDown: (d) => selectAt(d.localPosition),
-          onTapUp: (_) => setState(() => _selected = null),
-          child: CustomPaint(
-            painter: _LineChartPainter(
-              data: data,
-              selected: _selected,
+    return LayoutBuilder(builder: (context, constraints) {
+      void selectAt(Offset local) {
+        final n = data.points.length;
+        if (n < 2) return;
+        final frac = (local.dx / constraints.maxWidth).clamp(0.0, 1.0);
+        setState(() => _selected = (frac * (n - 1)).round());
+      }
+
+      Widget deck(double height, CustomPainter painter) => SizedBox(
+            height: height,
+            child: CustomPaint(painter: painter, size: Size.infinite),
+          );
+
+      return GestureDetector(
+        onHorizontalDragStart:  (d) => selectAt(d.localPosition),
+        onHorizontalDragUpdate: (d) => selectAt(d.localPosition),
+        onHorizontalDragEnd:    (_) => setState(() => _selected = null),
+        onHorizontalDragCancel: ()  => setState(() => _selected = null),
+        onTapDown: (d) => selectAt(d.localPosition),
+        onTapUp:   (_) => setState(() => _selected = null),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            deck(112, _SupplyDeckPainter(
+              data: data, selected: _selected,
               axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
               labelColor: cs.onSurfaceVariant,
-            ),
-          ),
-        );
-      }),
-    );
+            )),
+            if (data.hasSoc) ...[
+              const SizedBox(height: 8),
+              deck(46, _SocDeckPainter(
+                soc: data.socPerBucket, selected: _selected,
+                axisColor: cs.onSurfaceVariant.withValues(alpha: 0.22),
+                labelColor: cs.onSurfaceVariant,
+              )),
+            ],
+            if (prices != null && !prices.isEmpty) ...[
+              const SizedBox(height: 8),
+              deck(58, _PriceDeckPainter(
+                data: data, prices: prices, selected: _selected,
+                axisColor: cs.onSurfaceVariant.withValues(alpha: 0.22),
+                labelColor: cs.onSurfaceVariant,
+              )),
+            ],
+            const SizedBox(height: 4),
+            deck(14, _TimeAxisPainter(
+              data: data, labelColor: cs.onSurfaceVariant,
+            )),
+          ],
+        ),
+      );
+    });
   }
 
   // The series carries its kind, so resolve on the whole key — a PV inverter is
@@ -347,8 +385,43 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
 // Plots each series scaled to the window's peak. Line *shapes* are identical
 // whether values are read as average-W or kWh-per-bucket (they differ only by a
 // constant factor), so the painter works in W and the readout labels the kWh.
-class _LineChartPainter extends CustomPainter {
-  _LineChartPainter({
+// ── Deck painters ───────────────────────────────────────────────────────────
+//
+// Chart marks use their own palette rather than the app's pastel accents. The
+// pastels carry identity fine on the live card, where each has a labelled row of
+// its own — but as adjacent stacked segments they fail: solar amber and grid
+// coral sit 11.3 apart in OKLab, which is hard to separate even with full colour
+// vision, and closer still under deuteranopia. These three are stepped to clear
+// that bar on this surface.
+const _cSolar   = Color(0xFFB8871E);
+const _cGrid    = Color(0xFFC4483A);
+const _cBattery = Color(0xFF2E9468);
+
+/// Shared geometry so every deck puts bucket *i* at the same x.
+double _xForIndex(int i, int n, double width) =>
+    n <= 1 ? width / 2 : i / (n - 1) * width;
+
+void _paintCrosshair(Canvas canvas, Size size, int? selected, int n, Color c) {
+  if (selected == null || n == 0) return;
+  final x = _xForIndex(selected.clamp(0, n - 1), n, size.width);
+  canvas.drawLine(Offset(x, 0), Offset(x, size.height),
+      Paint()..color = c..strokeWidth = 1);
+}
+
+void _paintLabel(Canvas canvas, String text, Offset at, Color color,
+    {double size = 9, bool rightAlign = false, FontWeight weight = FontWeight.w700}) {
+  final tp = TextPainter(
+    text: TextSpan(text: text, style: TextStyle(
+        color: color, fontSize: size, fontWeight: weight,
+        fontFamily: 'monospace', letterSpacing: 0.6)),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  tp.paint(canvas, rightAlign ? at.translate(-tp.width, 0) : at);
+}
+
+/// Deck 1 — where the energy came from, stacked per bucket.
+class _SupplyDeckPainter extends CustomPainter {
+  _SupplyDeckPainter({
     required this.data,
     required this.selected,
     required this.axisColor,
@@ -360,122 +433,227 @@ class _LineChartPainter extends CustomPainter {
   final Color axisColor;
   final Color labelColor;
 
-  static const _padBottom = 18.0;
-  static const _padTop = 6.0;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = data.points;
+    if (pts.isEmpty) return;
+    final h = data.bucket.inSeconds / 3600.0;   // W → Wh per bucket
+
+    double supply(EnergyHistoryPoint p) =>
+        p.pvW + p.gridImportW + p.batteryDischargeW;
+    final peak = pts.fold<double>(0, (m, p) => supply(p) > m ? supply(p) : m);
+    if (peak <= 0) return;
+
+    final top = 12.0;
+    final plot = size.height - top;
+    final bw = pts.length == 1 ? size.width : size.width / pts.length;
+
+    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height),
+        Paint()..color = axisColor..strokeWidth = 1);
+
+    for (var i = 0; i < pts.length; i++) {
+      final p = pts[i];
+      var y = size.height;
+      // Solar first, then what filled the gaps — reading upward, the bar says
+      // "sun, then battery, then bought".
+      for (final seg in [
+        (p.pvW, _cSolar),
+        (p.batteryDischargeW, _cBattery),
+        (p.gridImportW, _cGrid),
+      ]) {
+        if (seg.$1 <= 0) continue;
+        final segH = seg.$1 / peak * plot;
+        final x = i * bw;
+        canvas.drawRect(
+          Rect.fromLTWH(x + 0.5, y - segH, (bw - 1).clamp(0.5, bw), segH),
+          Paint()..color = seg.$2,
+        );
+        y -= segH + 0.5;   // hairline gap so segments stay countable
+      }
+    }
+
+    _paintLabel(canvas, '${(peak * h / 1000).toStringAsFixed(1)} kWh',
+        Offset(0, 0), labelColor);
+    _paintCrosshair(canvas, size, selected, pts.length,
+        labelColor.withValues(alpha: 0.55));
+
+    if (selected != null && selected! < pts.length) {
+      final p = pts[selected!.clamp(0, pts.length - 1)];
+      _paintLabel(canvas,
+          '${(supply(p) * h / 1000).toStringAsFixed(2)} kWh',
+          Offset(size.width, 0), labelColor, rightAlign: true);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SupplyDeckPainter old) =>
+      old.data != data || old.selected != selected;
+}
+
+/// Deck 2 — charge level. A level, so it is a line between 0 and 100 with the
+/// bounds drawn: without them a flat line at 40% and one at 90% look identical.
+class _SocDeckPainter extends CustomPainter {
+  _SocDeckPainter({
+    required this.soc,
+    required this.selected,
+    required this.axisColor,
+    required this.labelColor,
+  });
+
+  final List<double?> soc;
+  final int? selected;
+  final Color axisColor;
+  final Color labelColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final points = data.points;
-    if (points.length < 2) return;
+    if (soc.isEmpty) return;
+    const pad = 6.0;
+    final plot = size.height - pad * 2;
+    double y(double pct) => pad + (1 - pct / 100) * plot;
 
-    final plotH = size.height - _padBottom - _padTop;
-    final plotW = size.width;
-    final n = points.length;
-    final peak = data.peakW <= 0 ? 1.0 : data.peakW;
-    final ceil = _niceCeil(peak);
+    final guide = Paint()..color = axisColor..strokeWidth = 1;
+    canvas.drawLine(Offset(0, y(100)), Offset(size.width, y(100)), guide);
+    canvas.drawLine(Offset(0, y(0)), Offset(size.width, y(0)), guide);
 
-    double x(int i) => plotW * i / (n - 1);
-    double y(double w) => _padTop + plotH * (1 - (w / ceil));
-
-    final grid = Paint()..color = axisColor..strokeWidth = 1;
-    for (var g = 0; g <= 2; g++) {
-      final gy = _padTop + plotH * g / 2;
-      canvas.drawLine(Offset(0, gy), Offset(plotW, gy), grid);
+    final path = Path();
+    var started = false;
+    for (var i = 0; i < soc.length; i++) {
+      final v = soc[i];
+      if (v == null) { started = false; continue; }  // a gap stays a gap
+      final o = Offset(_xForIndex(i, soc.length, size.width), y(v));
+      if (!started) { path.moveTo(o.dx, o.dy); started = true; } else { path.lineTo(o.dx, o.dy); }
     }
+    canvas.drawPath(path, Paint()
+      ..color = const Color(0xFFDCE3DF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeJoin = StrokeJoin.round);
 
-    // kWh ceiling label (top-left), so the Y scale is legible.
-    final tp = TextPainter(textDirection: TextDirection.ltr)
-      ..text = TextSpan(
-          text: '${_fmtCeil(data.kwhFromW(ceil))} kWh',
-          style: TextStyle(color: labelColor, fontSize: 9))
-      ..layout();
-    tp.paint(canvas, Offset(2, _padTop));
+    _paintLabel(canvas, 'SOC', Offset(0, 0), labelColor, size: 8.5);
+    _paintCrosshair(canvas, size, selected, soc.length,
+        labelColor.withValues(alpha: 0.55));
 
-    // Hour ticks every 3h using bucket time.
-    for (var i = 0; i < n; i++) {
-      final t = points[i].time;
-      if (t.minute == 0 && t.hour % 3 == 0) {
-        final lx = x(i);
-        canvas.drawLine(Offset(lx, _padTop), Offset(lx, _padTop + plotH),
-            grid..color = axisColor.withValues(alpha: 0.5));
-        tp
-          ..text = TextSpan(
-              text: '${t.hour.toString().padLeft(2, '0')}:00',
-              style: TextStyle(color: labelColor, fontSize: 9))
-          ..layout();
-        tp.paint(canvas, Offset(lx - tp.width / 2, size.height - tp.height));
-      }
+    final shown = selected != null && selected! < soc.length
+        ? soc[selected!.clamp(0, soc.length - 1)]
+        : soc.lastWhere((v) => v != null, orElse: () => null);
+    if (shown != null) {
+      _paintLabel(canvas, '${shown.round()}%', Offset(size.width, 0),
+          labelColor, rightAlign: true);
     }
-
-    void line(double Function(EnergyHistoryPoint) sel, Color c) {
-      final path = Path();
-      for (var i = 0; i < n; i++) {
-        final px = x(i), py = y(sel(points[i]));
-        i == 0 ? path.moveTo(px, py) : path.lineTo(px, py);
-      }
-      canvas.drawPath(path, Paint()
-        ..color = c..style = PaintingStyle.stroke
-        ..strokeWidth = 2..strokeJoin = StrokeJoin.round..isAntiAlias = true);
-    }
-
-    void listLine(List<double> vals, Color c) {
-      final path = Path();
-      for (var i = 0; i < n; i++) {
-        final px = x(i), py = y(i < vals.length ? vals[i] : 0);
-        i == 0 ? path.moveTo(px, py) : path.lineTo(px, py);
-      }
-      canvas.drawPath(path, Paint()
-        ..color = c..style = PaintingStyle.stroke
-        ..strokeWidth = 2..strokeJoin = StrokeJoin.round..isAntiAlias = true);
-    }
-
-    line((p) => p.gridExportW, _exportColor);
-    line((p) => p.gridImportW, _importColor);
-    line((p) => p.loadW, _loadColor);
-    if (data.hasPvBreakdown) {
-      for (var k = 0; k < data.pvSeries.length; k++) {
-        listLine(data.pvSeries[k].wattsPerBucket, _pvPalette[k % _pvPalette.length]);
-      }
-    } else {
-      line((p) => p.pvW, _pvColor);
-    }
-
-    final s = selected;
-    if (s != null && s >= 0 && s < n) {
-      final cx = x(s);
-      canvas.drawLine(Offset(cx, _padTop), Offset(cx, _padTop + plotH),
-          Paint()..color = labelColor.withValues(alpha: 0.6)..strokeWidth = 1);
-      void dot(double w, Color c) =>
-          canvas.drawCircle(Offset(cx, y(w)), 3.0, Paint()..color = c);
-      dot(points[s].gridExportW, _exportColor);
-      dot(points[s].gridImportW, _importColor);
-      dot(points[s].loadW, _loadColor);
-      if (data.hasPvBreakdown) {
-        for (var k = 0; k < data.pvSeries.length; k++) {
-          final vals = data.pvSeries[k].wattsPerBucket;
-          dot(s < vals.length ? vals[s] : 0, _pvPalette[k % _pvPalette.length]);
-        }
-      } else {
-        dot(points[s].pvW, _pvColor);
-      }
-    }
-  }
-
-  String _fmtCeil(double v) =>
-      v >= 10 ? v.toStringAsFixed(0) : v.toStringAsFixed(v >= 1 ? 1 : 2);
-
-  double _niceCeil(double v) {
-    if (v <= 0) return 1;
-    var mag = 1.0;
-    while (mag * 10 <= v) { mag *= 10; }
-    while (mag > v) { mag /= 10; }
-    for (final m in [1.0, 2.0, 5.0, 10.0]) {
-      if (mag * m >= v) return mag * m;
-    }
-    return mag * 10;
   }
 
   @override
-  bool shouldRepaint(_LineChartPainter old) =>
-      old.data != data || old.selected != selected;
+  bool shouldRepaint(_SocDeckPainter old) =>
+      old.soc != soc || old.selected != selected;
+}
+
+/// Deck 3 — what a kWh cost, on the same time axis. Its own deck precisely
+/// because ct/kWh has nothing to do with the kWh scale above it.
+class _PriceDeckPainter extends CustomPainter {
+  _PriceDeckPainter({
+    required this.data,
+    required this.prices,
+    required this.selected,
+    required this.axisColor,
+    required this.labelColor,
+  });
+
+  final EnergyHistoryData data;
+  final EnergyPrices prices;
+  final int? selected;
+  final Color axisColor;
+  final Color labelColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = data.points;
+    if (pts.isEmpty) return;
+
+    // Price aligned to the SAME buckets as the energy above, so a column means
+    // one moment in both decks.
+    final series = [for (final p in pts) prices.currentAt(p.time)?.ctPerKwh];
+    final known = series.whereType<double>();
+    if (known.isEmpty) return;
+    var lo = known.reduce((a, b) => a < b ? a : b);
+    var hi = known.reduce((a, b) => a > b ? a : b);
+    if (hi - lo < 1) { hi = lo + 1; }
+
+    const pad = 14.0;
+    final plot = size.height - pad - 4;
+    double y(double ct) => pad + (1 - (ct - lo) / (hi - lo)) * plot;
+
+    final path = Path();
+    var started = false;
+    var loI = -1, hiI = -1;
+    for (var i = 0; i < series.length; i++) {
+      final v = series[i];
+      if (v == null) { started = false; continue; }
+      if (loI < 0 || v < series[loI]!) loI = i;
+      if (hiI < 0 || v > series[hiI]!) hiI = i;
+      final o = Offset(_xForIndex(i, series.length, size.width), y(v));
+      if (!started) { path.moveTo(o.dx, o.dy); started = true; } else { path.lineTo(o.dx, o.dy); }
+    }
+    canvas.drawPath(path, Paint()
+      ..color = labelColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeJoin = StrokeJoin.round);
+
+    // Direct labels on the two hours anyone actually asks about.
+    void mark(int i, Color c, String suffix) {
+      if (i < 0) return;
+      final v = series[i]!;
+      final o = Offset(_xForIndex(i, series.length, size.width), y(v));
+      canvas.drawCircle(o, 3, Paint()..color = c);
+      final right = o.dx > size.width * 0.6;
+      _paintLabel(canvas, '${v.toStringAsFixed(0)} $suffix',
+          Offset(o.dx + (right ? -6 : 6), o.dy - 12), c, size: 8.5,
+          rightAlign: right);
+    }
+    mark(loI, _cBattery, 'cheapest');
+    mark(hiI, _cGrid, 'dearest');
+
+    _paintLabel(canvas, 'ct/kWh', Offset(0, 0), labelColor, size: 8.5);
+    _paintCrosshair(canvas, size, selected, series.length,
+        labelColor.withValues(alpha: 0.55));
+
+    if (selected != null && selected! < series.length) {
+      final v = series[selected!.clamp(0, series.length - 1)];
+      if (v != null) {
+        _paintLabel(canvas, '${v.toStringAsFixed(1)} ct',
+            Offset(size.width, 0), labelColor, rightAlign: true);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PriceDeckPainter old) =>
+      old.data != data || old.selected != selected || old.prices != prices;
+}
+
+/// One time axis for all the decks above it — the thing that makes them readable
+/// as a column instead of three unrelated pictures.
+class _TimeAxisPainter extends CustomPainter {
+  _TimeAxisPainter({required this.data, required this.labelColor});
+
+  final EnergyHistoryData data;
+  final Color labelColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = data.points;
+    if (pts.length < 2) return;
+    for (final frac in [0.0, 0.25, 0.5, 0.75]) {
+      final i = (frac * (pts.length - 1)).round();
+      final t = pts[i].time;
+      final label = '${t.hour.toString().padLeft(2, '0')}:00';
+      final x = _xForIndex(i, pts.length, size.width);
+      _paintLabel(canvas, label, Offset(x + (frac == 0 ? 0 : -14), 0),
+          labelColor, size: 8.5, weight: FontWeight.w400);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TimeAxisPainter old) => old.data != data;
 }
