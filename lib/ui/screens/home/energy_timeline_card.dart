@@ -150,12 +150,12 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                   )
                 else ...[
                   _hero(context, data),
-                  const SizedBox(height: 10),
-                  _chips(context, provider, shown),
                   const SizedBox(height: 12),
                   _plot(context, data, prices, shown),
                   const SizedBox(height: 12),
-                  _totals(context, data),
+                  // Below the chart: the chips are a control for what is above
+                  // them, and reading order should reach the picture first.
+                  _chips(context, provider, shown),
                   if (!data.timeSynced)
                     _note(context,
                         'Times approximate — controller clock not yet synced'),
@@ -278,63 +278,6 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
         ),
       );
     });
-  }
-
-  /// The two totals nothing else states, and then the arithmetic that ties them
-  /// to the hero figure.
-  ///
-  /// The line is not decoration. "Used" is not measured — it is inferred from an
-  /// energy balance — and with only generated and exported on screen the numbers
-  /// visibly fail to add up, because two of the five terms (what was bought, and
-  /// what the battery net contributed) are missing. Removing the imported tile as
-  /// a duplicate is what broke the reconciliation; showing the sum restores it
-  /// without putting the tile back.
-  Widget _totals(BuildContext context, EnergyHistoryData data) {
-    final cs = Theme.of(context).colorScheme;
-    Widget one(String label, double kwh, Color c) => Expanded(
-          child: Row(children: [
-            Container(width: 3, height: 26, color: c),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(
-                    fontSize: 10, letterSpacing: 0.6,
-                    color: cs.onSurfaceVariant)),
-                Text('${kwh.toStringAsFixed(1)} kWh', style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ]),
-        );
-    final batNet = data.batteryDischargeKwh - data.batteryChargeKwh;
-    String kwh(double v) => v.abs().toStringAsFixed(1);
-    final batTerm = batNet.abs() < 0.05
-        ? ''
-        : batNet > 0
-            ? ' + ${kwh(batNet)} from battery'
-            : ' − ${kwh(batNet)} to battery';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          one('GENERATED', data.pvKwh, _cSolar),
-          one('EXPORTED', data.gridExportKwh, _cExport),
-        ]),
-        const SizedBox(height: 10),
-        Text(
-          '${kwh(data.pvKwh)} generated'
-          ' + ${kwh(data.gridImportKwh)} imported'
-          '$batTerm'
-          ' − ${kwh(data.gridExportKwh)} exported'
-          ' = ${kwh(data.consumptionKwh)} used',
-          style: TextStyle(
-              fontFamily: 'monospace', fontSize: 10,
-              color: cs.onSurfaceVariant),
-        ),
-      ],
-    );
   }
 
   Widget _note(BuildContext context, String text) => Padding(

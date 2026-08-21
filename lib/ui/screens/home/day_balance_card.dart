@@ -16,8 +16,7 @@ const _paidColor     = Color(0xFFF2A9A0); // coral — what you had to buy
 /// the split between the two sides was a two-pixel hairline, and "OUT" and "IN"
 /// asked the reader to work out which blocks belonged to which. Three rows need no
 /// divider to be found and no legend to be matched — each row states its own name
-/// and its own amount — and the arithmetic is written out underneath so the net
-/// figure is checkable rather than asserted.
+/// and its own amount.
 ///
 /// Avoided import stays its own row rather than joining exported in a green
 /// total: it is money that never left, not money that arrived.
@@ -91,15 +90,6 @@ class DayBalanceCard extends StatelessWidget {
                     scale: scale, color: _exportedColor),
                 _AmountRow(label: 'Paid', value: paid,
                     scale: scale, color: _paidColor),
-                const SizedBox(height: 6),
-                // The sum spelled out: with three amounts and one total, the
-                // reader should not have to guess which ones were added and
-                // which subtracted.
-                Text('${eur(avoided)} + ${eur(exported)} − ${eur(paid)} '
-                    '= ${net >= 0 ? '+' : '−'}${eur(net.abs())}',
-                    style: TextStyle(
-                        fontFamily: 'monospace', fontSize: 10.5,
-                        color: cs.onSurfaceVariant)),
                 if (ss != null) ...[
                   const SizedBox(height: 12),
                   Divider(height: 1, color: cs.outlineVariant),
