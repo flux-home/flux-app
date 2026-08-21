@@ -270,7 +270,6 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
 
   // ── KPI totals ──────────────────────────────────────────────────────────────
   Widget _kpis(BuildContext context, EnergyHistoryData data) {
-    final ss = data.selfSufficiencyPercent;
     return Column(children: [
       Row(children: [
         _kpi(context, 'Generated', data.pvKwh, _pvColor),
@@ -281,10 +280,6 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
         _kpi(context, 'Imported', data.gridImportKwh, _importColor),
         _kpi(context, 'Exported', data.gridExportKwh, _exportColor),
       ]),
-      if (ss != null) ...[
-        const SizedBox(height: 12),
-        _selfSufficiency(context, ss),
-      ],
     ]);
   }
 
@@ -308,29 +303,7 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
     );
   }
 
-  Widget _selfSufficiency(BuildContext context, int pct) {
-    final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Text('SELF-SUFFICIENCY', style: tt.labelSmall?.copyWith(
-            color: cs.onSurfaceVariant, letterSpacing: 0.8)),
-        const Spacer(),
-        Text('$pct%', style: tt.labelMedium?.copyWith(
-            color: cs.onSurface, fontWeight: FontWeight.w700)),
-      ]),
-      const SizedBox(height: 6),
-      ClipRRect(
-        borderRadius: BorderRadius.circular(3),
-        child: LinearProgressIndicator(
-          value: pct / 100,
-          minHeight: 6,
-          backgroundColor: cs.surfaceContainerHighest,
-          valueColor: const AlwaysStoppedAnimation(_exportColor),
-        ),
-      ),
-    ]);
-  }
+
 
   // ── Placeholder / footnote ──────────────────────────────────────────────────
   Widget _placeholder(BuildContext context, bool loading, {bool empty = false}) {
@@ -379,9 +352,11 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
 const _cSolar   = Color(0xFFF6D08A);
 const _cGrid    = Color(0xFFC4483A);
 const _cBattery = Color(0xFF2E9468);
-/// Charge level is a state, not a flow, so it keeps the neutral it has on the
-/// live card rather than joining the flow palette.
-const _cSoc     = Color(0xFFDCE3DF);
+/// Charge level gets a hue of its own — a cool periwinkle. Neutral grey read as
+/// absence rather than as a measurement, and every warm colour in this chart is
+/// already spoken for by a bar. Cool also helps it recede behind them, which is
+/// what a background band should do.
+const _cSoc     = Color(0xFF8FA5E8);
 
 /// Rounds a raw step up to 1/2/5 x a power of ten, so gridline labels read as
 /// numbers a person would choose. Same treatment the price chart gives its axis,
