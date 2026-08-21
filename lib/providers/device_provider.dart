@@ -17,6 +17,7 @@ import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/room.dart';
 import 'package:matter_home/models/persisted_snapshot.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/energy_cache.dart';
 import 'package:matter_home/services/flux_coap_service.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 import 'package:matter_home/services/hub_connection.dart';
@@ -59,6 +60,14 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
   final DeviceStore _store;
+
+  /// Completed buckets kept on the phone, so a launch paints before the network
+  /// answers. Null until [attachEnergyCache] runs.
+  EnergyCache? _energyCache;
+  void attachEnergyCache(EnergyCache cache) {
+    _energyCache = cache;
+    unawaited(loadCachedHistory());
+  }
 
   /// Timeline series the user has switched off; everything else is drawn, so a
   /// series added by a later version arrives visible rather than hidden.
@@ -187,6 +196,72 @@ class DeviceProvider extends ChangeNotifier {
   /// Fetch the last 24 hours of energy history from the controller (1-hour
   /// buckets). No-op without a controller. Concurrent calls are coalesced; a
   /// transient failure leaves any previously-loaded history in place.
+  static const _bucket = Duration(hours: 1);
+  static const _window = Duration(hours: 24);
+
+  /// Paints the cached window immediately, then asks the controller only for what
+  /// it cannot already know.
+  ///
+  /// A completed bucket never changes, so re-fetching 24 hours on every launch
+  /// was a slow round trip to re-learn facts already on the phone. The fetch is
+  /// now anchored at the end of the newest cached bucket — usually minutes of
+  /// data, and a full window only on a first run or after a long absence.
+  ///
+  /// It deliberately re-fetches the newest cached bucket's own hour as well: that
+  /// hour was complete when cached, but the request that produced it may have cut
+  /// a *later* partial hour, and starting one bucket early costs one bucket and
+  /// closes that seam.
+  int _historyOffsetDays = 0;
+
+  /// How many days back the Energy view is looking. 0 = the last 24 hours.
+  int get historyOffsetDays => _historyOffsetDays;
+
+  /// Moves the window and shows whatever the cache already holds for it before
+  /// asking the controller for the rest.
+  ///
+  /// This is the reason the cache exists in a form that keeps six weeks rather
+  /// than one day: stepping back a day is instant for any day already visited,
+  /// and costs one request for a day that is not.
+  Future<void> setHistoryOffsetDays(int days) async {
+    final next = days < 0 ? 0 : days;
+    if (next == _historyOffsetDays) return;
+    _historyOffsetDays = next;
+    notifyListeners();
+    await loadCachedHistory();
+    await fetchEnergyHistory();
+  }
+
+  /// The window currently being shown, as (from, to).
+  (DateTime, DateTime) get historyWindow {
+    final to = DateTime.now().subtract(Duration(days: _historyOffsetDays));
+    return (to.subtract(_window), to);
+  }
+
+  Future<void> loadCachedHistory() async {
+    if (_energyCache == null) return;
+    final rows = _energyCache!.load();
+    if (rows.isEmpty) return;
+    final window = _rowsIn(rows, historyWindow);
+    if (window.isEmpty) return;
+    _energyHistory = EnergyHistoryData.fromRows(window, bucket: _bucket);
+    notifyListeners();
+  }
+
+  /// The cached rows whose bucket start falls inside [w].
+  List<EnergyBucketRow> _rowsIn(
+      Map<int, EnergyBucketRow> rows, (DateTime, DateTime) w) {
+    final (from, to) = w;
+    return [
+      for (final r in rows.values)
+        if (() {
+          final t = DateTime.fromMillisecondsSinceEpoch(r.epoch * 1000,
+              isUtc: true).toLocal();
+          return !t.isBefore(from) && t.isBefore(to);
+        }())
+          r,
+    ];
+  }
+
   Future<void> fetchEnergyHistory() {
     final inflight = _energyHistoryInflight;
     if (inflight != null) return inflight;
@@ -197,14 +272,53 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
 
     final f = () async {
-      final now = DateTime.now();
-      final to = now.millisecondsSinceEpoch ~/ 1000;
-      final from = to - 24 * 3600;   // last 24 hours
-      // 1-hour buckets keep the payload small (≈24 buckets) even with the
-      // per-device series included — the controller re-aggregates server-side.
+      final w = historyWindow;
+      final cache = _energyCache;
+      final cached = cache?.load() ?? const <int, EnergyBucketRow>{};
+      var to = w.$2.millisecondsSinceEpoch ~/ 1000;
+      var from = w.$1.millisecondsSinceEpoch ~/ 1000;
+
+      if (_historyOffsetDays == 0) {
+        // Live window: only the tail, when the cache already covers it.
+        final newestEnd = cache?.newestEnd(cached, _bucket);
+        if (newestEnd != null) {
+          final tailFrom =
+              newestEnd.subtract(_bucket).millisecondsSinceEpoch ~/ 1000;
+          if (tailFrom > from) from = tailFrom;
+        }
+      } else {
+        // A past day is fixed history: if the cache already has every hour of
+        // it, there is nothing to ask for. Every hour, not merely some — a
+        // partially cached day would otherwise never be completed.
+        final have = _rowsIn(cached, w).length;
+        final want = _window.inSeconds ~/ _bucket.inSeconds;
+        if (have >= want) {
+          _energyHistory = EnergyHistoryData.fromRows(
+              _rowsIn(cached, w), bucket: _bucket);
+          return;
+        }
+      }
+
+      // 1-hour buckets keep the payload small even with the per-device series
+      // included — the controller re-aggregates server-side.
       final h = await svc.getEnergyHistory(from: from, to: to, bucketSeconds: 3600);
       if (_disposed) return;
-      if (h != null) _energyHistory = EnergyHistoryData.fromProto(h);
+      if (h == null) return;
+
+      final fresh = EnergyHistoryData.fromProto(h);
+      if (cache == null) {
+        _energyHistory = fresh;
+        return;
+      }
+      // Merge, then rebuild the window from the merged set rather than from the
+      // response: a tail fetch holds only the newest hour or two, and showing it
+      // alone would blank the chart every 30 seconds.
+      final merged = await cache.merge(fresh.toRows());
+      final window = _rowsIn(merged, historyWindow);
+      _energyHistory = window.isEmpty
+          ? fresh
+          : EnergyHistoryData.fromRows(window, bucket: _bucket,
+              timeSynced: fresh.timeSynced);
     }();
     _energyHistoryInflight = f.whenComplete(() {
       _energyHistoryInflight = null;

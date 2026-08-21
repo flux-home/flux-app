@@ -85,6 +85,9 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   void _fetch() {
     if (!mounted) return;
     final p = context.read<DeviceProvider>();
+    // A past day does not change; polling it would re-request fixed history
+    // every 30 seconds for nothing.
+    if (p.historyOffsetDays != 0) return;
     p.fetchEnergyHistory();
     p.fetchEnergyPrices();
     p.fetchSolarForecast();
@@ -134,7 +137,8 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                   fontWeight: FontWeight.w700, letterSpacing: 2.4,
                   color: cs.onSurfaceVariant)),
               const Spacer(),
-              if (prices != null && !prices.isEmpty)
+              if (provider.historyOffsetDays == 0 &&
+                  prices != null && !prices.isEmpty)
                 Text(_priceNow(prices), style: TextStyle(
                     fontFamily: 'monospace', fontSize: 10,
                     color: cs.onSurfaceVariant)),
@@ -159,13 +163,17 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                             color: cs.onSurfaceVariant, fontSize: 13)),
                   )
                 else ...[
+                  _windowBar(context, provider),
+                  const SizedBox(height: 6),
                   _hero(context, data),
-                  if (provider.solarForecast != null) ...[
+                  if (provider.solarForecast != null &&
+                      provider.historyOffsetDays == 0) ...[
                     const SizedBox(height: 4),
                     _sunLine(context, provider.solarForecast!),
                   ],
                   const SizedBox(height: 12),
-                  _plot(context, data, prices, shown),
+                  _plot(context, data,
+                      provider.historyOffsetDays == 0 ? prices : null, shown),
                   const SizedBox(height: 12),
                   // Below the chart: the chips are a control for what is above
                   // them, and reading order should reach the picture first.
@@ -178,6 +186,49 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Step a day at a time. Any day already visited comes straight from the
+  /// cache; a new one costs a single request for that day alone.
+  Widget _windowBar(BuildContext context, DeviceProvider p) {
+    final cs = Theme.of(context).colorScheme;
+    final off = p.historyOffsetDays;
+    final (from, _) = p.historyWindow;
+
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    final label = off == 0
+        ? 'Last 24 hours'
+        : off == 1
+            ? 'Yesterday'
+            : '${from.day} ${months[from.month - 1]}';
+
+    return Row(
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.chevron_left, size: 20),
+          tooltip: 'A day earlier',
+          onPressed: () => p.setHistoryOffsetDays(off + 1),
+        ),
+        Text(label, style: TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600,
+            color: off == 0 ? cs.onSurfaceVariant : cs.onSurface)),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.chevron_right, size: 20),
+          // Nothing to step into: the live window already ends at now.
+          onPressed: off == 0 ? null : () => p.setHistoryOffsetDays(off - 1),
+          tooltip: 'A day later',
+        ),
+        const Spacer(),
+        if (off != 0)
+          TextButton(
+            onPressed: () => p.setHistoryOffsetDays(0),
+            child: const Text('Now'),
+          ),
       ],
     );
   }
@@ -297,7 +348,10 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
             painter: _TimelinePainter(
               data: data,
               prices: shown.contains(_Series.price) ? prices : null,
-              solar: shown.contains(_Series.sun)
+              // A forecast is about the future; on a past day it would be
+              // yesterday's guess drawn over what actually happened.
+              solar: shown.contains(_Series.sun) &&
+                      context.watch<DeviceProvider>().historyOffsetDays == 0
                   ? context.watch<DeviceProvider>().solarForecast
                   : null,
               shown: shown,

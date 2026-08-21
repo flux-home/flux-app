@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:matter_home/models/matter_device.dart' show DeviceKind;
+import 'package:matter_home/services/energy_cache.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
 /// One time bucket of the energy-history chart, expressed as **average power in
@@ -229,6 +230,86 @@ class EnergyHistoryData {
     if (c <= 0) return null;
     final selfConsumed = c - gridImportKwh;
     return ((selfConsumed / c).clamp(0.0, 1.0) * 100).round();
+  }
+
+  /// Builds a window from cached rows — the same shape [fromProto] produces, so
+  /// nothing downstream can tell whether the data came off the wire or off disk.
+  ///
+  /// The per-inverter PV breakdown is deliberately absent: it is not cached
+  /// (nothing reads it today), and inventing an empty series is more honest than
+  /// implying the breakdown was unavailable for this window.
+  factory EnergyHistoryData.fromRows(
+    Iterable<EnergyBucketRow> rows, {
+    required Duration bucket,
+    bool timeSynced = true,
+  }) {
+    final sorted = rows.toList()
+      ..sort((a, b) => a.epoch.compareTo(b.epoch));
+    final perHour = bucket.inSeconds / 3600.0;
+    double watts(int wh) => wh / perHour;
+
+    final points = <EnergyHistoryPoint>[];
+    var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0, chgWh = 0, disWh = 0;
+    final soc = <int?>[];
+    for (final r in sorted) {
+      pvWh += r.pvWh; impWh += r.importWh; expWh += r.exportWh;
+      loadWh += r.loadWh; chgWh += r.chargeWh; disWh += r.dischargeWh;
+      soc.add(r.socPct);
+      points.add(EnergyHistoryPoint(
+        time: DateTime.fromMillisecondsSinceEpoch(r.epoch * 1000, isUtc: true)
+            .toLocal(),
+        pvW: watts(r.pvWh),
+        gridImportW: watts(r.importWh),
+        gridExportW: watts(r.exportWh),
+        loadW: watts(r.loadWh),
+        batteryChargeW: watts(r.chargeWh),
+        batteryDischargeW: watts(r.dischargeWh),
+      ));
+    }
+
+    return EnergyHistoryData(
+      points: points,
+      bucket: bucket,
+      timeSynced: timeSynced,
+      truncated: false,
+      pvKwh: pvWh / 1000.0,
+      gridImportKwh: impWh / 1000.0,
+      gridExportKwh: expWh / 1000.0,
+      loadKwh: loadWh / 1000.0,
+      batteryChargeKwh: chgWh / 1000.0,
+      batteryDischargeKwh: disWh / 1000.0,
+      batterySoc: soc.any((v) => v != null)
+          ? [
+              BatterySocSeries(
+                kind: DeviceKind.modbus,
+                nodeId: 0,
+                name: 'Battery',
+                percentPerBucket: soc,
+              ),
+            ]
+          : const [],
+    );
+  }
+
+  /// The completed buckets of this window, for the cache. The in-progress bucket
+  /// is already excluded by [fromProto], which is what makes caching safe.
+  List<EnergyBucketRow> toRows() {
+    final perHour = bucket.inSeconds / 3600.0;
+    int wh(double w) => (w * perHour).round();
+    final soc = socPerBucket;
+    return [
+      for (var i = 0; i < points.length; i++)
+        EnergyBucketRow(
+          epoch: points[i].time.toUtc().millisecondsSinceEpoch ~/ 1000,
+          pvWh: wh(points[i].pvW),
+          importWh: wh(points[i].gridImportW),
+          exportWh: wh(points[i].gridExportW),
+          loadWh: wh(points[i].loadW),
+          chargeWh: wh(points[i].batteryChargeW),
+          dischargeWh: wh(points[i].batteryDischargeW),
+          socPct: i < soc.length && soc[i] != null ? soc[i]!.round() : null,
+        ),
+    ];
   }
 
   factory EnergyHistoryData.fromProto($proto.EnergyHistory h) {

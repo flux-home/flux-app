@@ -7,6 +7,8 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/router.dart';
 import 'package:matter_home/services/controller_settings.dart';
 import 'package:matter_home/services/device_store.dart';
+import 'package:matter_home/services/energy_cache.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/matter_channel.dart';
 import 'package:matter_home/services/matter_port.dart';
@@ -58,6 +60,10 @@ Future<void> main() async {
   // React to any controller service swap (background discovery, Flux Hub "↺",
   // re-adding a controller) without an app restart.
   provider.attachHubConnection(hubConn);
+  // Completed energy buckets live on the phone, so the Energy view paints from
+  // disk before the controller answers — and the fetch then asks only for the
+  // hours the cache is missing.
+  provider.attachEnergyCache(EnergyCache(await SharedPreferences.getInstance()));
 
   debugPrint('main: starting with no controller, discovering in background…');
 
