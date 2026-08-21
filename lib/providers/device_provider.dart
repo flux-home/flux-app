@@ -244,6 +244,8 @@ class DeviceProvider extends ChangeNotifier {
     final window = _rowsIn(rows, historyWindow);
     if (window.isEmpty) return;
     _energyHistory = EnergyHistoryData.fromRows(window, bucket: _bucket);
+    debugPrint('EnergyCache: painted ${window.length} cached bucket(s) '
+        'before any fetch');
     notifyListeners();
   }
 
@@ -301,6 +303,8 @@ class DeviceProvider extends ChangeNotifier {
 
       // 1-hour buckets keep the payload small even with the per-device series
       // included — the controller re-aggregates server-side.
+      debugPrint('EnergyCache: fetching ${((to - from) / 3600).round()} h '
+          '(offset ${_historyOffsetDays}d, ${cached.length} cached)');
       final h = await svc.getEnergyHistory(from: from, to: to, bucketSeconds: 3600);
       if (_disposed) return;
       if (h == null) return;
