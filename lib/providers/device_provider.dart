@@ -58,6 +58,15 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
   final DeviceStore _store;
+
+  /// Which series the energy timeline draws, persisted so the choice survives a
+  /// restart. Null until the user has chosen, so the chart can tell "not set"
+  /// from "everything switched off".
+  List<String>? get chartSeries => _store.loadChartSeries();
+  Future<void> setChartSeries(List<String> keys) async {
+    await _store.saveChartSeries(keys);
+    notifyListeners();
+  }
   MatterPort _channel;
   /// Non-null in hub mode — used to reconcile the device list with the
   /// controller's NVS on startup and to seed [isOnline] from [Device.reachable].
