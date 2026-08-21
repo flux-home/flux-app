@@ -78,6 +78,7 @@ const ModbusProfile$json = {
     {'1': 'MODBUS_PROFILE_UNKNOWN', '2': 1},
     {'1': 'MODBUS_PROFILE_VM3P75CT', '2': 2},
     {'1': 'MODBUS_PROFILE_VICTRON_VENUS', '2': 3},
+    {'1': 'MODBUS_PROFILE_SHELLY_PRO3EM', '2': 4},
   ],
 };
 
@@ -85,7 +86,8 @@ const ModbusProfile$json = {
 final $typed_data.Uint8List modbusProfileDescriptor = $convert.base64Decode(
     'Cg1Nb2RidXNQcm9maWxlEhoKFk1PREJVU19QUk9GSUxFX1NVTlNQRUMQABIaChZNT0RCVVNfUF'
     'JPRklMRV9VTktOT1dOEAESGwoXTU9EQlVTX1BST0ZJTEVfVk0zUDc1Q1QQAhIgChxNT0RCVVNf'
-    'UFJPRklMRV9WSUNUUk9OX1ZFTlVTEAM=');
+    'UFJPRklMRV9WSUNUUk9OX1ZFTlVTEAMSIAocTU9EQlVTX1BST0ZJTEVfU0hFTExZX1BSTzNFTR'
+    'AE');
 
 @$core.Deprecated('Use modbusTransportDescriptor instead')
 const ModbusTransport$json = {
@@ -1235,6 +1237,88 @@ final $typed_data.Uint8List pricingConfigDescriptor = $convert.base64Decode(
     'YgASgNUg5mZXRjaEhvdXJMb2NhbBItChNtYXJrdXBfdWV1cl9wZXJfa3doGAcgASgRUhBtYXJr'
     'dXBVZXVyUGVyS3doEh8KC3ZhdF9wZXJjZW50GAggASgNUgp2YXRQZXJjZW50Ei4KFGZlZWRfaW'
     '5fdWV1cl9wZXJfa3doGAkgASgRUhBmZWVkSW5VZXVyUGVyS3do');
+
+@$core.Deprecated('Use solarPlaneDescriptor instead')
+const SolarPlane$json = {
+  '1': 'SolarPlane',
+  '2': [
+    {'1': 'tilt_deg', '3': 1, '4': 1, '5': 13, '10': 'tiltDeg'},
+    {'1': 'azimuth_deg', '3': 2, '4': 1, '5': 13, '10': 'azimuthDeg'},
+    {'1': 'kwp_w', '3': 3, '4': 1, '5': 13, '10': 'kwpW'},
+  ],
+};
+
+/// Descriptor for `SolarPlane`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List solarPlaneDescriptor = $convert.base64Decode(
+    'CgpTb2xhclBsYW5lEhkKCHRpbHRfZGVnGAEgASgNUgd0aWx0RGVnEh8KC2F6aW11dGhfZGVnGA'
+    'IgASgNUgphemltdXRoRGVnEhMKBWt3cF93GAMgASgNUgRrd3BX');
+
+@$core.Deprecated('Use solarConfigDescriptor instead')
+const SolarConfig$json = {
+  '1': 'SolarConfig',
+  '2': [
+    {'1': 'enabled', '3': 1, '4': 1, '5': 8, '10': 'enabled'},
+    {'1': 'provider', '3': 2, '4': 1, '5': 9, '10': 'provider'},
+    {'1': 'latitude_udeg', '3': 3, '4': 1, '5': 17, '10': 'latitudeUdeg'},
+    {'1': 'longitude_udeg', '3': 4, '4': 1, '5': 17, '10': 'longitudeUdeg'},
+    {
+      '1': 'planes',
+      '3': 5,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.SolarPlane',
+      '10': 'planes'
+    },
+    {'1': 'inverter_ac_w', '3': 6, '4': 1, '5': 13, '10': 'inverterAcW'},
+    {'1': 'system_loss_pct', '3': 7, '4': 1, '5': 13, '10': 'systemLossPct'},
+    {'1': 'albedo_pct', '3': 8, '4': 1, '5': 13, '10': 'albedoPct'},
+    {
+      '1': 'temp_coeff_ppm_per_k',
+      '3': 9,
+      '4': 1,
+      '5': 17,
+      '10': 'tempCoeffPpmPerK'
+    },
+  ],
+};
+
+/// Descriptor for `SolarConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List solarConfigDescriptor = $convert.base64Decode(
+    'CgtTb2xhckNvbmZpZxIYCgdlbmFibGVkGAEgASgIUgdlbmFibGVkEhoKCHByb3ZpZGVyGAIgAS'
+    'gJUghwcm92aWRlchIjCg1sYXRpdHVkZV91ZGVnGAMgASgRUgxsYXRpdHVkZVVkZWcSJQoObG9u'
+    'Z2l0dWRlX3VkZWcYBCABKBFSDWxvbmdpdHVkZVVkZWcSKAoGcGxhbmVzGAUgAygLMhAuZmx1eC'
+    '5Tb2xhclBsYW5lUgZwbGFuZXMSIgoNaW52ZXJ0ZXJfYWNfdxgGIAEoDVILaW52ZXJ0ZXJBY1cS'
+    'JgoPc3lzdGVtX2xvc3NfcGN0GAcgASgNUg1zeXN0ZW1Mb3NzUGN0Eh0KCmFsYmVkb19wY3QYCC'
+    'ABKA1SCWFsYmVkb1BjdBIuChR0ZW1wX2NvZWZmX3BwbV9wZXJfaxgJIAEoEVIQdGVtcENvZWZm'
+    'UHBtUGVySw==');
+
+@$core.Deprecated('Use solarForecastDescriptor instead')
+const SolarForecast$json = {
+  '1': 'SolarForecast',
+  '2': [
+    {'1': 'start_epoch', '3': 1, '4': 1, '5': 3, '10': 'startEpoch'},
+    {
+      '1': 'resolution_seconds',
+      '3': 2,
+      '4': 1,
+      '5': 13,
+      '10': 'resolutionSeconds'
+    },
+    {'1': 'watt_hours', '3': 3, '4': 3, '5': 13, '10': 'wattHours'},
+    {'1': 'fetched_at', '3': 4, '4': 1, '5': 3, '10': 'fetchedAt'},
+    {'1': 'stale', '3': 5, '4': 1, '5': 8, '10': 'stale'},
+    {'1': 'today_wh', '3': 6, '4': 1, '5': 13, '10': 'todayWh'},
+    {'1': 'tomorrow_wh', '3': 7, '4': 1, '5': 13, '10': 'tomorrowWh'},
+  ],
+};
+
+/// Descriptor for `SolarForecast`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List solarForecastDescriptor = $convert.base64Decode(
+    'Cg1Tb2xhckZvcmVjYXN0Eh8KC3N0YXJ0X2Vwb2NoGAEgASgDUgpzdGFydEVwb2NoEi0KEnJlc2'
+    '9sdXRpb25fc2Vjb25kcxgCIAEoDVIRcmVzb2x1dGlvblNlY29uZHMSHQoKd2F0dF9ob3VycxgD'
+    'IAMoDVIJd2F0dEhvdXJzEh0KCmZldGNoZWRfYXQYBCABKANSCWZldGNoZWRBdBIUCgVzdGFsZR'
+    'gFIAEoCFIFc3RhbGUSGQoIdG9kYXlfd2gYBiABKA1SB3RvZGF5V2gSHwoLdG9tb3Jyb3dfd2gY'
+    'ByABKA1SCnRvbW9ycm93V2g=');
 
 @$core.Deprecated('Use stunServerDescriptor instead')
 const StunServer$json = {

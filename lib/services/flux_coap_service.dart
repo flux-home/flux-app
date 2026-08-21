@@ -44,6 +44,7 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// POST /devices/meta                 ← DeviceMeta → StatusResponse
+/// GET  /solar/forecast               → SolarForecast
 /// GET  /rooms                        → RoomList
 /// PUT  /rooms                        ← RoomList → RoomList (ids assigned)
 /// DEL  /devices?id=<hex>             → StatusResponse
@@ -361,6 +362,18 @@ class FluxCoapService implements MatterPort {
   // The controller owns rooms, room membership and energy roles; the app caches
   // them. Held phone-side they disagreed between phones and were wiped whenever
   // a device was re-added.
+
+  /// The controller's own PV production forecast (GET /solar/forecast). Null
+  /// when solar forecasting is disabled or unreachable.
+  Future<$proto.SolarForecast?> getSolarForecast() async {
+    final b = await _get('/solar/forecast');
+    if (b == null) return null;
+    try { return $proto.SolarForecast.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getSolarForecast: $e');
+      return null;
+    }
+  }
 
   /// The controller's room list (GET /rooms). Null on a transport failure —
   /// distinct from an empty list, which means "no rooms yet".

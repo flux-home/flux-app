@@ -150,15 +150,20 @@ class ModbusProfile extends $pb.ProtobufEnum {
   static const ModbusProfile MODBUS_PROFILE_VICTRON_VENUS =
       ModbusProfile._(3, _omitEnumNames ? '' : 'MODBUS_PROFILE_VICTRON_VENUS');
 
+  /// battery aggregate over Modbus-TCP unit 100
+  static const ModbusProfile MODBUS_PROFILE_SHELLY_PRO3EM =
+      ModbusProfile._(4, _omitEnumNames ? '' : 'MODBUS_PROFILE_SHELLY_PRO3EM');
+
   static const $core.List<ModbusProfile> values = <ModbusProfile>[
     MODBUS_PROFILE_SUNSPEC,
     MODBUS_PROFILE_UNKNOWN,
     MODBUS_PROFILE_VM3P75CT,
     MODBUS_PROFILE_VICTRON_VENUS,
+    MODBUS_PROFILE_SHELLY_PRO3EM,
   ];
 
   static final $core.List<ModbusProfile?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 3);
+      $pb.ProtobufEnum.$_initByValueList(values, 4);
   static ModbusProfile? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

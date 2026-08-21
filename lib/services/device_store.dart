@@ -16,7 +16,8 @@ class DeviceStore {
   static const _kRules     = 'automation_rules_v1';
   static const _kLayoutUp  = 'layout_uploaded_v1';
   static const _kNamesUp   = 'names_uploaded_v1';
-  static const _kSeries    = 'chart_series_v1';
+  static const _kSeries    = 'chart_series_v1';   // legacy: shown keys
+  static const _kHidden    = 'chart_hidden_v1';   // current: hidden keys
   static const _kCardOrder = 'energy_card_order_v1';
 
   final SharedPreferences _prefs;
@@ -116,12 +117,34 @@ class DeviceStore {
   bool get namesUploaded => _prefs.getBool(_kNamesUp) ?? false;
   Future<void> markNamesUploaded() => _prefs.setBool(_kNamesUp, true);
 
-  /// Which series the energy timeline shows. Absent means "not chosen yet", so
-  /// the chart falls back to its own defaults rather than to an empty plot — an
-  /// empty stored list is a real choice and must survive.
-  List<String>? loadChartSeries() => _prefs.getStringList(_kSeries);
-  Future<void> saveChartSeries(List<String> keys) =>
-      _prefs.setStringList(_kSeries, keys);
+  /// Which timeline series the user has switched OFF.
+  ///
+  /// Deliberately the hidden set rather than the shown one. Storing what is shown
+  /// means any series added in a later version is absent from the stored list and
+  /// therefore arrives switched off — a new feature that ships invisible, which
+  /// is exactly what happened to the sun forecast. Storing what is hidden makes
+  /// "new" mean "visible" and keeps every deliberate hide.
+  List<String> loadChartHidden() {
+    final hidden = _prefs.getStringList(_kHidden);
+    if (hidden != null) return hidden;
+
+    // One-time migration from the shown-set key: anything the user had switched
+    // off stays off, and anything that did not exist then becomes visible.
+    final shown = _prefs.getStringList(_kSeries);
+    if (shown == null) return const [];
+    return [
+      for (final k in _knownSeries)
+        if (!shown.contains(k)) k,
+    ];
+  }
+
+  Future<void> saveChartHidden(List<String> keys) =>
+      _prefs.setStringList(_kHidden, keys);
+
+  /// The series keys that existed when the shown-set format was retired. Used
+  /// only by the migration above, so it must not grow.
+  static const _knownSeries = ['solar', 'battery', 'grid', 'export', 'charge',
+                               'price'];
 
   /// The order of the Energy view's cards, by key. Null until the user has
   /// dragged one — a stored list is their arrangement and must not be

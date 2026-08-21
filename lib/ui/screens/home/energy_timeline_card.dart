@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:matter_home/models/energy_history.dart';
 import 'package:matter_home/models/energy_prices.dart';
+import 'package:matter_home/models/solar_forecast.dart';
 import 'package:matter_home/providers/device_provider.dart';
 
 // Bars keep the flow card's solar amber; grid and battery stay darker so they
@@ -13,7 +14,10 @@ const _cSolar    = Color(0xFFF6D08A);
 const _cGrid     = Color(0xFFC4483A);
 const _cExport   = Color(0xFF6FBF9B);
 const _cSoc      = Color(0xFF8FA5E8);
-const _cPrice    = Color(0xFFE0D48A);
+/// Price is a brighter, cooler green than the export bars it may share a chart
+/// with — and it is a LINE where export is a bar, so the two never rely on hue
+/// alone to be told apart.
+const _cPrice    = Color(0xFF7FE0A6);
 
 /// Which series the chart can draw. The key is what gets persisted, so renaming
 /// one silently resets that toggle rather than crashing — acceptable, and the
@@ -26,6 +30,7 @@ enum _Series {
   // persisted, so renaming it would silently reset the toggle for anyone who had
   // already chosen.
   charge('charge', 'Battery', _cSoc),
+  sun('sun', 'Sun forecast', _cSolar),
   price('price', 'Price', _cPrice);
 
   const _Series(this.key, this.label, this.color);
@@ -33,7 +38,10 @@ enum _Series {
   final String label;
   final Color color;
 
-  static const _defaults = {solar, grid, charge, price};
+  static _Series? byKey(String k) {
+    for (final s in values) { if (s.key == k) return s; }
+    return null;   // a key from a newer version: ignored, not fatal
+  }
 }
 
 /// One timeline: the last 24 hours and the price forecast on a single time axis,
@@ -79,6 +87,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     final p = context.read<DeviceProvider>();
     p.fetchEnergyHistory();
     p.fetchEnergyPrices();
+    p.fetchSolarForecast();
   }
 
   @override
@@ -87,21 +96,22 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     super.dispose();
   }
 
+  /// Everything except what the user switched off — so a series added later is
+  /// visible without them having to discover a chip and turn it on.
   Set<_Series> _seriesFor(DeviceProvider p) {
     if (_shown != null) return _shown!;
-    final saved = p.chartSeries;
-    if (saved == null) return _Series._defaults;
-    return {
-      for (final s in _Series.values)
-        if (saved.contains(s.key)) s,
-    };
+    final hidden = p.chartHidden.map(_Series.byKey).whereType<_Series>().toSet();
+    return _Series.values.toSet().difference(hidden);
   }
 
   void _toggle(DeviceProvider p, _Series s) {
     final next = {..._seriesFor(p)};
     next.contains(s) ? next.remove(s) : next.add(s);
     setState(() => _shown = next);
-    p.setChartSeries([for (final e in next) e.key]);
+    p.setChartHidden([
+      for (final e in _Series.values)
+        if (!next.contains(e)) e.key,
+    ]);
   }
 
   @override
@@ -150,6 +160,10 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                   )
                 else ...[
                   _hero(context, data),
+                  if (provider.solarForecast != null) ...[
+                    const SizedBox(height: 4),
+                    _sunLine(context, provider.solarForecast!),
+                  ],
                   const SizedBox(height: 12),
                   _plot(context, data, prices, shown),
                   const SizedBox(height: 12),
@@ -175,6 +189,21 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
         prices.avgCt;
     final nowPart = cur == null ? '—' : '${cur.ctPerKwh.toStringAsFixed(1)} ct';
     return '$nowPart now · Ø ${avg.toStringAsFixed(1)}';
+  }
+
+  /// The forecast's own headline. Today's figure is what the roof is expected to
+  /// make in total, so partway through a day it will exceed what has been
+  /// generated so far — saying "today" rather than "remaining" keeps it
+  /// comparable with tomorrow's.
+  Widget _sunLine(BuildContext context, SolarForecastData f) {
+    final cs = Theme.of(context).colorScheme;
+    return Text(
+      f.stale
+          ? 'Sun forecast out of date'
+          : 'Sun forecast · ${f.todayKwh.toStringAsFixed(1)} kWh today · '
+            '${f.tomorrowKwh.toStringAsFixed(1)} tomorrow',
+      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+    );
   }
 
   Widget _hero(BuildContext context, EnergyHistoryData data) {
@@ -268,6 +297,9 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
             painter: _TimelinePainter(
               data: data,
               prices: shown.contains(_Series.price) ? prices : null,
+              solar: shown.contains(_Series.sun)
+                  ? context.watch<DeviceProvider>().solarForecast
+                  : null,
               shown: shown,
               selected: _selected,
               axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
@@ -299,6 +331,7 @@ class _TimelinePainter extends CustomPainter {
   _TimelinePainter({
     required this.data,
     required this.prices,
+    required this.solar,
     required this.shown,
     required this.selected,
     required this.axisColor,
@@ -308,6 +341,7 @@ class _TimelinePainter extends CustomPainter {
 
   final EnergyHistoryData data;
   final EnergyPrices? prices;
+  final SolarForecastData? solar;
   final Set<_Series> shown;
   final int? selected;
   final Color axisColor;
@@ -332,23 +366,33 @@ class _TimelinePainter extends CustomPainter {
 
     // ── time domain ────────────────────────────────────────────────────
     //
-    // NOW is the end of MEASURED data, not the phone's clock. Energy is stamped
-    // by the controller and price by the phone, so when the controller's clock
-    // is behind — which it says it is, in the note under this chart — using the
-    // phone's now leaves a gap between the last bar and the marker, and slides
-    // the price curve away from the hours it belongs to. Everything is mapped on
-    // the controller's timeline instead, and the price series is shifted by the
-    // observed difference so the two agree about what "13:00" means.
+    // NOW is the end of MEASURED data, not the phone's clock.
+    //
+    // Everything here is stamped by the CONTROLLER — energy buckets from
+    // EnergyHistory.start, prices from PriceCurve.start_epoch, the forecast from
+    // SolarForecast.start_epoch — so all three already agree with each other, and
+    // they agree with the controller's clock rather than the phone's. An earlier
+    // version of this shifted the price curve by the phone/controller
+    // difference, on the mistaken belief that price came from the phone; that
+    // displaced it by exactly the clock error it was trying to correct. The only
+    // thing the phone's clock is good for here is nothing at all.
     final tStart = pts.first.time;
     final histEnd = pts.last.time.add(bucket);
-    final skew = DateTime.now().difference(histEnd);
-    DateTime priceT(DateTime t) => t.subtract(skew);
 
+    // Look ahead as far as we look back, and no further. The forecast runs 60+
+    // hours and the price curve nearly as far; letting either set the right edge
+    // squeezed the measured day into a quarter of the width, which is the half
+    // people actually read.
+    final horizon = histEnd.add(tStart.difference(histEnd).abs());
     var tEnd = histEnd;
     if (prices != null && prices!.points.isNotEmpty) {
-      final last = priceT(prices!.points.last.time);
+      final last = prices!.points.last.time;
       if (last.isAfter(tEnd)) tEnd = last;
     }
+    if (solar != null && !solar!.isEmpty && solar!.end.isAfter(tEnd)) {
+      tEnd = solar!.end;
+    }
+    if (tEnd.isAfter(horizon)) tEnd = horizon;
     final span = tEnd.difference(tStart).inSeconds;
     if (span <= 0) return;
 
@@ -379,7 +423,19 @@ class _TimelinePainter extends CustomPainter {
         ? pts.fold<double>(0, (m, p) => p.gridExportW > m ? p.gridExportW : m)
         : 0.0;
 
-    final peakUpKwh = peakUp * hPerBucket / 1000.0;
+    var peakUpKwh = peakUp * hPerBucket / 1000.0;
+    // A forecast hour can exceed anything measured — a sunny tomorrow after a
+    // dull today — and a scale built only on measurement then puts that bar
+    // above the top of the plot. Which is exactly what happened: unclipped, it
+    // painted over the rest of the screen.
+    if (solar != null && !solar!.isEmpty) {
+      for (var k = 0; k < solar!.wattHours.length; k++) {
+        final t = solar!.timeAt(k);
+        if (t.isBefore(histEnd) || t.isAfter(tEnd)) continue;
+        final kwh = solar!.wattHours[k] / 1000.0;
+        if (kwh > peakUpKwh) peakUpKwh = kwh;
+      }
+    }
     final step = _niceStep((peakUpKwh <= 0 ? 1 : peakUpKwh) / 2);
     final gridTop = (peakUpKwh / step).ceil().clamp(1, 1000) * step;
     final downKwh = peakDown * hPerBucket / 1000.0;
@@ -387,6 +443,13 @@ class _TimelinePainter extends CustomPainter {
     final zeroFrac = downKwh <= 0 ? 1.0 : gridTop / (gridTop + downKwh);
     final zeroY = top + plotH * zeroFrac;
     double yKwh(double kwh) => zeroY - (kwh / gridTop) * (zeroY - top);
+
+    // Everything from here draws inside the plot only. A CustomPaint does not
+    // clip on its own, so without this a single out-of-range value escapes the
+    // widget entirely and paints across the screen — not a wrong pixel, a
+    // corrupted app. The price card learned this the same way.
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(plotL, 0, plotR, size.height));
 
     final grid = Paint()..strokeWidth = 1;
     for (var v = step; v <= gridTop + 1e-9; v += step) {
@@ -461,12 +524,40 @@ class _TimelinePainter extends CustomPainter {
       }
     }
 
+    // ── the forecast: a line, in the solar colour, dashed ──────────────
+    //
+    // Same quantity as the solar bars and therefore the same scale — predicted
+    // and measured production are the same thing in the same unit, so they must
+    // not be given different axes. What differs is confidence, and the dash says
+    // that: solid bars were measured, the dashed line is expected.
+    //
+    // Drawn across the WHOLE covered range, not just the future. Over the past
+    // it lies on top of the bars it predicted, which turns the chart into a check
+    // on the forecast itself — cheap to look at, and the thing that decides
+    // whether the forecast should ever be trusted to drive a decision.
+    if (solar != null && !solar!.isEmpty) {
+      final pts2 = <Offset>[];
+      for (var k = 0; k < solar!.wattHours.length; k++) {
+        final t = solar!.timeAt(k);
+        if (t.isBefore(tStart) || t.isAfter(tEnd)) continue;
+        final kwh = solar!.wattHours[k] / 1000.0;
+        pts2.add(Offset(x(t) + slot / 2, zeroY - (kwh / gridTop) * (zeroY - top)));
+      }
+      final paint = Paint()
+        ..color = _cSolar.withValues(alpha: solar!.stale ? 0.3 : 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8
+        ..strokeCap = StrokeCap.round;
+      for (var k = 0; k + 1 < pts2.length; k++) {
+        _dashedLine(canvas, pts2[k], pts2[k + 1], paint);
+      }
+    }
+
     // ── price, its own scale, labelled on the right in its own colour ──
     if (prices != null && prices!.points.isNotEmpty) {
       final inView = [
         for (final p in prices!.points)
-          if (!priceT(p.time).isBefore(tStart) && !priceT(p.time).isAfter(tEnd))
-            p,
+          if (!p.time.isBefore(tStart) && !p.time.isAfter(tEnd)) p,
       ];
       if (inView.length > 1) {
         var lo = inView.first.ctPerKwh, hi = lo;
@@ -483,9 +574,9 @@ class _TimelinePainter extends CustomPainter {
         // the thing you would act on — impossible to locate.
         final path = Path();
         for (var k = 0; k < inView.length; k++) {
-          final t0 = priceT(inView[k].time);
+          final t0 = inView[k].time;
           final t1 = k + 1 < inView.length
-              ? priceT(inView[k + 1].time)
+              ? inView[k + 1].time
               : t0.add(const Duration(hours: 1));
           final y = yCt(inView[k].ctPerKwh);
           k == 0 ? path.moveTo(x(t0), y) : path.lineTo(x(t0), y);
@@ -522,7 +613,10 @@ class _TimelinePainter extends CustomPainter {
           Offset(plotR, top - 2), labelColor, rightAlign: true);
     }
 
+    canvas.restore();
+
     // ── time axis ──────────────────────────────────────────────────────
+    // Outside the clip: its labels belong in the gutter under the plot.
     for (var f = 0.0; f < 1.0; f += 0.25) {
       final t = tStart.add(Duration(seconds: (span * f).round()));
       final lx = plotL + f * plotW;
@@ -575,6 +669,21 @@ class _TimelinePainter extends CustomPainter {
   /// Charge level per aggregated hour, filled by [_hourly] alongside its result.
   final List<double?> _hourSoc = [];
 
+  /// Draws one segment as dashes. Flutter has no dashed stroke, and a dashed
+  /// path built once would have to be rebuilt on every layout change anyway.
+  void _dashedLine(Canvas canvas, Offset a, Offset b, Paint paint) {
+    const dash = 4.0, gap = 3.0;
+    final total = (b - a).distance;
+    if (total <= 0) return;
+    final step = (b - a) / total;
+    var t = 0.0;
+    while (t < total) {
+      final end = (t + dash).clamp(0.0, total);
+      canvas.drawLine(a + step * t, a + step * end, paint);
+      t = end + gap;
+    }
+  }
+
   void _tinyLabel(Canvas canvas, String text, Offset at, Color color,
       {bool rightAlign = false, FontWeight weight = FontWeight.w700}) {
     final tp = TextPainter(
@@ -588,7 +697,7 @@ class _TimelinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TimelinePainter old) =>
-      old.data != data || old.prices != prices ||
+      old.data != data || old.prices != prices || old.solar != solar ||
       old.selected != selected || old.shown != shown;
 }
 

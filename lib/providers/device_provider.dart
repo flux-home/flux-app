@@ -10,6 +10,7 @@ import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/energy_history.dart';
 import 'package:matter_home/models/energy_prices.dart';
+import 'package:matter_home/models/solar_forecast.dart';
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
 import 'package:matter_home/models/matter_device.dart';
@@ -59,19 +60,18 @@ class DeviceProvider extends ChangeNotifier {
   }
   final DeviceStore _store;
 
-  /// Which series the energy timeline draws, persisted so the choice survives a
-  /// restart. Null until the user has chosen, so the chart can tell "not set"
-  /// from "everything switched off".
-  List<String>? get chartSeries => _store.loadChartSeries();
+  /// Timeline series the user has switched off; everything else is drawn, so a
+  /// series added by a later version arrives visible rather than hidden.
+  List<String> get chartHidden => _store.loadChartHidden();
+  Future<void> setChartHidden(List<String> keys) async {
+    await _store.saveChartHidden(keys);
+    notifyListeners();
+  }
 
   /// The Energy view's card order, as the user arranged it.
   List<String>? get energyCardOrder => _store.loadEnergyCardOrder();
   Future<void> setEnergyCardOrder(List<String> keys) async {
     await _store.saveEnergyCardOrder(keys);
-    notifyListeners();
-  }
-  Future<void> setChartSeries(List<String> keys) async {
-    await _store.saveChartSeries(keys);
     notifyListeners();
   }
   MatterPort _channel;
@@ -224,6 +224,31 @@ class DeviceProvider extends ChangeNotifier {
   /// Last-fetched day-ahead price curve, or null if never loaded / pricing
   /// disabled on the controller. Prices are gross (tariff markup + VAT applied).
   EnergyPrices? get energyPrices => _energyPrices;
+
+  SolarForecastData? _solarForecast;
+  Future<void>? _solarInflight;
+
+  /// The controller's PV production forecast, or null when it has none (feature
+  /// disabled, or never fetched).
+  SolarForecastData? get solarForecast => _solarForecast;
+
+  /// Fetches the forecast, coalescing concurrent callers. Silent on failure: a
+  /// forecast is an enhancement, and a house with it switched off must not see
+  /// an error every 30 seconds.
+  Future<void> fetchSolarForecast() {
+    final inflight = _solarInflight;
+    if (inflight != null) return inflight;
+    final svc = _ctrlService;
+    if (svc == null) return Future.value();
+    final f = svc.getSolarForecast().then((p) {
+      if (p == null) return;
+      final next = SolarForecastData.fromProto(p);
+      _solarForecast = next.isEmpty ? null : next;
+      notifyListeners();
+    });
+    _solarInflight = f.whenComplete(() => _solarInflight = null);
+    return _solarInflight!;
+  }
   bool get energyPricesLoading => _energyPricesLoading;
 
   /// The controller's pricing config (tariff markup, VAT, provider…), if loaded.

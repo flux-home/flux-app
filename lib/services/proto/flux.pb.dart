@@ -4568,6 +4568,372 @@ class PricingConfig extends $pb.GeneratedMessage {
   void clearFeedInUeurPerKwh() => $_clearField(9);
 }
 
+/// One roof plane.
+///
+/// AZIMUTH CONVENTION: the compass bearing the panel surface FACES, degrees
+/// clockwise from true north. 0 = N, 90 = E, 180 = S, 270 = W. (Note this
+/// differs from pvlib's solar-azimuth convention and from Forecast.Solar's
+/// south-relative -90..+90; the value here is a plain compass bearing.)
+class SolarPlane extends $pb.GeneratedMessage {
+  factory SolarPlane({
+    $core.int? tiltDeg,
+    $core.int? azimuthDeg,
+    $core.int? kwpW,
+  }) {
+    final result = create();
+    if (tiltDeg != null) result.tiltDeg = tiltDeg;
+    if (azimuthDeg != null) result.azimuthDeg = azimuthDeg;
+    if (kwpW != null) result.kwpW = kwpW;
+    return result;
+  }
+
+  SolarPlane._();
+
+  factory SolarPlane.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SolarPlane.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SolarPlane',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'tiltDeg', fieldType: $pb.PbFieldType.OU3)
+    ..aI(2, _omitFieldNames ? '' : 'azimuthDeg', fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'kwpW', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarPlane clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarPlane copyWith(void Function(SolarPlane) updates) =>
+      super.copyWith((message) => updates(message as SolarPlane)) as SolarPlane;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SolarPlane create() => SolarPlane._();
+  @$core.override
+  SolarPlane createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SolarPlane getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SolarPlane>(create);
+  static SolarPlane? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get tiltDeg => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set tiltDeg($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasTiltDeg() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTiltDeg() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get azimuthDeg => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set azimuthDeg($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAzimuthDeg() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAzimuthDeg() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get kwpW => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set kwpW($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKwpW() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKwpW() => $_clearField(3);
+}
+
+/// GET/POST /solar/config — forecast acquisition + site model (persisted in NVS).
+/// Writes are LAN-only, like the other config surfaces (ADR-0012).
+class SolarConfig extends $pb.GeneratedMessage {
+  factory SolarConfig({
+    $core.bool? enabled,
+    $core.String? provider,
+    $core.int? latitudeUdeg,
+    $core.int? longitudeUdeg,
+    $core.Iterable<SolarPlane>? planes,
+    $core.int? inverterAcW,
+    $core.int? systemLossPct,
+    $core.int? albedoPct,
+    $core.int? tempCoeffPpmPerK,
+  }) {
+    final result = create();
+    if (enabled != null) result.enabled = enabled;
+    if (provider != null) result.provider = provider;
+    if (latitudeUdeg != null) result.latitudeUdeg = latitudeUdeg;
+    if (longitudeUdeg != null) result.longitudeUdeg = longitudeUdeg;
+    if (planes != null) result.planes.addAll(planes);
+    if (inverterAcW != null) result.inverterAcW = inverterAcW;
+    if (systemLossPct != null) result.systemLossPct = systemLossPct;
+    if (albedoPct != null) result.albedoPct = albedoPct;
+    if (tempCoeffPpmPerK != null) result.tempCoeffPpmPerK = tempCoeffPpmPerK;
+    return result;
+  }
+
+  SolarConfig._();
+
+  factory SolarConfig.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SolarConfig.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SolarConfig',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aOS(2, _omitFieldNames ? '' : 'provider')
+    ..aI(3, _omitFieldNames ? '' : 'latitudeUdeg',
+        fieldType: $pb.PbFieldType.OS3)
+    ..aI(4, _omitFieldNames ? '' : 'longitudeUdeg',
+        fieldType: $pb.PbFieldType.OS3)
+    ..pPM<SolarPlane>(5, _omitFieldNames ? '' : 'planes',
+        subBuilder: SolarPlane.create)
+    ..aI(6, _omitFieldNames ? '' : 'inverterAcW',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'systemLossPct',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(8, _omitFieldNames ? '' : 'albedoPct', fieldType: $pb.PbFieldType.OU3)
+    ..aI(9, _omitFieldNames ? '' : 'tempCoeffPpmPerK',
+        fieldType: $pb.PbFieldType.OS3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarConfig clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarConfig copyWith(void Function(SolarConfig) updates) =>
+      super.copyWith((message) => updates(message as SolarConfig))
+          as SolarConfig;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SolarConfig create() => SolarConfig._();
+  @$core.override
+  SolarConfig createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SolarConfig getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SolarConfig>(create);
+  static SolarConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get provider => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set provider($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasProvider() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearProvider() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get latitudeUdeg => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set latitudeUdeg($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasLatitudeUdeg() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearLatitudeUdeg() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get longitudeUdeg => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set longitudeUdeg($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasLongitudeUdeg() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearLongitudeUdeg() => $_clearField(4);
+
+  /// Only planes[0] is modelled today. The field is repeated from day one so
+  /// multi-plane (east/west split) support is a firmware change and never a
+  /// wire migration.
+  @$pb.TagNumber(5)
+  $pb.PbList<SolarPlane> get planes => $_getList(4);
+
+  /// Inverter AC clipping limit in watts; 0 = no clipping. Measured arrays are
+  /// routinely DC-oversized ~1.4x, and without this clear-sky midday hours
+  /// over-predict by ~15%.
+  @$pb.TagNumber(6)
+  $core.int get inverterAcW => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set inverterAcW($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasInverterAcW() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearInverterAcW() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get systemLossPct => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set systemLossPct($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasSystemLossPct() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearSystemLossPct() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get albedoPct => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set albedoPct($core.int value) => $_setUnsignedInt32(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasAlbedoPct() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearAlbedoPct() => $_clearField(8);
+
+  /// Module power temperature coefficient, ppm per kelvin, negative. 0 =
+  /// default -4000 (i.e. -0.40 %/K).
+  @$pb.TagNumber(9)
+  $core.int get tempCoeffPpmPerK => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set tempCoeffPpmPerK($core.int value) => $_setSignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasTempCoeffPpmPerK() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearTempCoeffPpmPerK() => $_clearField(9);
+}
+
+/// GET /solar/forecast — predicted AC production per interval. Mirrors PriceCurve
+/// so the app can reuse its curve rendering.
+class SolarForecast extends $pb.GeneratedMessage {
+  factory SolarForecast({
+    $fixnum.Int64? startEpoch,
+    $core.int? resolutionSeconds,
+    $core.Iterable<$core.int>? wattHours,
+    $fixnum.Int64? fetchedAt,
+    $core.bool? stale,
+    $core.int? todayWh,
+    $core.int? tomorrowWh,
+  }) {
+    final result = create();
+    if (startEpoch != null) result.startEpoch = startEpoch;
+    if (resolutionSeconds != null) result.resolutionSeconds = resolutionSeconds;
+    if (wattHours != null) result.wattHours.addAll(wattHours);
+    if (fetchedAt != null) result.fetchedAt = fetchedAt;
+    if (stale != null) result.stale = stale;
+    if (todayWh != null) result.todayWh = todayWh;
+    if (tomorrowWh != null) result.tomorrowWh = tomorrowWh;
+    return result;
+  }
+
+  SolarForecast._();
+
+  factory SolarForecast.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SolarForecast.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SolarForecast',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'startEpoch')
+    ..aI(2, _omitFieldNames ? '' : 'resolutionSeconds',
+        fieldType: $pb.PbFieldType.OU3)
+    ..p<$core.int>(3, _omitFieldNames ? '' : 'wattHours', $pb.PbFieldType.KU3)
+    ..aInt64(4, _omitFieldNames ? '' : 'fetchedAt')
+    ..aOB(5, _omitFieldNames ? '' : 'stale')
+    ..aI(6, _omitFieldNames ? '' : 'todayWh', fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'tomorrowWh', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarForecast clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SolarForecast copyWith(void Function(SolarForecast) updates) =>
+      super.copyWith((message) => updates(message as SolarForecast))
+          as SolarForecast;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SolarForecast create() => SolarForecast._();
+  @$core.override
+  SolarForecast createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SolarForecast getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SolarForecast>(create);
+  static SolarForecast? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get startEpoch => $_getI64(0);
+  @$pb.TagNumber(1)
+  set startEpoch($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStartEpoch() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStartEpoch() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get resolutionSeconds => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set resolutionSeconds($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasResolutionSeconds() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearResolutionSeconds() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbList<$core.int> get wattHours => $_getList(2);
+
+  @$pb.TagNumber(4)
+  $fixnum.Int64 get fetchedAt => $_getI64(3);
+  @$pb.TagNumber(4)
+  set fetchedAt($fixnum.Int64 value) => $_setInt64(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasFetchedAt() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearFetchedAt() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.bool get stale => $_getBF(4);
+  @$pb.TagNumber(5)
+  set stale($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasStale() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearStale() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get todayWh => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set todayWh($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasTodayWh() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearTodayWh() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get tomorrowWh => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set tomorrowWh($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasTomorrowWh() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearTomorrowWh() => $_clearField(7);
+}
+
 class StunServer extends $pb.GeneratedMessage {
   factory StunServer({
     $core.String? host,
