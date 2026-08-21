@@ -44,6 +44,8 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// POST /devices/meta                 ← DeviceMeta → StatusResponse
+/// GET  /solar/config                 → SolarConfig
+/// POST /solar/config                 ← SolarConfig → StatusResponse (LAN only)
 /// GET  /solar/forecast               → SolarForecast
 /// GET  /rooms                        → RoomList
 /// PUT  /rooms                        ← RoomList → RoomList (ids assigned)
@@ -362,6 +364,22 @@ class FluxCoapService implements MatterPort {
   // The controller owns rooms, room membership and energy roles; the app caches
   // them. Held phone-side they disagreed between phones and were wiped whenever
   // a device was re-added.
+
+  /// The site model and forecast settings (GET /solar/config).
+  Future<$proto.SolarConfig?> getSolarConfig() async {
+    final b = await _get('/solar/config');
+    if (b == null) return null;
+    try { return $proto.SolarConfig.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getSolarConfig: $e');
+      return null;
+    }
+  }
+
+  /// Writes the site model (POST /solar/config). LAN-only on the controller
+  /// (flux-proto ADR-0012), so this fails over a remote tunnel by design.
+  Future<bool> setSolarConfig($proto.SolarConfig cfg) async =>
+      await _post('/solar/config', cfg.writeToBuffer()) != null;
 
   /// The controller's own PV production forecast (GET /solar/forecast). Null
   /// when solar forecasting is disabled or unreachable.

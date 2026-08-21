@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
+import 'package:matter_home/ui/screens/settings/solar_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 
 /// Energy configuration: the tariff, and the meters that feed everything else.
@@ -43,6 +44,13 @@ class EnergySettingsScreen extends StatelessWidget {
                     subtitle: 'Meters & inverters over Modbus',
                     enabled: online,
                     builder: () => const ModbusDevicesScreen()),
+                Divider(height: 1, indent: 16, endIndent: 16,
+                    color: cs.outlineVariant),
+                _row(context,
+                    title: 'Solar forecast',
+                    subtitle: 'Location, roof angle & array size',
+                    enabled: online,
+                    builder: () => const SolarSettingsScreen()),
               ],
             ),
           ),

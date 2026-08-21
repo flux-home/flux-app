@@ -232,6 +232,37 @@ class DeviceProvider extends ChangeNotifier {
   /// disabled, or never fetched).
   SolarForecastData? get solarForecast => _solarForecast;
 
+  $proto.SolarConfig? _solarConfig;
+
+  /// The site model behind the forecast, or null until fetched.
+  $proto.SolarConfig? get solarConfig => _solarConfig;
+
+  Future<$proto.SolarConfig?> fetchSolarConfig() async {
+    final svc = _ctrlService;
+    if (svc == null) return null;
+    final cfg = await svc.getSolarConfig();
+    if (cfg != null) {
+      _solarConfig = cfg;
+      notifyListeners();
+    }
+    return cfg;
+  }
+
+  /// Writes the site model, then re-fetches the forecast: every field here
+  /// changes the prediction, so leaving the old curve on screen would show a
+  /// forecast for a roof that no longer exists.
+  Future<bool> updateSolarConfig($proto.SolarConfig cfg) async {
+    final svc = _ctrlService;
+    if (svc == null) return false;
+    final ok = await svc.setSolarConfig(cfg);
+    if (ok) {
+      _solarConfig = cfg;
+      await fetchSolarForecast();
+      notifyListeners();
+    }
+    return ok;
+  }
+
   /// Fetches the forecast, coalescing concurrent callers. Silent on failure: a
   /// forecast is an enhancement, and a house with it switched off must not see
   /// an error every 30 seconds.
