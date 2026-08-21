@@ -1,0 +1,1 @@
+in the graph, can you adjust the bars to have rounded corners? I also would like to see the state of charge as a transparently filled area in the main chart
