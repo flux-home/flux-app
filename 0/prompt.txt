@@ -1,0 +1,1 @@
+i wnat to combine the last24 hours graph and the price forecast graph into one, can you make a few suggestions, remove whats duplicate info in other widgets already and maybe give the user th eoption what to show in the graph
