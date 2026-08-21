@@ -1,0 +1,5 @@
+I just added weather forecasting on the controller side, can you show it in the app too?
+
+---
+
+sun forecast sometimes overflows the whole screen
