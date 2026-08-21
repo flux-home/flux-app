@@ -1,0 +1,177 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M0HSAS5VEMFCXENE7XXSGH9C",
+  "session_id": "9a4d8b3e-e340-4eec-9311-cd7eecd8ee6f",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-21T09:10:03.453101092Z",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "lib/ui/screens/home/day_balance_card.dart",
+    "lib/ui/screens/home/energy_timeline_card.dart"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5[1m]",
+  "turn_id": "37a13a24fcff",
+  "checkpoint_transcript_start": 9527,
+  "transcript_lines_at_start": 9527,
+  "compact_transcript_start": 2113,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 3337,
+    "cache_read_tokens": 4395512,
+    "output_tokens": 2546,
+    "api_call_count": 5
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_011T2uhfZ2UDNzda2GQZyVmr",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "37a13a24fcff",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7471,
+        "end": 7472,
+        "entry_ids": [
+          "600b13a8-6604-46a4-9371-97b3407f92c3"
+        ],
+        "tool_use_id": "toolu_011T2uhfZ2UDNzda2GQZyVmr"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_011T2uhfZ2UDNzda2GQZyVmr"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: design",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01MtV7yD5nku6dhi9k2XN13z",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "artifact-capabilities"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "37a13a24fcff",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 7519,
+        "end": 7520,
+        "entry_ids": [
+          "5bdaaffa-4908-410a-ba64-fce790eb7199"
+        ],
+        "tool_use_id": "toolu_01MtV7yD5nku6dhi9k2XN13z"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01MtV7yD5nku6dhi9k2XN13z"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: artifact-capabilities",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017R7hT4gZWJ29LgNfZCobbi",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "dataviz"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "37a13a24fcff",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 8062,
+        "end": 8063,
+        "entry_ids": [
+          "ee86f914-2d87-40be-8559-8fd83962254a"
+        ],
+        "tool_use_id": "toolu_017R7hT4gZWJ29LgNfZCobbi"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017R7hT4gZWJ29LgNfZCobbi"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: dataviz",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01QSAr6GRMYAtQX1aLpAHVG8",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "design"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "37a13a24fcff",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 8191,
+        "end": 8192,
+        "entry_ids": [
+          "15642ef1-52e5-4d7f-a2f8-8d8b24fc3f53"
+        ],
+        "tool_use_id": "toolu_01QSAr6GRMYAtQX1aLpAHVG8"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01QSAr6GRMYAtQX1aLpAHVG8"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: design",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-21T09:10:02.194535254Z",
+    "agent_lines": 4,
+    "agent_removed": 71,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 4,
+    "total_lines_changed": 75,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+ok, please remove the calculation and stats from the bottom of the widget, move the checkboxes to the bottom of the widget instead, also remove the calculation formula from the other widget
