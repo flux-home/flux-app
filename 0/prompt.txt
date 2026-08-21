@@ -1,0 +1,1 @@
+can you use a different color for battery soc, split out self sufficiency in to a separate widget
