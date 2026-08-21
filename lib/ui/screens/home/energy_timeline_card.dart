@@ -280,8 +280,15 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     });
   }
 
-  /// Only the two totals nothing else states. Consumed is the hero above;
-  /// imported is "bought" on the balance card; the money for both is there too.
+  /// The two totals nothing else states, and then the arithmetic that ties them
+  /// to the hero figure.
+  ///
+  /// The line is not decoration. "Used" is not measured — it is inferred from an
+  /// energy balance — and with only generated and exported on screen the numbers
+  /// visibly fail to add up, because two of the five terms (what was bought, and
+  /// what the battery net contributed) are missing. Removing the imported tile as
+  /// a duplicate is what broke the reconciliation; showing the sum restores it
+  /// without putting the tile back.
   Widget _totals(BuildContext context, EnergyHistoryData data) {
     final cs = Theme.of(context).colorScheme;
     Widget one(String label, double kwh, Color c) => Expanded(
@@ -300,10 +307,34 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
             ),
           ]),
         );
-    return Row(children: [
-      one('GENERATED', data.pvKwh, _cSolar),
-      one('EXPORTED', data.gridExportKwh, _cExport),
-    ]);
+    final batNet = data.batteryDischargeKwh - data.batteryChargeKwh;
+    String kwh(double v) => v.abs().toStringAsFixed(1);
+    final batTerm = batNet.abs() < 0.05
+        ? ''
+        : batNet > 0
+            ? ' + ${kwh(batNet)} from battery'
+            : ' − ${kwh(batNet)} to battery';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          one('GENERATED', data.pvKwh, _cSolar),
+          one('EXPORTED', data.gridExportKwh, _cExport),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          '${kwh(data.pvKwh)} generated'
+          ' + ${kwh(data.gridImportKwh)} imported'
+          '$batTerm'
+          ' − ${kwh(data.gridExportKwh)} exported'
+          ' = ${kwh(data.consumptionKwh)} used',
+          style: TextStyle(
+              fontFamily: 'monospace', fontSize: 10,
+              color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
   }
 
   Widget _note(BuildContext context, String text) => Padding(
