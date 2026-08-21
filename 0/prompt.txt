@@ -1,0 +1,5 @@
+everytime i launch the app from scratch it has to pull the last 24 hours history data again, could we implement some caching, I'd also like to give the user the option to look into historic data somehow
+
+---
+
+everytime i launch the app from scratch it has to pull the last 24 hours history data again, could we implement some caching, I'd also like to give the user the option to look into historic data somehow without the time waiting for all the data each time
