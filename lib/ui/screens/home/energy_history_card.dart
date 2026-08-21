@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:matter_home/models/energy_history.dart';
-import 'package:matter_home/models/energy_prices.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -186,20 +185,15 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
   }
 
   // ── Chart ───────────────────────────────────────────────────────────────────
-  /// Energy, charge level and price as three decks over ONE time axis.
+  /// Where the energy came from, per bucket, with the battery's charge level as
+  /// a band behind it and one time axis underneath.
   ///
-  /// Deliberately not one plot: energy (kWh) and price (ct/kWh) have unrelated
-  /// scales, and putting them on two y-axes in one frame — the shape this
-  /// replaces — makes their crossings look meaningful when they are an artefact
-  /// of whatever ranges each axis happened to pick. Separate decks keep every
-  /// scale honest while the shared x lets the eye read down a column: expensive
-  /// hour, empty battery, nothing generated.
-  ///
-  /// One crosshair spans all three, because the question is always about a
-  /// moment rather than about a series.
+  /// Price is deliberately absent: it lives on the prices card next door, which
+  /// also carries the forecast. Two charts showing the same curve is worse than
+  /// one — and price on THIS deck would have to share the kWh axis, which is the
+  /// dual-axis mistake this card was rebuilt to avoid.
   Widget _decks(BuildContext context, EnergyHistoryData data) {
     final cs = Theme.of(context).colorScheme;
-    final prices = context.watch<DeviceProvider>().energyPrices;
 
     return LayoutBuilder(builder: (context, constraints) {
       void selectAt(Offset local) {
@@ -230,14 +224,6 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
               axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
               labelColor: cs.onSurfaceVariant,
             )),
-            if (prices != null && !prices.isEmpty) ...[
-              const SizedBox(height: 8),
-              deck(58, _PriceDeckPainter(
-                data: data, prices: prices, selected: _selected,
-                axisColor: cs.onSurfaceVariant.withValues(alpha: 0.22),
-                labelColor: cs.onSurfaceVariant,
-              )),
-            ],
             const SizedBox(height: 4),
             deck(14, _TimeAxisPainter(
               data: data, labelColor: cs.onSurfaceVariant,
@@ -380,13 +366,17 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
 // constant factor), so the painter works in W and the readout labels the kWh.
 // ── Deck painters ───────────────────────────────────────────────────────────
 //
-// Chart marks use their own palette rather than the app's pastel accents. The
-// pastels carry identity fine on the live card, where each has a labelled row of
-// its own — but as adjacent stacked segments they fail: solar amber and grid
-// coral sit 11.3 apart in OKLab, which is hard to separate even with full colour
-// vision, and closer still under deuteranopia. These three are stepped to clear
-// that bar on this surface.
-const _cSolar   = Color(0xFFB8871E);
+// Solar is the flow card's amber, so the same thing is the same colour on both
+// cards — an entity wearing two shades on one screen is its own defect.
+//
+// Grid and battery stay darker and more saturated than their flow-card pastels,
+// and that is not an oversight. The pair that actually failed measurement was
+// pastel amber against pastel coral: 11.3 apart in OKLab for NORMAL vision, and
+// closer under deuteranopia — indistinguishable as adjacent stacked segments,
+// though fine on the live card where each has a labelled row to carry identity.
+// Pairing this amber with a darker red separates them on LIGHTNESS instead,
+// which is the strongest channel available and the one CVD leaves intact.
+const _cSolar   = Color(0xFFF6D08A);
 const _cGrid    = Color(0xFFC4483A);
 const _cBattery = Color(0xFF2E9468);
 /// Charge level is a state, not a flow, so it keeps the neutral it has on the
@@ -603,100 +593,6 @@ class _SupplyDeckPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SupplyDeckPainter old) =>
       old.data != data || old.selected != selected || old.soc != soc;
-}
-
-/// Deck 2 — what a kWh cost, on the same time axis. Its own deck precisely
-/// because ct/kWh has nothing to do with the kWh scale above it.
-class _PriceDeckPainter extends CustomPainter {
-  _PriceDeckPainter({
-    required this.data,
-    required this.prices,
-    required this.selected,
-    required this.axisColor,
-    required this.labelColor,
-  });
-
-  final EnergyHistoryData data;
-  final EnergyPrices prices;
-  final int? selected;
-  final Color axisColor;
-  final Color labelColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pts = data.points;
-    if (pts.isEmpty) return;
-
-    // Price aligned to the SAME buckets as the energy above, so a column means
-    // one moment in both decks.
-    final series = [for (final p in pts) prices.currentAt(p.time)?.ctPerKwh];
-    final known = series.whereType<double>();
-    if (known.isEmpty) return;
-    var lo = known.reduce((a, b) => a < b ? a : b);
-    var hi = known.reduce((a, b) => a > b ? a : b);
-    if (hi - lo < 1) { hi = lo + 1; }
-
-    const pad = 14.0;
-    final plot = size.height - pad - 4;
-    double y(double ct) => pad + (1 - (ct - lo) / (hi - lo)) * plot;
-
-    // One gridline at each end of the range, labelled in the shared gutter, so
-    // the price deck is read the same way as the deck above it.
-    for (final v in [lo, hi]) {
-      canvas.drawLine(Offset(_padLeft, y(v)), Offset(size.width, y(v)),
-          Paint()..color = axisColor.withValues(alpha: 0.18)..strokeWidth = 1);
-      _paintLabel(canvas, v.toStringAsFixed(0),
-          Offset(_padLeft - 5, y(v) - 5), labelColor,
-          size: 8.5, rightAlign: true, weight: FontWeight.w400);
-    }
-
-    final path = Path();
-    var started = false;
-    var loI = -1, hiI = -1;
-    for (var i = 0; i < series.length; i++) {
-      final v = series[i];
-      if (v == null) { started = false; continue; }
-      if (loI < 0 || v < series[loI]!) loI = i;
-      if (hiI < 0 || v > series[hiI]!) hiI = i;
-      final o = Offset(_xForIndex(i, series.length, size.width), y(v));
-      if (!started) { path.moveTo(o.dx, o.dy); started = true; } else { path.lineTo(o.dx, o.dy); }
-    }
-    canvas.drawPath(path, Paint()
-      ..color = labelColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeJoin = StrokeJoin.round);
-
-    // Direct labels on the two hours anyone actually asks about.
-    void mark(int i, Color c, String suffix) {
-      if (i < 0) return;
-      final v = series[i]!;
-      final o = Offset(_xForIndex(i, series.length, size.width), y(v));
-      canvas.drawCircle(o, 3, Paint()..color = c);
-      final right = o.dx > size.width * 0.6;
-      _paintLabel(canvas, '${v.toStringAsFixed(0)} $suffix',
-          Offset(o.dx + (right ? -6 : 6), o.dy - 12), c, size: 8.5,
-          rightAlign: right);
-    }
-    mark(loI, _cBattery, 'cheapest');
-    mark(hiI, _cGrid, 'dearest');
-
-    _paintLabel(canvas, 'ct/kWh', Offset(0, 0), labelColor, size: 8.5);
-    _paintCrosshair(canvas, size, selected, series.length,
-        labelColor.withValues(alpha: 0.55));
-
-    if (selected != null && selected! < series.length) {
-      final v = series[selected!.clamp(0, series.length - 1)];
-      if (v != null) {
-        _paintLabel(canvas, '${v.toStringAsFixed(1)} ct',
-            Offset(size.width, 0), labelColor, rightAlign: true);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PriceDeckPainter old) =>
-      old.data != data || old.selected != selected || old.prices != prices;
 }
 
 /// One time axis for all the decks above it — the thing that makes them readable
