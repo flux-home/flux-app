@@ -63,6 +63,13 @@ class DeviceProvider extends ChangeNotifier {
   /// restart. Null until the user has chosen, so the chart can tell "not set"
   /// from "everything switched off".
   List<String>? get chartSeries => _store.loadChartSeries();
+
+  /// The Energy view's card order, as the user arranged it.
+  List<String>? get energyCardOrder => _store.loadEnergyCardOrder();
+  Future<void> setEnergyCardOrder(List<String> keys) async {
+    await _store.saveEnergyCardOrder(keys);
+    notifyListeners();
+  }
   Future<void> setChartSeries(List<String> keys) async {
     await _store.saveChartSeries(keys);
     notifyListeners();

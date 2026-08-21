@@ -17,6 +17,7 @@ class DeviceStore {
   static const _kLayoutUp  = 'layout_uploaded_v1';
   static const _kNamesUp   = 'names_uploaded_v1';
   static const _kSeries    = 'chart_series_v1';
+  static const _kCardOrder = 'energy_card_order_v1';
 
   final SharedPreferences _prefs;
 
@@ -121,6 +122,14 @@ class DeviceStore {
   List<String>? loadChartSeries() => _prefs.getStringList(_kSeries);
   Future<void> saveChartSeries(List<String> keys) =>
       _prefs.setStringList(_kSeries, keys);
+
+  /// The order of the Energy view's cards, by key. Null until the user has
+  /// dragged one — a stored list is their arrangement and must not be
+  /// second-guessed, but a key added by a later app version is simply appended
+  /// rather than dropping the card.
+  List<String>? loadEnergyCardOrder() => _prefs.getStringList(_kCardOrder);
+  Future<void> saveEnergyCardOrder(List<String> keys) =>
+      _prefs.setStringList(_kCardOrder, keys);
 
   // ── Automation rules ───────────────────────────────────────────────────────
 
