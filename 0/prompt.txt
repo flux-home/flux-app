@@ -1,0 +1,1 @@
+can you use the solar yellow from the "flow" graph also for the bars, please remove the price line from the last24 hours chart
