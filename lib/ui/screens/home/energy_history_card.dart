@@ -224,19 +224,12 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            deck(112, _SupplyDeckPainter(
+            deck(126, _SupplyDeckPainter(
               data: data, selected: _selected,
+              soc: data.hasSoc ? data.socPerBucket : const [],
               axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
               labelColor: cs.onSurfaceVariant,
             )),
-            if (data.hasSoc) ...[
-              const SizedBox(height: 8),
-              deck(46, _SocDeckPainter(
-                soc: data.socPerBucket, selected: _selected,
-                axisColor: cs.onSurfaceVariant.withValues(alpha: 0.22),
-                labelColor: cs.onSurfaceVariant,
-              )),
-            ],
             if (prices != null && !prices.isEmpty) ...[
               const SizedBox(height: 8),
               deck(58, _PriceDeckPainter(
@@ -262,19 +255,19 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
       s.name;
 
   // ── Legend ────────────────────────────────────────────────────────────────
+  /// Names exactly the three things the bars are made of, plus the band behind
+  /// them. It used to list the old line chart's series — including per-inverter
+  /// names that no longer appear — which is worse than no legend: it told you the
+  /// chart contained things it does not.
   Widget _legend(BuildContext context, EnergyHistoryData data) {
     return Wrap(
       spacing: 16, runSpacing: 6, alignment: WrapAlignment.center,
       children: [
-        if (data.hasPvBreakdown)
-          for (var k = 0; k < data.pvSeries.length; k++)
-            _legendItem(context, _pvPalette[k % _pvPalette.length],
-                _pvName(context, data.pvSeries[k]))
-        else
-          _legendItem(context, _pvColor, 'Solar'),
-        _legendItem(context, _loadColor, 'Home'),
-        _legendItem(context, _importColor, 'Grid import'),
-        _legendItem(context, _exportColor, 'Grid export'),
+        _legendItem(context, _cSolar, 'Solar'),
+        _legendItem(context, _cBattery, 'Battery'),
+        _legendItem(context, _cGrid, 'Grid'),
+        if (data.hasSoc)
+          _legendItem(context, _cSoc.withValues(alpha: 0.45), 'Charge level'),
       ],
     );
   }
@@ -396,10 +389,35 @@ class _EnergyHistoryCardState extends State<EnergyHistoryCard> {
 const _cSolar   = Color(0xFFB8871E);
 const _cGrid    = Color(0xFFC4483A);
 const _cBattery = Color(0xFF2E9468);
+/// Charge level is a state, not a flow, so it keeps the neutral it has on the
+/// live card rather than joining the flow palette.
+const _cSoc     = Color(0xFFDCE3DF);
+
+/// Rounds a raw step up to 1/2/5 x a power of ten, so gridline labels read as
+/// numbers a person would choose. Same treatment the price chart gives its axis,
+/// which is what makes the two charts look like one system.
+double _niceStep(double raw) {
+  if (raw <= 0) return 1;
+  var mag = 1.0;
+  while (mag * 10 <= raw) { mag *= 10; }
+  while (mag > raw) { mag /= 10; }
+  for (final m in [1.0, 2.0, 5.0]) {
+    if (mag * m >= raw) return mag * m;
+  }
+  return mag * 10;
+}
+
+/// Gutter for the value labels, shared by every deck.
+///
+/// Load-bearing: the decks only mean anything read as one column, so if they
+/// disagree about where the plot starts, a crosshair points at 14:00 in one deck
+/// and 13:00 in the next. One constant, used by all of them.
+const double _padLeft = 28.0;
 
 /// Shared geometry so every deck puts bucket *i* at the same x.
 double _xForIndex(int i, int n, double width) =>
-    n <= 1 ? width / 2 : i / (n - 1) * width;
+    n <= 1 ? _padLeft + (width - _padLeft) / 2
+           : _padLeft + i / (n - 1) * (width - _padLeft);
 
 void _paintCrosshair(Canvas canvas, Size size, int? selected, int n, Color c) {
   if (selected == null || n == 0) return;
@@ -424,12 +442,16 @@ class _SupplyDeckPainter extends CustomPainter {
   _SupplyDeckPainter({
     required this.data,
     required this.selected,
+    required this.soc,
     required this.axisColor,
     required this.labelColor,
   });
 
   final EnergyHistoryData data;
   final int? selected;
+  /// Charge level per bucket, drawn as a background band. Empty when there is
+  /// no battery.
+  final List<double?> soc;
   final Color axisColor;
   final Color labelColor;
 
@@ -444,36 +466,89 @@ class _SupplyDeckPainter extends CustomPainter {
     final peak = pts.fold<double>(0, (m, p) => supply(p) > m ? supply(p) : m);
     if (peak <= 0) return;
 
-    final top = 12.0;
+    final top = 10.0;
     final plot = size.height - top;
-    final bw = pts.length == 1 ? size.width : size.width / pts.length;
+    final plotW = size.width - _padLeft;
+    final bw = pts.length == 1 ? plotW : plotW / pts.length;
 
-    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height),
+    // Horizontal grid in kWh per bucket, stepped to round numbers — the same
+    // treatment the price chart gives its axis, so the two read as one system.
+    final hPerBucket = data.bucket.inSeconds / 3600.0;
+    final peakKwh = peak * hPerBucket / 1000.0;
+    final step = _niceStep(peakKwh / 2);
+    final gridTop = (peakKwh / step).ceil() * step;
+    final grid = Paint()..strokeWidth = 1;
+    for (var v = step; v <= gridTop + 1e-9; v += step) {
+      final gy = size.height - (v / gridTop) * plot;
+      canvas.drawLine(Offset(_padLeft, gy), Offset(size.width, gy),
+          grid..color = axisColor.withValues(alpha: 0.18));
+      _paintLabel(canvas, v.toStringAsFixed(step < 1 ? 1 : 0),
+          Offset(_padLeft - 5, gy - 5), labelColor,
+          size: 8.5, rightAlign: true, weight: FontWeight.w400);
+    }
+    canvas.drawLine(Offset(_padLeft, size.height), Offset(size.width, size.height),
         Paint()..color = axisColor..strokeWidth = 1);
+
+    // ── Charge level, as a band behind the bars ──────────────────────────
+    //
+    // Deliberately not a plotted series: percent and kWh have no common scale,
+    // so it carries no axis and no gridline of its own, and its value is read
+    // from the text label rather than measured against the bars. Filled and
+    // translucent so it reads as ground the bars stand on — comparing its height
+    // to a bar's would be meaningless, and the drawing should not invite it.
+    _paintSocBand(canvas, size, plot);
 
     for (var i = 0; i < pts.length; i++) {
       final p = pts[i];
       var y = size.height;
       // Solar first, then what filled the gaps — reading upward, the bar says
-      // "sun, then battery, then bought".
-      for (final seg in [
+      // "sun, then battery, then bought". The last non-zero segment carries the
+      // rounded top, so build the list first.
+      final segs = [
         (p.pvW, _cSolar),
         (p.batteryDischargeW, _cBattery),
         (p.gridImportW, _cGrid),
-      ]) {
+      ].where((e) => e.$1 > 0).toList();
+      // Scaled against the gridded top rather than the raw peak, so a bar's
+      // height can be read off the gridlines instead of merely compared.
+      final full = gridTop * 1000.0 / hPerBucket;
+      for (final seg in segs) {
         if (seg.$1 <= 0) continue;
-        final segH = seg.$1 / peak * plot;
-        final x = i * bw;
-        canvas.drawRect(
-          Rect.fromLTWH(x + 0.5, y - segH, (bw - 1).clamp(0.5, bw), segH),
-          Paint()..color = seg.$2,
-        );
+        final segH = seg.$1 / full * plot;
+        // Thin bars with air between them: at full slot width the day reads as a
+        // solid block, and individual hours stop being countable.
+        final w = (bw * 0.52).clamp(1.5, bw);
+        final x = _padLeft + i * bw + (bw - w) / 2;
+        final rect = Rect.fromLTWH(x, y - segH, w, segH);
+        // Round the DATA END only — the top of the topmost segment — and leave
+        // the baseline flat. Rounding every corner of every segment makes a
+        // stack read as a column of detached pills rather than one quantity
+        // split into parts.
+        final isTop = y >= size.height - 0.6 || seg == segs.last;
+        final r = Radius.circular((w / 3).clamp(1.0, 3.0));
+        if (isTop) {
+          canvas.drawRRect(
+            RRect.fromRectAndCorners(rect, topLeft: r, topRight: r),
+            Paint()..color = seg.$2,
+          );
+        } else {
+          canvas.drawRect(rect, Paint()..color = seg.$2);
+        }
         y -= segH + 0.5;   // hairline gap so segments stay countable
       }
     }
 
-    _paintLabel(canvas, '${(peak * h / 1000).toStringAsFixed(1)} kWh',
-        Offset(0, 0), labelColor);
+    if (soc.isNotEmpty) {
+      final shown = selected != null && selected! < soc.length
+          ? soc[selected!.clamp(0, soc.length - 1)]
+          : soc.lastWhere((v) => v != null, orElse: () => null);
+      if (shown != null) {
+        // Top right, clear of the bars: at the bottom left it sat on top of the
+        // morning's tallest columns, which is where the eye goes first.
+        _paintLabel(canvas, 'SOC ${shown.round()}%',
+            Offset(size.width, 0), labelColor, size: 8.5, rightAlign: true);
+      }
+    }
     _paintCrosshair(canvas, size, selected, pts.length,
         labelColor.withValues(alpha: 0.55));
 
@@ -481,74 +556,56 @@ class _SupplyDeckPainter extends CustomPainter {
       final p = pts[selected!.clamp(0, pts.length - 1)];
       _paintLabel(canvas,
           '${(supply(p) * h / 1000).toStringAsFixed(2)} kWh',
-          Offset(size.width, 0), labelColor, rightAlign: true);
+          Offset(size.width, soc.isEmpty ? 0 : 12), labelColor,
+          rightAlign: true);
+    }
+  }
+
+  /// The charge-level band: filled to the baseline, with a slightly stronger
+  /// top edge so the shape stays legible where the fill is thin. A bucket with
+  /// no sample breaks the band rather than dropping it to zero — an empty
+  /// battery and an unheard-from battery are different facts.
+  void _paintSocBand(Canvas canvas, Size size, double plot) {
+    if (soc.isEmpty) return;
+    double y(double pct) => size.height - (pct / 100) * plot;
+    double x(int i) => _xForIndex(i, soc.length, size.width);
+
+    var i = 0;
+    while (i < soc.length) {
+      if (soc[i] == null) { i++; continue; }
+      var j = i;
+      while (j + 1 < soc.length && soc[j + 1] != null) { j++; }
+
+      final edge = Path();
+      for (var k = i; k <= j; k++) {
+        final o = Offset(x(k), y(soc[k]!));
+        k == i ? edge.moveTo(o.dx, o.dy) : edge.lineTo(o.dx, o.dy);
+      }
+      final fill = Path.from(edge)
+        ..lineTo(x(j), size.height)
+        ..lineTo(x(i), size.height)
+        ..close();
+
+      // Kept faint on purpose. At the alphas this started with, the band became
+      // the picture — a grey mountain with the bars trapped inside it — which is
+      // exactly the misreading a second scale invites. It should be ground, and
+      // the number is on the label.
+      canvas.drawPath(fill, Paint()..color = _cSoc.withValues(alpha: 0.06));
+      canvas.drawPath(edge, Paint()
+        ..color = _cSoc.withValues(alpha: 0.28)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..strokeJoin = StrokeJoin.round);
+      i = j + 1;
     }
   }
 
   @override
   bool shouldRepaint(_SupplyDeckPainter old) =>
-      old.data != data || old.selected != selected;
+      old.data != data || old.selected != selected || old.soc != soc;
 }
 
-/// Deck 2 — charge level. A level, so it is a line between 0 and 100 with the
-/// bounds drawn: without them a flat line at 40% and one at 90% look identical.
-class _SocDeckPainter extends CustomPainter {
-  _SocDeckPainter({
-    required this.soc,
-    required this.selected,
-    required this.axisColor,
-    required this.labelColor,
-  });
-
-  final List<double?> soc;
-  final int? selected;
-  final Color axisColor;
-  final Color labelColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (soc.isEmpty) return;
-    const pad = 6.0;
-    final plot = size.height - pad * 2;
-    double y(double pct) => pad + (1 - pct / 100) * plot;
-
-    final guide = Paint()..color = axisColor..strokeWidth = 1;
-    canvas.drawLine(Offset(0, y(100)), Offset(size.width, y(100)), guide);
-    canvas.drawLine(Offset(0, y(0)), Offset(size.width, y(0)), guide);
-
-    final path = Path();
-    var started = false;
-    for (var i = 0; i < soc.length; i++) {
-      final v = soc[i];
-      if (v == null) { started = false; continue; }  // a gap stays a gap
-      final o = Offset(_xForIndex(i, soc.length, size.width), y(v));
-      if (!started) { path.moveTo(o.dx, o.dy); started = true; } else { path.lineTo(o.dx, o.dy); }
-    }
-    canvas.drawPath(path, Paint()
-      ..color = const Color(0xFFDCE3DF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeJoin = StrokeJoin.round);
-
-    _paintLabel(canvas, 'SOC', Offset(0, 0), labelColor, size: 8.5);
-    _paintCrosshair(canvas, size, selected, soc.length,
-        labelColor.withValues(alpha: 0.55));
-
-    final shown = selected != null && selected! < soc.length
-        ? soc[selected!.clamp(0, soc.length - 1)]
-        : soc.lastWhere((v) => v != null, orElse: () => null);
-    if (shown != null) {
-      _paintLabel(canvas, '${shown.round()}%', Offset(size.width, 0),
-          labelColor, rightAlign: true);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_SocDeckPainter old) =>
-      old.soc != soc || old.selected != selected;
-}
-
-/// Deck 3 — what a kWh cost, on the same time axis. Its own deck precisely
+/// Deck 2 — what a kWh cost, on the same time axis. Its own deck precisely
 /// because ct/kWh has nothing to do with the kWh scale above it.
 class _PriceDeckPainter extends CustomPainter {
   _PriceDeckPainter({
@@ -582,6 +639,16 @@ class _PriceDeckPainter extends CustomPainter {
     const pad = 14.0;
     final plot = size.height - pad - 4;
     double y(double ct) => pad + (1 - (ct - lo) / (hi - lo)) * plot;
+
+    // One gridline at each end of the range, labelled in the shared gutter, so
+    // the price deck is read the same way as the deck above it.
+    for (final v in [lo, hi]) {
+      canvas.drawLine(Offset(_padLeft, y(v)), Offset(size.width, y(v)),
+          Paint()..color = axisColor.withValues(alpha: 0.18)..strokeWidth = 1);
+      _paintLabel(canvas, v.toStringAsFixed(0),
+          Offset(_padLeft - 5, y(v) - 5), labelColor,
+          size: 8.5, rightAlign: true, weight: FontWeight.w400);
+    }
 
     final path = Path();
     var started = false;
