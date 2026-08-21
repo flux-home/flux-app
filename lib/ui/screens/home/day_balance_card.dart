@@ -3,20 +3,20 @@ import 'package:provider/provider.dart';
 
 import 'package:matter_home/providers/device_provider.dart';
 
-const _keptColor = Color(0xFFF6D08A); // solar amber — your own kWh, unbought
-const _soldColor = Color(0xFFA9E0C0); // mint — what went to the grid
-const _paidColor = Color(0xFFF2A9A0); // coral — what you had to buy
+const _avoidedColor  = Color(0xFFF6D08A); // solar amber — import you did not make
+const _exportedColor = Color(0xFFA9E0C0); // mint — what went to the grid
+const _paidColor     = Color(0xFFF2A9A0); // coral — what you had to buy
 
 /// How the day came out, in money.
 ///
-/// One net figure — kept + sold − paid — over a bar that puts what went out
-/// against what came in, with self-supply underneath as the reason for the
-/// shape. Paid, kept and sold were three equal columns on the prices card, where
-/// they read as trivia beside a chart; the number they add up to is the point.
+/// One net figure — avoided import + exported − paid — over a bar that puts what
+/// went out against what came in, with self-supply underneath as the reason for
+/// the shape. The three figures were equal columns on the prices card, where they
+/// read as trivia beside a chart; the number they add up to is the point.
 ///
-/// Honest about what the figure is: "kept" is money that never left, not money
-/// that arrived, so the two are drawn as separate blocks and named separately
-/// rather than being silently blended into one green total.
+/// Honest about what the figure is: avoided import is money that never left, not
+/// money that arrived, so it stays a separate block with its own name rather than
+/// being blended into one green total with what was exported.
 class DayBalanceCard extends StatelessWidget {
   const DayBalanceCard({super.key});
 
@@ -32,11 +32,11 @@ class DayBalanceCard extends StatelessWidget {
 
     final feedInCt = (provider.pricingConfig?.feedInUeurPerKwh ?? 0) / 10000.0;
     final paid = (prices.importCostCents(history) ?? 0) / 100.0;
-    final kept = (prices.selfConsumptionSavingCents(history) ?? 0) / 100.0;
-    final sold = feedInCt > 0
+    final avoided = (prices.selfConsumptionSavingCents(history) ?? 0) / 100.0;
+    final exported = feedInCt > 0
         ? (prices.exportRevenueCents(history, feedInCt) ?? 0) / 100.0
         : 0.0;
-    final net = kept + sold - paid;
+    final net = avoided + exported - paid;
 
     final ss = history.selfSufficiencyPercent;
     final consumed = history.consumptionKwh;
@@ -78,14 +78,14 @@ class DayBalanceCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 14),
-                _OutInBar(paid: paid, kept: kept, sold: sold),
+                _OutInBar(paid: paid, avoided: avoided, exported: exported),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 16, runSpacing: 6,
                   children: [
                     _key(context, _paidColor, 'paid', eur(paid)),
-                    _key(context, _soldColor, 'sold', eur(sold)),
-                    _key(context, _keptColor, 'kept', eur(kept)),
+                    _key(context, _exportedColor, 'exported', eur(exported)),
+                    _key(context, _avoidedColor, 'avoided import', eur(avoided)),
                   ],
                 ),
                 if (ss != null) ...[
@@ -128,16 +128,20 @@ class DayBalanceCard extends StatelessWidget {
 /// the card, so the bar itself shows which way the day went — a fixed centre
 /// would make a €1 loss and a €9 gain look like the same event.
 class _OutInBar extends StatelessWidget {
-  const _OutInBar({required this.paid, required this.kept, required this.sold});
+  const _OutInBar({
+    required this.paid,
+    required this.avoided,
+    required this.exported,
+  });
 
   final double paid;
-  final double kept;
-  final double sold;
+  final double avoided;
+  final double exported;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final inTotal = kept + sold;
+    final inTotal = avoided + exported;
     final total = paid + inTotal;
     if (total <= 0) return const SizedBox.shrink();
 
@@ -165,12 +169,12 @@ class _OutInBar extends StatelessWidget {
               // continuous quantity.
               if (paid > 0 && inTotal > 0)
                 Container(width: 2, height: 10, color: cs.surface),
-              if (sold > 0)
-                Expanded(flex: flex(sold),
-                    child: Container(height: 10, color: _soldColor)),
-              if (kept > 0)
-                Expanded(flex: flex(kept),
-                    child: Container(height: 10, color: _keptColor)),
+              if (exported > 0)
+                Expanded(flex: flex(exported),
+                    child: Container(height: 10, color: _exportedColor)),
+              if (avoided > 0)
+                Expanded(flex: flex(avoided),
+                    child: Container(height: 10, color: _avoidedColor)),
             ],
           ),
         ),
