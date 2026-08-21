@@ -264,11 +264,30 @@ class DeviceProvider extends ChangeNotifier {
     ];
   }
 
+  /// Windows already fetched this session, by window-start epoch.
+  ///
+  /// A day with a genuine gap — the controller was off for an hour — can never
+  /// satisfy "every bucket present", so without this it would re-fetch on every
+  /// single visit. Session-scoped on purpose: a restart is a fair moment to try
+  /// again in case the gap has since been backfilled.
+  final Set<int> _fetchedWindows = {};
+
+  /// The offset the in-flight fetch belongs to, so a fetch for one day is never
+  /// handed to a caller asking about another.
+  int? _inflightOffset;
+
   Future<void> fetchEnergyHistory() {
     final inflight = _energyHistoryInflight;
-    if (inflight != null) return inflight;
+    // Coalesce only within the same window. Coalescing across windows was the
+    // bug behind "stepping through days loses data": stepping while a fetch was
+    // in flight returned THAT day's future, so the new day never fetched at all
+    // and showed whatever few buckets the cache happened to hold.
+    if (inflight != null && _inflightOffset == _historyOffsetDays) {
+      return inflight;
+    }
     final svc = _ctrlService;
     if (svc == null) return Future.value();
+    _inflightOffset = _historyOffsetDays;
 
     _energyHistoryLoading = true;
     notifyListeners();
@@ -289,16 +308,24 @@ class DeviceProvider extends ChangeNotifier {
           if (tailFrom > from) from = tailFrom;
         }
       } else {
-        // A past day is fixed history: if the cache already has every hour of
-        // it, there is nothing to ask for. Every hour, not merely some — a
-        // partially cached day would otherwise never be completed.
+        // A past day is fixed history: nothing to ask for once the cache has it,
+        // or once we have already asked for it this session.
         final have = _rowsIn(cached, w).length;
         final want = _window.inSeconds ~/ _bucket.inSeconds;
-        if (have >= want) {
+        if (have >= want || _fetchedWindows.contains(from)) {
           _energyHistory = EnergyHistoryData.fromRows(
               _rowsIn(cached, w), bucket: _bucket);
           return;
         }
+        // Ask for one bucket BEYOND the window. fromProto drops the bucket
+        // containing the request's end as still-filling, which for a past day
+        // silently removed its final hour — so the day was one short of complete
+        // for ever and re-fetched on every visit. Overshooting puts the dropped
+        // bucket outside the window instead of inside it.
+        final overshoot = to + _bucket.inSeconds;
+        final nowEpoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        to = overshoot < nowEpoch ? overshoot : nowEpoch;
+        _fetchedWindows.add(from);
       }
 
       // 1-hour buckets keep the payload small even with the per-device series
@@ -318,6 +345,10 @@ class DeviceProvider extends ChangeNotifier {
       // response: a tail fetch holds only the newest hour or two, and showing it
       // alone would blank the chart every 30 seconds.
       final merged = await cache.merge(fresh.toRows());
+      // The window may have moved while this was in flight. The rows are still
+      // worth keeping — they are cached above — but they must not be painted as
+      // if they belonged to the day now on screen.
+      if (_inflightOffset != _historyOffsetDays) return;
       final window = _rowsIn(merged, historyWindow);
       _energyHistory = window.isEmpty
           ? fresh
@@ -326,6 +357,7 @@ class DeviceProvider extends ChangeNotifier {
     }();
     _energyHistoryInflight = f.whenComplete(() {
       _energyHistoryInflight = null;
+      _inflightOffset = null;
       _energyHistoryLoading = false;
       if (!_disposed) notifyListeners();
     });
