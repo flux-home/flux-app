@@ -1,0 +1,5 @@
+how is used energy calculated?
+
+---
+
+generated, exported and used don't sum up, why?
