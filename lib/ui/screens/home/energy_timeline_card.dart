@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,7 +11,6 @@ import 'package:matter_home/providers/device_provider.dart';
 // separate from it on lightness, which colour-vision deficiency leaves intact.
 const _cSolar    = Color(0xFFF6D08A);
 const _cGrid     = Color(0xFFC4483A);
-const _cBattery  = Color(0xFF2E9468);
 const _cExport   = Color(0xFF6FBF9B);
 const _cSoc      = Color(0xFF8FA5E8);
 const _cPrice    = Color(0xFFE0D48A);
@@ -19,10 +20,12 @@ const _cPrice    = Color(0xFFE0D48A);
 /// reason the keys are short and stable.
 enum _Series {
   solar('solar', 'Solar', _cSolar),
-  battery('battery', 'Battery', _cBattery),
   grid('grid', 'Grid', _cGrid),
   export('export', 'Export', _cExport),
-  charge('charge', 'Charge', _cSoc),
+  // Key stays 'charge' though the label reads Battery: the key is what is
+  // persisted, so renaming it would silently reset the toggle for anyone who had
+  // already chosen.
+  charge('charge', 'Battery', _cSoc),
   price('price', 'Price', _cPrice);
 
   const _Series(this.key, this.label, this.color);
@@ -30,7 +33,7 @@ enum _Series {
   final String label;
   final Color color;
 
-  static const _defaults = {solar, battery, grid, charge, price};
+  static const _defaults = {solar, grid, charge, price};
 }
 
 /// One timeline: the last 24 hours and the price forecast on a single time axis,
@@ -56,6 +59,33 @@ class EnergyTimelineCard extends StatefulWidget {
 class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   int? _selected;
   Set<_Series>? _shown;
+  Timer? _refresh;
+
+  static const _refreshInterval = Duration(seconds: 30);
+
+  @override
+  void initState() {
+    super.initState();
+    // This card is what ASKS for both data sets. The two cards it replaced each
+    // fetched their own on mount and on a timer; merging the views without
+    // merging the fetches is why it first rendered "no energy history yet" —
+    // nothing had requested any.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetch());
+    _refresh = Timer.periodic(_refreshInterval, (_) => _fetch());
+  }
+
+  void _fetch() {
+    if (!mounted) return;
+    final p = context.read<DeviceProvider>();
+    p.fetchEnergyHistory();
+    p.fetchEnergyPrices();
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
 
   Set<_Series> _seriesFor(DeviceProvider p) {
     if (_shown != null) return _shown!;
@@ -316,15 +346,33 @@ class _TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pts = data.points;
-    if (pts.isEmpty) return;
+    if (data.points.isEmpty) return;
 
-    // ── time domain: first bucket → last price point (or last bucket) ──
+    // Bars are aggregated to the hour. At 15-minute buckets across a window that
+    // now includes the forecast, each bar came out about two pixels wide — and
+    // the price curve this shares an axis with is hourly anyway, so the finer
+    // grain bought nothing but noise.
+    final pts = _hourly(data);
+    if (pts.isEmpty) return;
+    const bucket = Duration(hours: 1);
+
+    // ── time domain ────────────────────────────────────────────────────
+    //
+    // NOW is the end of MEASURED data, not the phone's clock. Energy is stamped
+    // by the controller and price by the phone, so when the controller's clock
+    // is behind — which it says it is, in the note under this chart — using the
+    // phone's now leaves a gap between the last bar and the marker, and slides
+    // the price curve away from the hours it belongs to. Everything is mapped on
+    // the controller's timeline instead, and the price series is shifted by the
+    // observed difference so the two agree about what "13:00" means.
     final tStart = pts.first.time;
-    final histEnd = pts.last.time.add(data.bucket);
+    final histEnd = pts.last.time.add(bucket);
+    final skew = DateTime.now().difference(histEnd);
+    DateTime priceT(DateTime t) => t.subtract(skew);
+
     var tEnd = histEnd;
     if (prices != null && prices!.points.isNotEmpty) {
-      final last = prices!.points.last.time;
+      final last = priceT(prices!.points.last.time);
       if (last.isAfter(tEnd)) tEnd = last;
     }
     final span = tEnd.difference(tStart).inSeconds;
@@ -340,17 +388,16 @@ class _TimelinePainter extends CustomPainter {
         plotL + t.difference(tStart).inSeconds / span * plotW;
 
     // ── the forecast half, tinted so "past" and "ahead" are visible ────
-    final nowX = x(DateTime.now().isBefore(histEnd) ? histEnd : DateTime.now());
+    final nowX = x(histEnd);
     if (nowX < plotR) {
       canvas.drawRect(Rect.fromLTRB(nowX, top, plotR, base),
           Paint()..color = labelColor.withValues(alpha: 0.04));
     }
 
     // ── kWh scale, shared by bars and (if shown) export below zero ─────
-    final hPerBucket = data.bucket.inSeconds / 3600.0;
+    const hPerBucket = 1.0;   // hourly bars
     double up(EnergyHistoryPoint p) =>
         (shown.contains(_Series.solar) ? p.pvW : 0) +
-        (shown.contains(_Series.battery) ? p.batteryDischargeW : 0) +
         (shown.contains(_Series.grid) ? p.gridImportW : 0);
     final peakUp = pts.fold<double>(0, (m, p) => up(p) > m ? up(p) : m);
     final showExport = shown.contains(_Series.export);
@@ -380,7 +427,7 @@ class _TimelinePainter extends CustomPainter {
 
     // ── charge band, behind everything ─────────────────────────────────
     if (shown.contains(_Series.charge) && data.hasSoc) {
-      final soc = data.socPerBucket;
+      final soc = _hourSoc;
       var i = 0;
       while (i < soc.length) {
         if (soc[i] == null) { i++; continue; }
@@ -406,14 +453,13 @@ class _TimelinePainter extends CustomPainter {
     }
 
     // ── bars ───────────────────────────────────────────────────────────
-    final slot = plotW * (data.bucket.inSeconds / span);
+    final slot = plotW * (bucket.inSeconds / span);
     final bw = (slot * 0.52).clamp(1.0, slot);
     for (final p in pts) {
       final cx = x(p.time) + slot / 2;
       var y = zeroY;
       final segs = <(double, Color)>[
         if (shown.contains(_Series.solar)) (p.pvW, _cSolar),
-        if (shown.contains(_Series.battery)) (p.batteryDischargeW, _cBattery),
         if (shown.contains(_Series.grid)) (p.gridImportW, _cGrid),
       ].where((e) => e.$1 > 0).toList();
       for (var k = 0; k < segs.length; k++) {
@@ -445,7 +491,8 @@ class _TimelinePainter extends CustomPainter {
     if (prices != null && prices!.points.isNotEmpty) {
       final inView = [
         for (final p in prices!.points)
-          if (!p.time.isBefore(tStart) && !p.time.isAfter(tEnd)) p,
+          if (!priceT(p.time).isBefore(tStart) && !priceT(p.time).isAfter(tEnd))
+            p,
       ];
       if (inView.length > 1) {
         var lo = inView.first.ctPerKwh, hi = lo;
@@ -456,10 +503,19 @@ class _TimelinePainter extends CustomPainter {
         if (hi - lo < 1) hi = lo + 1;
         double yCt(double ct) => base - (ct - lo) / (hi - lo) * plotH * 0.92;
 
+        // A step, not a slope. A spot tariff is constant within its interval and
+        // jumps at the boundary; drawing a diagonal between two hours invents
+        // prices that were never offered, and makes the moment a price changed —
+        // the thing you would act on — impossible to locate.
         final path = Path();
         for (var k = 0; k < inView.length; k++) {
-          final o = Offset(x(inView[k].time), yCt(inView[k].ctPerKwh));
-          k == 0 ? path.moveTo(o.dx, o.dy) : path.lineTo(o.dx, o.dy);
+          final t0 = priceT(inView[k].time);
+          final t1 = k + 1 < inView.length
+              ? priceT(inView[k + 1].time)
+              : t0.add(const Duration(hours: 1));
+          final y = yCt(inView[k].ctPerKwh);
+          k == 0 ? path.moveTo(x(t0), y) : path.lineTo(x(t0), y);
+          path.lineTo(x(t1), y);
         }
         canvas.drawPath(path, Paint()
           ..color = _cPrice
@@ -501,6 +557,49 @@ class _TimelinePainter extends CustomPainter {
           weight: FontWeight.w400);
     }
   }
+
+  /// Sums the 15-minute buckets into hours, carrying the charge level from the
+  /// last sample in each hour — a level is not summed.
+  List<EnergyHistoryPoint> _hourly(EnergyHistoryData d) {
+    // Cleared per call: paint runs on every frame that touches this widget, and
+    // an accumulating list would both grow without bound and slide the charge
+    // samples out of step with the bars after the first repaint.
+    _hourSoc.clear();
+    final out = <EnergyHistoryPoint>[];
+    final soc = d.socPerBucket;
+    final perHour = 3600 / d.bucket.inSeconds;
+    var i = 0;
+    while (i < d.points.length) {
+      final hour = DateTime(d.points[i].time.year, d.points[i].time.month,
+          d.points[i].time.day, d.points[i].time.hour);
+      var pv = 0.0, dis = 0.0, imp = 0.0, exp = 0.0, chg = 0.0, load = 0.0;
+      var n = 0;
+      double? lastSoc;
+      while (i < d.points.length) {
+        final p = d.points[i];
+        final h = DateTime(p.time.year, p.time.month, p.time.day, p.time.hour);
+        if (h != hour) break;
+        pv += p.pvW; dis += p.batteryDischargeW; imp += p.gridImportW;
+        exp += p.gridExportW; chg += p.batteryChargeW; load += p.loadW;
+        if (i < soc.length && soc[i] != null) lastSoc = soc[i];
+        n++; i++;
+      }
+      if (n == 0) break;
+      // Mean power over the hour: the painter turns W back into Wh with a
+      // one-hour factor, so averaging here keeps the totals honest.
+      out.add(EnergyHistoryPoint(
+        time: hour,
+        pvW: pv / n, gridImportW: imp / n, gridExportW: exp / n,
+        loadW: load / n, batteryChargeW: chg / n, batteryDischargeW: dis / n,
+      ));
+      _hourSoc.add(lastSoc);
+      if (n < perHour && i >= d.points.length) break;   // partial trailing hour
+    }
+    return out;
+  }
+
+  /// Charge level per aggregated hour, filled by [_hourly] alongside its result.
+  final List<double?> _hourSoc = [];
 
   void _tinyLabel(Canvas canvas, String text, Offset at, Color color,
       {bool rightAlign = false, FontWeight weight = FontWeight.w700}) {
