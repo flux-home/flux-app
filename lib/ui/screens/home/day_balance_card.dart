@@ -9,14 +9,18 @@ const _paidColor     = Color(0xFFF2A9A0); // coral — what you had to buy
 
 /// How the day came out, in money.
 ///
-/// One net figure — avoided import + exported − paid — over a bar that puts what
-/// went out against what came in, with self-supply underneath as the reason for
-/// the shape. The three figures were equal columns on the prices card, where they
-/// read as trivia beside a chart; the number they add up to is the point.
+/// One net figure, then the three amounts it is made of, each on its own labelled
+/// row and all to the same scale.
 ///
-/// Honest about what the figure is: avoided import is money that never left, not
-/// money that arrived, so it stays a separate block with its own name rather than
-/// being blended into one green total with what was exported.
+/// It began as a single out-against-in bar, which turned out to be unreadable:
+/// the split between the two sides was a two-pixel hairline, and "OUT" and "IN"
+/// asked the reader to work out which blocks belonged to which. Three rows need no
+/// divider to be found and no legend to be matched — each row states its own name
+/// and its own amount — and the arithmetic is written out underneath so the net
+/// figure is checkable rather than asserted.
+///
+/// Avoided import stays its own row rather than joining exported in a green
+/// total: it is money that never left, not money that arrived.
 class DayBalanceCard extends StatelessWidget {
   const DayBalanceCard({super.key});
 
@@ -44,6 +48,7 @@ class DayBalanceCard extends StatelessWidget {
     final own = (consumed - bought).clamp(0.0, consumed);
 
     String eur(double v) => '€${v.toStringAsFixed(2)}';
+    final scale = [avoided, exported, paid].reduce((a, b) => a > b ? a : b);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,17 +82,24 @@ class DayBalanceCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                _OutInBar(paid: paid, avoided: avoided, exported: exported),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 16, runSpacing: 6,
-                  children: [
-                    _key(context, _paidColor, 'paid', eur(paid)),
-                    _key(context, _exportedColor, 'exported', eur(exported)),
-                    _key(context, _avoidedColor, 'avoided import', eur(avoided)),
-                  ],
-                ),
+                const SizedBox(height: 16),
+                // Shared scale across the three, so the row lengths are worth
+                // comparing to each other.
+                _AmountRow(label: 'Avoided import', value: avoided,
+                    scale: scale, color: _avoidedColor),
+                _AmountRow(label: 'Exported', value: exported,
+                    scale: scale, color: _exportedColor),
+                _AmountRow(label: 'Paid', value: paid,
+                    scale: scale, color: _paidColor),
+                const SizedBox(height: 6),
+                // The sum spelled out: with three amounts and one total, the
+                // reader should not have to guess which ones were added and
+                // which subtracted.
+                Text('${eur(avoided)} + ${eur(exported)} − ${eur(paid)} '
+                    '= ${net >= 0 ? '+' : '−'}${eur(net.abs())}',
+                    style: TextStyle(
+                        fontFamily: 'monospace', fontSize: 10.5,
+                        color: cs.onSurfaceVariant)),
                 if (ss != null) ...[
                   const SizedBox(height: 12),
                   Divider(height: 1, color: cs.outlineVariant),
@@ -104,85 +116,57 @@ class DayBalanceCard extends StatelessWidget {
       ],
     );
   }
-
-  Widget _key(BuildContext context, Color c, String label, String value) {
-    final cs = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Container(width: 9, height: 9,
-            decoration: BoxDecoration(
-                color: c, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(width: 6),
-        Text(label, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-        const SizedBox(width: 5),
-        Text(value, style: const TextStyle(
-            fontSize: 13, fontWeight: FontWeight.w700)),
-      ],
-    );
-  }
 }
 
-/// Out on the left of a centre line, in on the right, both to the same scale.
-///
-/// The centre sits where the two magnitudes balance rather than at the middle of
-/// the card, so the bar itself shows which way the day went — a fixed centre
-/// would make a €1 loss and a €9 gain look like the same event.
-class _OutInBar extends StatelessWidget {
-  const _OutInBar({
-    required this.paid,
-    required this.avoided,
-    required this.exported,
+/// One amount: its name, its figure, and a bar sized against the largest of the
+/// three so the rows can be compared at a glance.
+class _AmountRow extends StatelessWidget {
+  const _AmountRow({
+    required this.label,
+    required this.value,
+    required this.scale,
+    required this.color,
   });
 
-  final double paid;
-  final double avoided;
-  final double exported;
+  final String label;
+  final double value;
+  final double scale;
+  final Color  color;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final inTotal = avoided + exported;
-    final total = paid + inTotal;
-    if (total <= 0) return const SizedBox.shrink();
-
-    int flex(double v) => (v / total * 1000).round().clamp(0, 1 << 30);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Text('OUT', style: _tag(cs)),
-            const Spacer(),
-            Text('IN', style: _tag(cs)),
-          ],
-        ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              if (paid > 0)
-                Expanded(flex: flex(paid),
-                    child: Container(height: 10, color: _paidColor)),
-              // A hairline of surface, so out and in never touch and read as one
-              // continuous quantity.
-              if (paid > 0 && inTotal > 0)
-                Container(width: 2, height: 10, color: cs.surface),
-              if (exported > 0)
-                Expanded(flex: flex(exported),
-                    child: Container(height: 10, color: _exportedColor)),
-              if (avoided > 0)
-                Expanded(flex: flex(avoided),
-                    child: Container(height: 10, color: _avoidedColor)),
+              Expanded(
+                child: Text(label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 10),
+              Text('€${value.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: scale <= 0 ? 0 : (value / scale).clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: cs.onSurface.withValues(alpha: 0.08),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
     );
   }
-
-  TextStyle _tag(ColorScheme cs) => TextStyle(
-      fontFamily: 'monospace', fontSize: 8.5, fontWeight: FontWeight.w700,
-      letterSpacing: 1.4, color: cs.onSurfaceVariant);
 }
