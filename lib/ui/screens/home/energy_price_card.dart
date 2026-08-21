@@ -11,7 +11,6 @@ const _importColor = Color(0xFFF2A9A0); // coral — grid import overlay
 const _exportColor = Color(0xFFA9E0C0); // mint  — grid export overlay + feed-in
 // Amber — self-consumption savings. Matches the PV accent in the history card
 // and the house energy scene, so "own solar" reads the same colour everywhere.
-const _solarColor  = Color(0xFFF6D08A);
 
 /// A "Prices & consumption" card: what electricity cost over the **last 24
 /// hours** with grid import/export overlaid, plus the price forecast for the
@@ -107,53 +106,14 @@ class _EnergyPriceCardState extends State<EnergyPriceCard> {
     final cs = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final cur = prices.currentAt(now);
-    final importCents = prices.importCostCents(history);
-    final savedCents  = prices.selfConsumptionSavingCents(history);
-    final exportCents = feedInCt > 0 ? prices.exportRevenueCents(history, feedInCt) : null;
-
-    String eur(double? cents) =>
-        cents == null ? '—' : '€${(cents / 100).toStringAsFixed(2)}';
-
-    // Three equal columns rather than a Row of intrinsic widths: at three
-    // figures across a phone-width card, a long value (€12.84) would otherwise
-    // overflow. FittedBox shrinks rather than clips in the extreme.
-    Widget stat(String value, String label, Color color) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(value,
-                    maxLines: 1,
-                    style: tt.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700, color: color)),
-              ),
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-            ],
-          ),
-        );
-
     final avg = prices.avgCtIn(now.subtract(const Duration(hours: 24)), now) ??
         prices.avgCt;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Always three columns, '—' when a figure isn't available, so they don't
-        // shuffle sideways as values appear and disappear.
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            stat(eur(importCents), 'paid · 24h', cs.onSurface),
-            stat(eur(savedCents), 'saved · 24h', _solarColor),
-            stat(eur(exportCents), 'earned · 24h', _exportColor),
-          ],
-        ),
-        const SizedBox(height: 8),
+        // paid / kept / sold moved to the day-balance card: beside a chart they
+        // read as trivia, and the number they add up to is the point.
         // Current gross price + the 24 h mean, right-aligned on its own line.
         Text.rich(
           TextSpan(children: [
