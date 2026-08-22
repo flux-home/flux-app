@@ -1,0 +1,1 @@
+please remove devices that are in any of the categories from the main screen of the app
