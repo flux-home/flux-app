@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/room.dart';
+import 'package:matter_home/models/home_category.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
@@ -58,10 +59,26 @@ class HomeScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final groups = provider.deviceViewsByRoom;
+          // Devices a category already covers are left to that category. The
+          // home screen is what is NOT covered — a plug that only switches, a
+          // lock, a sensor with no home elsewhere — so a device is never listed
+          // in two places at once.
+          final all = provider.deviceViewsByRoom;
+          final groups = [
+            for (final (room, views) in all)
+              (room, [
+                for (final v in views)
+                  if (!HomeCategory.values.any((c) => c.matches(v))) v,
+              ]),
+          ];
 
           // If every room is empty the device list is empty overall.
           final totalDevices = groups.fold<int>(0, (sum, g) => sum + g.$2.length);
+          // Told apart deliberately: "nothing paired yet" and "everything is in
+          // a category" look identical from here and mean opposite things. The
+          // second is a finished setup, and inviting the user to add a device
+          // would be advice about a problem they do not have.
+          final anyDevices = all.fold<int>(0, (sum, g) => sum + g.$2.length) > 0;
 
           return RefreshIndicator(
             // Pull down to re-fetch the controller's device list. When a hub is
@@ -82,12 +99,16 @@ class HomeScreen extends StatelessWidget {
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: DotMatrixEmptyHint(
-                          headline: online
-                              ? 'NO DEVICES'
-                              : noHub ? 'NO CONTROLLER' : 'CONTROLLER OFFLINE',
-                          subline: online
-                              ? 'TAP + TO ADD'
-                              : noHub ? 'TAP + TO PAIR' : 'PULL TO RECONNECT',
+                          headline: !online
+                              ? (noHub ? 'NO CONTROLLER' : 'CONTROLLER OFFLINE')
+                              : anyDevices
+                                  ? 'ALL SORTED'
+                                  : 'NO DEVICES',
+                          subline: !online
+                              ? (noHub ? 'TAP + TO PAIR' : 'PULL TO RECONNECT')
+                              : anyDevices
+                                  ? 'EVERY DEVICE IS IN A CATEGORY'
+                                  : 'TAP + TO ADD',
                         ),
                       ),
                     ],
