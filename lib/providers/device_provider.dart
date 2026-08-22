@@ -107,6 +107,10 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Keyed by the full device key — a Matter and a Modbus device may share a
   /// node id, and subscribing to one must not suppress the other.
+  /// Keyed by (kind, nodeId) — the SUBSCRIPTION is per node, not per device:
+  /// one CASE session and one wildcard subscription serve every endpoint,
+  /// including a bridge's children. Do not add endpoint here or a bridge with
+  /// ten children would open ten subscriptions to the same node.
   final Set<(DeviceKind, int)> _subscribedNodeIds = {};
 
   /// Timers that fire a fallback [refreshDevice] if a subscription does not
@@ -160,10 +164,13 @@ class DeviceProvider extends ChangeNotifier {
   /// *data* (e.g. a row written into the energy-history log weeks ago) are
   /// snapshots and go stale, while this follows renames.
   ///
-  /// Keyed by (kind, nodeId): a node id alone does not identify a device.
-  String? deviceNameForNode(int nodeId, {DeviceKind kind = DeviceKind.matter}) {
+  /// Keyed by (kind, nodeId, endpoint): a node id alone does not identify a
+  /// device, and neither does (kind, nodeId) once a bridge is present — a Hue
+  /// Bridge and each bulb behind it share both. endpoint 0 is the node itself.
+  String? deviceNameForNode(int nodeId,
+      {DeviceKind kind = DeviceKind.matter, int endpoint = 0}) {
     for (final d in _devices) {
-      if (d.nodeId == nodeId && d.kind == kind) return d.name;
+      if (d.nodeId == nodeId && d.kind == kind && d.endpoint == endpoint) return d.name;
     }
     return null;
   }
@@ -738,14 +745,17 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     final now   = DateTime.now();
-    final controllerKeys = <(DeviceKind, int)>{};
+    final controllerKeys = <(DeviceKind, int, int)>{};
 
     for (final cd in raw) {
       final nodeId = cd.nodeId.toInt();
       final cdKind = DeviceKind.fromWire(cd.kind.value);
-      controllerKeys.add((cdKind, nodeId));
+      // The full key: a bridge and each of its children share nodeId and kind
+      // and differ only by endpoint.
+      final cdEp = cd.endpoint;
+      controllerKeys.add((cdKind, nodeId, cdEp));
       final idx = _devices.indexWhere(
-          (d) => d.nodeId == nodeId && d.kind == cdKind);
+          (d) => d.nodeId == nodeId && d.kind == cdKind && d.endpoint == cdEp);
 
       if (idx == -1) {
         // Device on controller but not locally — add it.
@@ -776,6 +786,7 @@ class DeviceProvider extends ChangeNotifier {
           // which is the bug this whole move fixes.
           roomId:         cd.roomId,
           energyRole:     EnergyRole.fromWire(cd.energyRole.value),
+          endpoint:       cdEp,
         );
         _devices.add(device);
         changed = true;
@@ -873,7 +884,7 @@ class DeviceProvider extends ChangeNotifier {
     final stale = _devices
         .where((d) =>
             d.managedBy == ManagedBy.controller &&
-            !controllerKeys.contains((d.kind, d.nodeId)))
+            !controllerKeys.contains((d.kind, d.nodeId, d.endpoint)))
         .map((d) => d.id)
         .toList();
     for (final id in stale) {
@@ -1090,19 +1101,29 @@ class DeviceProvider extends ChangeNotifier {
   // ── Subscription event handler ────────────────────────────────────────────
 
   void _onDeviceStateEvent(DeviceStateEvent event) {
-    // Match on the full key (kind, nodeId).
+    // Match on the full key (kind, nodeId, endpoint).
     //
     // An event whose kind is `unknown` comes from a controller that does not set
     // it. Fall back to the node id and say so, loudly: strict matching here
     // dropped EVERY live update against such a controller, and the symptom was
     // blank device cards with a perfectly healthy connection — nothing in the
     // logs, nothing failing. A noisy line beats silent data loss.
-    var candidates = _devices
-        .where((d) => d.nodeId == event.nodeId && d.kind == event.kind);
+    var candidates = _devices.where((d) =>
+        d.nodeId == event.nodeId &&
+        d.kind == event.kind &&
+        d.endpoint == event.endpoint);
     if (candidates.isEmpty && event.kind == DeviceKind.unknown) {
       debugPrint('DeviceProvider: event for ${event.nodeId} carries no kind — '
           'controller too old? falling back to node-id match');
-      candidates = _devices.where((d) => d.nodeId == event.nodeId);
+      candidates = _devices.where(
+          (d) => d.nodeId == event.nodeId && d.endpoint == event.endpoint);
+    }
+    // Connectivity events are node-level, so they arrive with endpoint 0 and
+    // must still reach a node whose only record is a bridge entry. Attribute
+    // updates never take this path: they always name their endpoint.
+    if (candidates.isEmpty && event.endpoint == 0) {
+      candidates = _devices
+          .where((d) => d.nodeId == event.nodeId && d.kind == event.kind);
     }
     if (candidates.isEmpty) return;
     final device = candidates.first;

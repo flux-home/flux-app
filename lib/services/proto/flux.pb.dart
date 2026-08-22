@@ -1804,6 +1804,7 @@ class Device extends $pb.GeneratedMessage {
     DeviceKind? kind,
     $core.int? roomId,
     EnergyRole? energyRole,
+    $core.int? endpoint,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -1816,6 +1817,7 @@ class Device extends $pb.GeneratedMessage {
     if (kind != null) result.kind = kind;
     if (roomId != null) result.roomId = roomId;
     if (energyRole != null) result.energyRole = energyRole;
+    if (endpoint != null) result.endpoint = endpoint;
     return result;
   }
 
@@ -1846,6 +1848,7 @@ class Device extends $pb.GeneratedMessage {
     ..aI(9, _omitFieldNames ? '' : 'roomId', fieldType: $pb.PbFieldType.OU3)
     ..aE<EnergyRole>(10, _omitFieldNames ? '' : 'energyRole',
         enumValues: EnergyRole.values)
+    ..aI(11, _omitFieldNames ? '' : 'endpoint', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1959,6 +1962,21 @@ class Device extends $pb.GeneratedMessage {
   $core.bool hasEnergyRole() => $_has(9);
   @$pb.TagNumber(10)
   void clearEnergyRole() => $_clearField(10);
+
+  /// Matter endpoint, part of the device key (see FW-ADR-0018).
+  ///   0  = the node itself — every non-bridge device, and a bridge's own entry
+  ///   >0 = a device BRIDGED behind this node, living on that endpoint
+  /// A Matter bridge exposes its children as endpoints of one node, so
+  /// (kind, node_id) alone cannot name them: a Hue Bridge with five bulbs is
+  /// one node and six devices.
+  @$pb.TagNumber(11)
+  $core.int get endpoint => $_getIZ(10);
+  @$pb.TagNumber(11)
+  set endpoint($core.int value) => $_setUnsignedInt32(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasEndpoint() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearEndpoint() => $_clearField(11);
 }
 
 /// GET /devices
@@ -2149,6 +2167,7 @@ class DeviceMeta extends $pb.GeneratedMessage {
     $core.String? name,
     $core.int? roomId,
     EnergyRole? energyRole,
+    $core.int? endpoint,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
@@ -2156,6 +2175,7 @@ class DeviceMeta extends $pb.GeneratedMessage {
     if (name != null) result.name = name;
     if (roomId != null) result.roomId = roomId;
     if (energyRole != null) result.energyRole = energyRole;
+    if (endpoint != null) result.endpoint = endpoint;
     return result;
   }
 
@@ -2180,6 +2200,7 @@ class DeviceMeta extends $pb.GeneratedMessage {
     ..aI(4, _omitFieldNames ? '' : 'roomId', fieldType: $pb.PbFieldType.OU3)
     ..aE<EnergyRole>(5, _omitFieldNames ? '' : 'energyRole',
         enumValues: EnergyRole.values)
+    ..aI(6, _omitFieldNames ? '' : 'endpoint', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2244,6 +2265,15 @@ class DeviceMeta extends $pb.GeneratedMessage {
   $core.bool hasEnergyRole() => $_has(4);
   @$pb.TagNumber(5)
   void clearEnergyRole() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get endpoint => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set endpoint($core.int value) => $_setUnsignedInt32(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasEndpoint() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearEndpoint() => $_clearField(6);
 }
 
 /// POST /devices/{id}/name
@@ -2252,11 +2282,13 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
     $fixnum.Int64? nodeId,
     $core.String? name,
     DeviceKind? kind,
+    $core.int? endpoint,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (name != null) result.name = name;
     if (kind != null) result.kind = kind;
+    if (endpoint != null) result.endpoint = endpoint;
     return result;
   }
 
@@ -2278,6 +2310,7 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
         enumValues: DeviceKind.values)
+    ..aI(4, _omitFieldNames ? '' : 'endpoint', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2325,6 +2358,15 @@ class RenameDeviceRequest extends $pb.GeneratedMessage {
   $core.bool hasKind() => $_has(2);
   @$pb.TagNumber(3)
   void clearKind() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get endpoint => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set endpoint($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasEndpoint() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearEndpoint() => $_clearField(4);
 }
 
 /// POST /node/register
@@ -3014,11 +3056,13 @@ class AttrsUpdate extends $pb.GeneratedMessage {
     $fixnum.Int64? nodeId,
     $core.Iterable<Attr>? attrs,
     DeviceKind? kind,
+    $core.int? endpoint,
   }) {
     final result = create();
     if (nodeId != null) result.nodeId = nodeId;
     if (attrs != null) result.attrs.addAll(attrs);
     if (kind != null) result.kind = kind;
+    if (endpoint != null) result.endpoint = endpoint;
     return result;
   }
 
@@ -3040,6 +3084,7 @@ class AttrsUpdate extends $pb.GeneratedMessage {
     ..pPM<Attr>(2, _omitFieldNames ? '' : 'attrs', subBuilder: Attr.create)
     ..aE<DeviceKind>(3, _omitFieldNames ? '' : 'kind',
         enumValues: DeviceKind.values)
+    ..aI(4, _omitFieldNames ? '' : 'endpoint', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3081,6 +3126,19 @@ class AttrsUpdate extends $pb.GeneratedMessage {
   $core.bool hasKind() => $_has(2);
   @$pb.TagNumber(3)
   void clearKind() => $_clearField(3);
+
+  /// Which device on that node the readings belong to. Without this, every
+  /// device bridged behind one node collapses into a single attribute bag and
+  /// the last endpoint to report wins per key — five Hue devices sharing one
+  /// onOff. See Device.endpoint.
+  @$pb.TagNumber(4)
+  $core.int get endpoint => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set endpoint($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasEndpoint() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearEndpoint() => $_clearField(4);
 }
 
 /// Pushed when a subscription changes state or attributes are updated.

@@ -671,7 +671,11 @@ class FluxCoapService implements MatterPort {
           else if (a.hasIntVal())  attrs[a.key] = a.intVal;
           else if (a.hasLongVal()) attrs[a.key] = a.longVal.toInt();
         }
-        return SubscriptionUpdateEvent(nodeId, attrs, kind: kind);
+        // AttrsUpdate.endpoint names which device on the node reported. A
+        // bridge delivers all of its children over one subscription, so without
+        // it every child's readings land on the bridge's cache entry.
+        return SubscriptionUpdateEvent(nodeId, attrs,
+            kind: kind, endpoint: ev.update.endpoint);
       default:
         return SubscriptionErrorEvent(nodeId, 'unknown event type');
     }

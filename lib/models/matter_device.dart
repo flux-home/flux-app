@@ -113,6 +113,7 @@ class MatterDevice {
     this.managedBy = ManagedBy.phone,
     this.roomId = Room.noRoomId,
     this.energyRole = EnergyRole.none,
+    this.endpoint = 0,
   });
 
   factory MatterDevice.fromJson(Map<String, dynamic> json) {
@@ -150,6 +151,8 @@ class MatterDevice {
       // the one-time upload in DeviceProvider re-creates the layout instead.
       roomId: json['roomId'] is int ? json['roomId'] as int : Room.noRoomId,
       energyRole: EnergyRole.fromName(json['energyRole'] as String?),
+      // Records written before bridges were supported are all the node itself.
+      endpoint: json['endpoint'] as int? ?? 0,
     );
   }
   final String id;
@@ -157,8 +160,28 @@ class MatterDevice {
   final DeviceType deviceType;
   final int nodeId;
 
-  /// With [nodeId], identifies the device. See [DeviceKind].
+  /// With [nodeId] and [endpoint], identifies the device. See [DeviceKind].
   final DeviceKind kind;
+
+  /// Matter endpoint, the third part of the device key.
+  ///
+  ///   0  = the node itself — every non-bridge device, and a bridge's own entry
+  ///   >0 = a device BRIDGED behind this node, living on that endpoint
+  ///
+  /// A Matter bridge publishes its children as endpoints of one node, so
+  /// (kind, nodeId) cannot name them: a Hue Bridge with five bulbs is one node
+  /// and six devices. Keying without this collapsed ten Hue devices into a
+  /// single card whose type came from one endpoint and whose name came from
+  /// another. See flux-controller FW-ADR-0018.
+  final int endpoint;
+
+  /// The endpoint to address cluster commands to. Bridged children use their own
+  /// endpoint; the node itself keeps the historical default of 1, which is the
+  /// primary application endpoint for every simple device.
+  int get commandEndpoint => endpoint == 0 ? 1 : endpoint;
+
+  /// True when this record is a device bridged behind another node.
+  bool get isBridged => endpoint != 0;
   final bool isOnline;
   final bool sharedWithGoogleHome;
   final DateTime commissionedAt;
@@ -187,6 +210,7 @@ class MatterDevice {
     ManagedBy?   managedBy,
     int? roomId,
     EnergyRole? energyRole,
+    int? endpoint,
   }) => MatterDevice(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -201,6 +225,7 @@ class MatterDevice {
     managedBy: managedBy ?? this.managedBy,
     roomId: roomId ?? this.roomId,
     energyRole: energyRole ?? this.energyRole,
+    endpoint: endpoint ?? this.endpoint,
   );
 
   Map<String, dynamic> toJson() => {
@@ -217,6 +242,7 @@ class MatterDevice {
     'managedBy':   managedBy.name,
     'roomId': roomId,
     'energyRole': energyRole.name,
+    'endpoint': endpoint,
   };
 
   @override

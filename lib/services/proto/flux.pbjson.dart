@@ -535,6 +535,7 @@ const Device$json = {
       '6': '.flux.EnergyRole',
       '10': 'energyRole'
     },
+    {'1': 'endpoint', '3': 11, '4': 1, '5': 13, '10': 'endpoint'},
   ],
 };
 
@@ -546,7 +547,7 @@ final $typed_data.Uint8List deviceDescriptor = $convert.base64Decode(
     'RldmljZVR5cGUSOwoMY29ubmVjdGl2aXR5GAcgASgOMhcuZmx1eC5Db25uZWN0aXZpdHlTdGF0'
     'ZVIMY29ubmVjdGl2aXR5EiQKBGtpbmQYCCABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQSFw'
     'oHcm9vbV9pZBgJIAEoDVIGcm9vbUlkEjEKC2VuZXJneV9yb2xlGAogASgOMhAuZmx1eC5FbmVy'
-    'Z3lSb2xlUgplbmVyZ3lSb2xl');
+    'Z3lSb2xlUgplbmVyZ3lSb2xlEhoKCGVuZHBvaW50GAsgASgNUghlbmRwb2ludA==');
 
 @$core.Deprecated('Use deviceListDescriptor instead')
 const DeviceList$json = {
@@ -625,6 +626,7 @@ const DeviceMeta$json = {
       '10': 'energyRole',
       '17': true
     },
+    {'1': 'endpoint', '3': 6, '4': 1, '5': 13, '10': 'endpoint'},
   ],
   '8': [
     {'1': '_name'},
@@ -638,8 +640,8 @@ final $typed_data.Uint8List deviceMetaDescriptor = $convert.base64Decode(
     'CgpEZXZpY2VNZXRhEhcKB25vZGVfaWQYASABKARSBm5vZGVJZBIkCgRraW5kGAIgASgOMhAuZm'
     'x1eC5EZXZpY2VLaW5kUgRraW5kEhcKBG5hbWUYAyABKAlIAFIEbmFtZYgBARIcCgdyb29tX2lk'
     'GAQgASgNSAFSBnJvb21JZIgBARI2CgtlbmVyZ3lfcm9sZRgFIAEoDjIQLmZsdXguRW5lcmd5Um'
-    '9sZUgCUgplbmVyZ3lSb2xliAEBQgcKBV9uYW1lQgoKCF9yb29tX2lkQg4KDF9lbmVyZ3lfcm9s'
-    'ZQ==');
+    '9sZUgCUgplbmVyZ3lSb2xliAEBEhoKCGVuZHBvaW50GAYgASgNUghlbmRwb2ludEIHCgVfbmFt'
+    'ZUIKCghfcm9vbV9pZEIOCgxfZW5lcmd5X3JvbGU=');
 
 @$core.Deprecated('Use renameDeviceRequestDescriptor instead')
 const RenameDeviceRequest$json = {
@@ -655,13 +657,15 @@ const RenameDeviceRequest$json = {
       '6': '.flux.DeviceKind',
       '10': 'kind'
     },
+    {'1': 'endpoint', '3': 4, '4': 1, '5': 13, '10': 'endpoint'},
   ],
 };
 
 /// Descriptor for `RenameDeviceRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List renameDeviceRequestDescriptor = $convert.base64Decode(
     'ChNSZW5hbWVEZXZpY2VSZXF1ZXN0EhcKB25vZGVfaWQYASABKARSBm5vZGVJZBISCgRuYW1lGA'
-    'IgASgJUgRuYW1lEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQ=');
+    'IgASgJUgRuYW1lEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQSGgoIZW5k'
+    'cG9pbnQYBCABKA1SCGVuZHBvaW50');
 
 @$core.Deprecated('Use registerNodeRequestDescriptor instead')
 const RegisterNodeRequest$json = {
@@ -837,13 +841,15 @@ const AttrsUpdate$json = {
       '6': '.flux.DeviceKind',
       '10': 'kind'
     },
+    {'1': 'endpoint', '3': 4, '4': 1, '5': 13, '10': 'endpoint'},
   ],
 };
 
 /// Descriptor for `AttrsUpdate`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List attrsUpdateDescriptor = $convert.base64Decode(
     'CgtBdHRyc1VwZGF0ZRIXCgdub2RlX2lkGAEgASgEUgZub2RlSWQSIAoFYXR0cnMYAiADKAsyCi'
-    '5mbHV4LkF0dHJSBWF0dHJzEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQ=');
+    '5mbHV4LkF0dHJSBWF0dHJzEiQKBGtpbmQYAyABKA4yEC5mbHV4LkRldmljZUtpbmRSBGtpbmQS'
+    'GgoIZW5kcG9pbnQYBCABKA1SCGVuZHBvaW50');
 
 @$core.Deprecated('Use deviceStateEventDescriptor instead')
 const DeviceStateEvent$json = {

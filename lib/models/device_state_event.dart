@@ -16,8 +16,20 @@
 import 'package:matter_home/models/matter_device.dart' show DeviceKind;
 
 sealed class DeviceStateEvent {
-  const DeviceStateEvent(this.nodeId, {this.kind = DeviceKind.matter});
+  const DeviceStateEvent(this.nodeId,
+      {this.kind = DeviceKind.matter, this.endpoint = 0});
   final int nodeId;
+
+  /// Which device ON that node the event belongs to. 0 = the node itself.
+  ///
+  /// A subscription is per node and its wildcard covers every endpoint, so a
+  /// bridge delivers its children's reports over one session. Without this, all
+  /// of them merge into the bridge's cache entry and the last endpoint to report
+  /// wins per attribute — five Hue devices sharing one `onOff`.
+  ///
+  /// Only attribute updates carry a meaningful endpoint; connectivity events are
+  /// node-level and keep 0.
+  final int endpoint;
 
   /// With [nodeId], identifies the device the event belongs to. Events for a
   /// Modbus device and a Matter node can share a nodeId, so matching on nodeId
@@ -37,7 +49,8 @@ class SubscriptionEstablishedEvent extends DeviceStateEvent {
 /// Keys are the camelCase strings defined in SubscriptionManager.kt
 /// (e.g. `'onOff'`, `'localTempCenti'`, `'co2Ppm'`).
 class SubscriptionUpdateEvent extends DeviceStateEvent {
-  const SubscriptionUpdateEvent(super.nodeId, this.attrs, {super.kind});
+  const SubscriptionUpdateEvent(super.nodeId, this.attrs,
+      {super.kind, super.endpoint});
   final Map<String, dynamic> attrs;
 }
 
