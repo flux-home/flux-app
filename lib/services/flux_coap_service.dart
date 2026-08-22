@@ -421,17 +421,24 @@ class FluxCoapService implements MatterPort {
   /// Only the arguments passed are written. That distinction matters: 0 is a
   /// real value for both room ("No Room") and energy role ("none"), so clearing
   /// either has to be expressible without also clearing the other.
+  ///
+  /// [endpoint] is part of the identity, not an optional extra: a Hue Bridge and
+  /// every bulb behind it share one node id and differ only by endpoint, so a
+  /// write without it lands on the bridge's own record (endpoint 0) and the
+  /// bulb's room, name or role never sticks.
   Future<bool> setDeviceMeta(
     int nodeId, {
     required DeviceKind kind,
+    required int endpoint,
     String? name,
     int? roomId,
     EnergyRole? energyRole,
   }) async {
     final meta = $proto.DeviceMeta()
-      ..nodeId = Int64(nodeId)
-      ..kind   = $proto.DeviceKind.valueOf(kind.wire) ??
-                 $proto.DeviceKind.DEVICE_KIND_UNKNOWN;
+      ..nodeId   = Int64(nodeId)
+      ..endpoint = endpoint
+      ..kind     = $proto.DeviceKind.valueOf(kind.wire) ??
+                   $proto.DeviceKind.DEVICE_KIND_UNKNOWN;
     if (name != null)       meta.name    = name;
     if (roomId != null)     meta.roomId  = roomId;
     if (energyRole != null) {

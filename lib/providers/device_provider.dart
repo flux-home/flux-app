@@ -654,7 +654,8 @@ class DeviceProvider extends ChangeNotifier {
         final newId = uuidToId[assignments[_devices[i].id]];
         if (newId == null) continue;
         if (await svc.setDeviceMeta(_devices[i].nodeId,
-            kind: _devices[i].kind, roomId: newId)) {
+            kind: _devices[i].kind, endpoint: _devices[i].endpoint,
+            roomId: newId)) {
           _devices[i] = _devices[i].copyWith(roomId: newId);
         }
       }
@@ -665,7 +666,8 @@ class DeviceProvider extends ChangeNotifier {
     // regardless of whether there were rooms to move.
     for (final d in _devices) {
       if (d.energyRole == EnergyRole.none) continue;
-      await svc.setDeviceMeta(d.nodeId, kind: d.kind, energyRole: d.energyRole);
+      await svc.setDeviceMeta(d.nodeId,
+          kind: d.kind, endpoint: d.endpoint, energyRole: d.energyRole);
     }
 
     await _store.markLayoutUploaded();
@@ -687,12 +689,18 @@ class DeviceProvider extends ChangeNotifier {
     for (final cd in raw) {
       final nodeId = cd.nodeId.toInt();
       final kind   = DeviceKind.fromWire(cd.kind.value);
-      final idx = _devices.indexWhere((d) => d.nodeId == nodeId && d.kind == kind);
+      // Full key: matching on (kind, nodeId) alone would push one bulb's name
+      // onto whichever of a bridge's children happened to be found first.
+      final idx = _devices.indexWhere((d) =>
+          d.nodeId == nodeId && d.kind == kind && d.endpoint == cd.endpoint);
       if (idx == -1) continue;
 
       final local = _devices[idx].name;
       if (local.isEmpty || local == cd.name) continue;
-      if (await svc.setDeviceMeta(nodeId, kind: kind, name: local)) pushed++;
+      if (await svc.setDeviceMeta(nodeId,
+          kind: kind, endpoint: cd.endpoint, name: local)) {
+        pushed++;
+      }
     }
     await _store.markNamesUploaded();
     if (pushed > 0) debugPrint('DeviceProvider: uploaded $pushed device name(s)');
@@ -1473,6 +1481,44 @@ class DeviceProvider extends ChangeNotifier {
         endpoint: _devices[idx].commandEndpoint);
   }
 
+  // ── Group control ─────────────────────────────────────────────────────────
+  //
+  // Fan-out over the per-device commands above rather than a Matter group cast:
+  // group messaging needs a group key distributed at commissioning time, which
+  // no device in this fabric has, and half of these are controller-managed
+  // anyway. The per-device path also keeps the optimistic cache updates, so the
+  // room's cards all move at once even though the writes are sequential.
+  //
+  // Sequential on purpose: over Thread a burst of parallel writes to sleepy
+  // devices is how you lose one. The user-visible latency is already hidden by
+  // the optimistic update.
+
+  /// Turns every device in [deviceIds] that can do on/off to [on].
+  Future<void> groupSetOn(Iterable<String> deviceIds, bool on) async {
+    for (final id in deviceIds) {
+      final idx = _indexById(id);
+      if (idx == -1) continue;
+      if ((_liveCache[id]?.isOn ?? false) == on) continue;
+      await toggle(id);
+    }
+  }
+
+  /// Sets every device in [deviceIds] to [value] (0–1) brightness.
+  Future<void> groupSetBrightness(
+      Iterable<String> deviceIds, double value) async {
+    for (final id in deviceIds) {
+      await setBrightness(id, value);
+    }
+  }
+
+  /// Sets every device in [deviceIds] to [mireds] colour temperature.
+  Future<void> groupSetColorTemperature(
+      Iterable<String> deviceIds, int mireds) async {
+    for (final id in deviceIds) {
+      await setColorTemperature(id, mireds);
+    }
+  }
+
   /// Sends LockDoor command. Returns true on success, false on failure.
   Future<bool> lockDoor(String deviceId, {String? pin}) async {
     final idx = _indexById(deviceId);
@@ -1620,7 +1666,8 @@ class DeviceProvider extends ChangeNotifier {
 
     final svc = _ctrlService;
     if (svc != null) {
-      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, roomId: roomId);
+      final ok = await svc.setDeviceMeta(d.nodeId,
+          kind: d.kind, endpoint: d.endpoint, roomId: roomId);
       if (!ok) return false;
     }
     _devices[idx] = d.copyWith(roomId: roomId);
@@ -1641,7 +1688,8 @@ class DeviceProvider extends ChangeNotifier {
       // The controller stores the role itself (not just the derived log class),
       // so the difference between e.g. a car charger and a heat pump survives a
       // reinstall instead of living only on this phone.
-      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, energyRole: role);
+      final ok = await svc.setDeviceMeta(d.nodeId,
+          kind: d.kind, endpoint: d.endpoint, energyRole: role);
       if (!ok) return false;
     }
     _devices[idx] = d.copyWith(energyRole: role);
@@ -1667,7 +1715,8 @@ class DeviceProvider extends ChangeNotifier {
 
     final svc = _ctrlService;
     if (svc != null && d.managedBy == ManagedBy.controller) {
-      final ok = await svc.setDeviceMeta(d.nodeId, kind: d.kind, name: newName);
+      final ok = await svc.setDeviceMeta(d.nodeId,
+          kind: d.kind, endpoint: d.endpoint, name: newName);
       if (!ok) return false;
     }
     _devices[idx] = d.copyWith(name: newName, lastModified: DateTime.now());
