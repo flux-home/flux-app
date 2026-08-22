@@ -141,8 +141,13 @@ class HomeScreen extends StatelessWidget {
             slivers: [
               // ── Category buttons (Energy / Lighting / Climate) ───────────
               const SliverToBoxAdapter(child: CategoryBar()),
+              // A room with nothing to show is not shown. It used to be skipped
+              // only for "No Room", which was fine while every device appeared
+              // here — but now that the categories claim most of them, keeping
+              // the headers would leave a screen of room names above nothing.
+              // An empty room still exists; it is managed in Settings > Rooms.
               for (final (room, views) in groups)
-                if (room.isNoRoom && views.isEmpty) ...[] else ...[
+                if (views.isEmpty) ...[] else ...[
                 // ── Room header ─────────────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
@@ -154,36 +159,22 @@ class HomeScreen extends StatelessWidget {
                 // ── Device grid for this room ────────────────────────────────
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: views.isEmpty
-                      ? SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              'No devices',
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        )
-                      : SliverGrid(
-                          gridDelegate:
-                              const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 180,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (ctx, i) => DeviceCard(
-                              deviceId: views[i].id,
-                              onTap: () => context.push('/device/${views[i].id}'),
-                            ),
-                            childCount: views.length,
-                          ),
-                        ),
+                  // No empty-room placeholder: an empty room never gets here.
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 180,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => DeviceCard(
+                        deviceId: views[i].id,
+                        onTap: () => context.push('/device/${views[i].id}'),
+                      ),
+                      childCount: views.length,
+                    ),
+                  ),
                 ),
               ],
               const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
