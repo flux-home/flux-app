@@ -1,0 +1,9 @@
+in the lighting section, can you group devices per room and allow me to change the common denominators on a room basis, maybe add a shim layer to the UI
+
+---
+
+room assignments for Hue devices don't stick
+
+---
+
+assignment works now, i just want to see rooms, and see the devices when i enter a specific room, devices with no room attached should show up in the in the lighting section
