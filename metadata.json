@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M0NGPAQ2YP193GW6JF3XWHQ9",
+  "strategy": "manual-commit",
+  "branch": "docs/remote-access-ice",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "lib/models/device_group.dart",
+    "lib/models/home_category.dart",
+    "lib/router.dart",
+    "lib/ui/screens/category/category_screen.dart",
+    "lib/ui/screens/category/room_screen.dart",
+    "lib/ui/widgets/room_group_card.dart",
+    "test/models/device_group_test.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1402,
+    "cache_read_tokens": 183550,
+    "output_tokens": 562,
+    "api_call_count": 1
+  }
+}
