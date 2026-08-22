@@ -87,22 +87,27 @@ abstract interface class MatterClusterPort {
   /// subscription. See [FluxCoapService.readClusters].
   Future<String?>            readClusters(int nodeId, {bool full});
 
-  Future<bool> toggleDevice(int nodeId, {required bool on});
-  Future<bool> setLevel(int nodeId, int level);
-  Future<bool> stepLevel(int nodeId, {required bool stepUp});
-  Future<bool> coveringUp(int nodeId);
-  Future<bool> coveringDown(int nodeId);
-  Future<bool> coveringStop(int nodeId);
-  Future<bool> coveringGoToLift(int nodeId, int percent100ths);
-  Future<bool> setFanMode(int nodeId, int mode);
-  Future<bool> setFanPercent(int nodeId, int percent);
-  Future<bool> setColorTemperature(int nodeId, int mireds);
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees);
-  Future<bool> writeSystemMode(int nodeId, int mode);
-  Future<void> identify(int nodeId, {int seconds = 15});
+  // Every command names the endpoint it targets. Default 1 is the primary
+  // application endpoint of a simple device, which is what these all assumed
+  // implicitly before bridges existed. A device bridged behind another node
+  // lives on its own endpoint, so sending to 1 would hit the bridge — or a
+  // sibling. Callers pass MatterDevice.commandEndpoint.
+  Future<bool> toggleDevice(int nodeId, {required bool on, int endpoint = 1});
+  Future<bool> setLevel(int nodeId, int level, {int endpoint = 1});
+  Future<bool> stepLevel(int nodeId, {required bool stepUp, int endpoint = 1});
+  Future<bool> coveringUp(int nodeId, {int endpoint = 1});
+  Future<bool> coveringDown(int nodeId, {int endpoint = 1});
+  Future<bool> coveringStop(int nodeId, {int endpoint = 1});
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths, {int endpoint = 1});
+  Future<bool> setFanMode(int nodeId, int mode, {int endpoint = 1});
+  Future<bool> setFanPercent(int nodeId, int percent, {int endpoint = 1});
+  Future<bool> setColorTemperature(int nodeId, int mireds, {int endpoint = 1});
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees, {int endpoint = 1});
+  Future<bool> writeSystemMode(int nodeId, int mode, {int endpoint = 1});
+  Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1});
 
-  Future<bool> lockDoor(int nodeId, {String? pin});
-  Future<bool> unlockDoor(int nodeId, {String? pin});
+  Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1});
+  Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1});
 }
 
 /// Fabric-level operations: remove, fabric identity, Thread credentials.

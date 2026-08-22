@@ -81,49 +81,49 @@ class NullMatterPort implements MatterPort {
   Future<String?> readClusters(int nodeId, {bool full = false}) async => null;
 
   @override
-  Future<bool> toggleDevice(int nodeId, {required bool on}) async => false;
+  Future<bool> toggleDevice(int nodeId, {required bool on, int endpoint = 1}) async => false;
 
   @override
-  Future<bool> setLevel(int nodeId, int level) async => false;
+  Future<bool> setLevel(int nodeId, int level, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> stepLevel(int nodeId, {required bool stepUp}) async => false;
+  Future<bool> stepLevel(int nodeId, {required bool stepUp, int endpoint = 1}) async => false;
 
   @override
-  Future<bool> coveringUp(int nodeId) async => false;
+  Future<bool> coveringUp(int nodeId, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> coveringDown(int nodeId) async => false;
+  Future<bool> coveringDown(int nodeId, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> coveringStop(int nodeId) async => false;
+  Future<bool> coveringStop(int nodeId, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> coveringGoToLift(int nodeId, int percent100ths) async => false;
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> setFanMode(int nodeId, int mode) async => false;
+  Future<bool> setFanMode(int nodeId, int mode, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> setFanPercent(int nodeId, int percent) async => false;
+  Future<bool> setFanPercent(int nodeId, int percent, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> setColorTemperature(int nodeId, int mireds) async => false;
+  Future<bool> setColorTemperature(int nodeId, int mireds, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) async => false;
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees, {int endpoint = 1}) async => false;
 
   @override
-  Future<bool> writeSystemMode(int nodeId, int mode) async => false;
+  Future<bool> writeSystemMode(int nodeId, int mode, {int endpoint = 1}) async => false;
 
   @override
-  Future<void> identify(int nodeId, {int seconds = 15}) async {}
+  Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1}) async {}
 
   @override
-  Future<bool> lockDoor(int nodeId, {String? pin}) async => false;
+  Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1}) async => false;
 
   @override
-  Future<bool> unlockDoor(int nodeId, {String? pin}) async => false;
+  Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) async => false;
 
   @override
   Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) async => false;

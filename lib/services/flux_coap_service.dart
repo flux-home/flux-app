@@ -719,12 +719,12 @@ class FluxCoapService implements MatterPort {
   static const _clLevel = 0x0008;
 
   @override
-  Future<bool> toggleDevice(int nodeId, {required bool on}) =>
-      _sendCmd(nodeId, _clOnOff, on ? 1 : 0, []);
+  Future<bool> toggleDevice(int nodeId, {required bool on, int endpoint = 1}) =>
+      _sendCmd(nodeId, _clOnOff, on ? 1 : 0, [], endpoint: endpoint);
 
   @override
-  Future<bool> setLevel(int nodeId, int level) =>
-      _sendCmd(nodeId, _clLevel, 4, [
+  Future<bool> setLevel(int nodeId, int level, {int endpoint = 1}) =>
+      _sendCmd(nodeId, _clLevel, 4, endpoint: endpoint, [
         _arg('level',          uintVal: level),
         _arg('transitionTime', uintVal: 0),
         _arg('optionsMask',    uintVal: 0),
@@ -732,8 +732,8 @@ class FluxCoapService implements MatterPort {
       ]);
 
   @override
-  Future<bool> stepLevel(int nodeId, {required bool stepUp}) =>
-      _sendCmd(nodeId, _clLevel, 6, [
+  Future<bool> stepLevel(int nodeId, {required bool stepUp, int endpoint = 1}) =>
+      _sendCmd(nodeId, _clLevel, 6, endpoint: endpoint, [
         _arg('stepMode',       uintVal: stepUp ? 0 : 1),
         _arg('stepSize',       uintVal: 25),
         _arg('transitionTime', uintVal: 2),
@@ -745,20 +745,24 @@ class FluxCoapService implements MatterPort {
 
   static const _clCovering = 0x0102;
 
-  @override Future<bool> coveringUp(int n)   => _sendCmd(n, _clCovering, 0, []);
-  @override Future<bool> coveringDown(int n) => _sendCmd(n, _clCovering, 1, []);
-  @override Future<bool> coveringStop(int n) => _sendCmd(n, _clCovering, 2, []);
+  @override Future<bool> coveringUp(int n, {int endpoint = 1})
+      => _sendCmd(n, _clCovering, 0, [], endpoint: endpoint);
+  @override Future<bool> coveringDown(int n, {int endpoint = 1})
+      => _sendCmd(n, _clCovering, 1, [], endpoint: endpoint);
+  @override Future<bool> coveringStop(int n, {int endpoint = 1})
+      => _sendCmd(n, _clCovering, 2, [], endpoint: endpoint);
   @override
-  Future<bool> coveringGoToLift(int nodeId, int percent100ths) =>
-      _sendCmd(nodeId, _clCovering, 5, [_arg('liftPercent100thsValue', uintVal: percent100ths)]);
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths, {int endpoint = 1}) =>
+      _sendCmd(nodeId, _clCovering, 5,
+          [_arg('liftPercent100thsValue', uintVal: percent100ths)], endpoint: endpoint);
 
   // ── Color Control ──────────────────────────────────────────────────────────
 
   static const _clColor = 0x0300;
 
   @override
-  Future<bool> setColorTemperature(int nodeId, int mireds) =>
-      _sendCmd(nodeId, _clColor, 0x0A, [
+  Future<bool> setColorTemperature(int nodeId, int mireds, {int endpoint = 1}) =>
+      _sendCmd(nodeId, _clColor, 0x0A, endpoint: endpoint, [
         _arg('colorTemperatureMireds', uintVal: mireds),
         _arg('transitionTime',         uintVal: 0),
         _arg('optionsMask',            uintVal: 0),
@@ -770,27 +774,29 @@ class FluxCoapService implements MatterPort {
   static const _clLock = 0x0101;
 
   @override
-  Future<bool> lockDoor(int nodeId, {String? pin}) =>
+  Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1}) =>
       _sendCmd(nodeId, _clLock, 0,
-          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : []);
+          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : [],
+          endpoint: endpoint);
 
   @override
-  Future<bool> unlockDoor(int nodeId, {String? pin}) =>
+  Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) =>
       _sendCmd(nodeId, _clLock, 1,
-          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : []);
+          pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : [],
+          endpoint: endpoint);
 
   // ── Identify ───────────────────────────────────────────────────────────────
 
   static const _clIdentify = 0x0003;
 
   @override
-  Future<void> identify(int nodeId, {int seconds = 15}) async {
+  Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1}) async {
     try {
-      // Identify lives on the application endpoint (1), not the root endpoint
-      // (0) — endpoint 0 returns UNSUPPORTED_CLUSTER (0xC3). Matches every other
-      // cluster command, which all target endpoint 1.
+      // Identify lives on an application endpoint, never the root endpoint (0),
+      // which returns UNSUPPORTED_CLUSTER (0xC3). The default of 1 is the
+      // primary application endpoint; a bridged device passes its own.
       await _sendCmd(nodeId, _clIdentify, 0,
-          [_arg('identifyTime', uintVal: seconds)]);
+          [_arg('identifyTime', uintVal: seconds)], endpoint: endpoint);
     } on Exception catch (_) {}
   }
 
@@ -821,21 +827,31 @@ class FluxCoapService implements MatterPort {
   static const int _clThermostat = 0x0201;
   static const int _clFan        = 0x0202;
 
-  @override
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) =>
-      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x0012, intVal: centidegrees);
+  /// Map a command endpoint onto the write path's encoding. 1 keeps the
+  /// existing 0xFFFF "auto" sentinel, so non-bridged devices behave exactly as
+  /// before; anything else is a bridged device that must be addressed
+  /// explicitly.
+  static int _writeEp(int endpoint) => endpoint == 1 ? 0xFFFF : endpoint;
 
   @override
-  Future<bool> writeSystemMode(int nodeId, int mode) =>
-      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x001C, intVal: mode);
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees, {int endpoint = 1}) =>
+      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x0012,
+          intVal: centidegrees, endpointId: _writeEp(endpoint));
 
   @override
-  Future<bool> setFanMode(int nodeId, int mode) =>
-      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0000, intVal: mode);
+  Future<bool> writeSystemMode(int nodeId, int mode, {int endpoint = 1}) =>
+      _writeAttr(nodeId, clusterId: _clThermostat, attrId: 0x001C,
+          intVal: mode, endpointId: _writeEp(endpoint));
 
   @override
-  Future<bool> setFanPercent(int nodeId, int percent) =>
-      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0002, intVal: percent);
+  Future<bool> setFanMode(int nodeId, int mode, {int endpoint = 1}) =>
+      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0000,
+          intVal: mode, endpointId: _writeEp(endpoint));
+
+  @override
+  Future<bool> setFanPercent(int nodeId, int percent, {int endpoint = 1}) =>
+      _writeAttr(nodeId, clusterId: _clFan, attrId: 0x0002,
+          intVal: percent, endpointId: _writeEp(endpoint));
 
   // ── Reads — POST /read ─────────────────────────────────────────────────────
   //

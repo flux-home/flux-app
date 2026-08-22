@@ -150,44 +150,44 @@ class MatterChannel implements MatterPort {
   // ── Device control ─────────────────────────────────────────────────────────
 
   @override
-  Future<bool> toggleDevice(int nodeId, {required bool on}) =>
+  Future<bool> toggleDevice(int nodeId, {required bool on, int endpoint = 1}) =>
       _invoke('toggleDevice', false, args: {'nodeId': nodeId, 'on': on});
 
   @override
-  Future<bool> setLevel(int nodeId, int level) => _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
+  Future<bool> setLevel(int nodeId, int level, {int endpoint = 1}) => _invoke('setLevel', false, args: {'nodeId': nodeId, 'level': level});
 
   @override
-  Future<bool> stepLevel(int nodeId, {required bool stepUp}) =>
+  Future<bool> stepLevel(int nodeId, {required bool stepUp, int endpoint = 1}) =>
       _invoke('stepLevel', false, args: {'nodeId': nodeId, 'stepUp': stepUp});
 
   // ── Window Covering ────────────────────────────────────────────────────────
 
   @override
-  Future<bool> coveringUp(int nodeId) => _invoke('coveringUp', false, args: {'nodeId': nodeId});
+  Future<bool> coveringUp(int nodeId, {int endpoint = 1}) => _invoke('coveringUp', false, args: {'nodeId': nodeId});
 
   @override
-  Future<bool> coveringDown(int nodeId) => _invoke('coveringDown', false, args: {'nodeId': nodeId});
+  Future<bool> coveringDown(int nodeId, {int endpoint = 1}) => _invoke('coveringDown', false, args: {'nodeId': nodeId});
 
   @override
-  Future<bool> coveringStop(int nodeId) => _invoke('coveringStop', false, args: {'nodeId': nodeId});
+  Future<bool> coveringStop(int nodeId, {int endpoint = 1}) => _invoke('coveringStop', false, args: {'nodeId': nodeId});
 
   @override
-  Future<bool> coveringGoToLift(int nodeId, int percent100ths) =>
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths, {int endpoint = 1}) =>
       _invoke('coveringGoToLift', false, args: {'nodeId': nodeId, 'percent100ths': percent100ths});
 
   // ── Fan Control ────────────────────────────────────────────────────────────
 
   @override
-  Future<bool> setFanMode(int nodeId, int mode) => _invoke('setFanMode', false, args: {'nodeId': nodeId, 'mode': mode});
+  Future<bool> setFanMode(int nodeId, int mode, {int endpoint = 1}) => _invoke('setFanMode', false, args: {'nodeId': nodeId, 'mode': mode});
 
   @override
-  Future<bool> setFanPercent(int nodeId, int percent) =>
+  Future<bool> setFanPercent(int nodeId, int percent, {int endpoint = 1}) =>
       _invoke('setFanPercent', false, args: {'nodeId': nodeId, 'percent': percent});
 
   // ── Color Control ──────────────────────────────────────────────────────────
 
   @override
-  Future<bool> setColorTemperature(int nodeId, int mireds) =>
+  Future<bool> setColorTemperature(int nodeId, int mireds, {int endpoint = 1}) =>
       _invoke('setColorTemperature', false, args: {'nodeId': nodeId, 'mireds': mireds});
 
   // ── Basic information ──────────────────────────────────────────────────────
@@ -292,11 +292,11 @@ class MatterChannel implements MatterPort {
   );
 
   @override
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) =>
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees, {int endpoint = 1}) =>
       _invoke('writeHeatingSetpoint', false, args: {'nodeId': nodeId, 'centidegrees': centidegrees});
 
   @override
-  Future<bool> writeSystemMode(int nodeId, int mode) =>
+  Future<bool> writeSystemMode(int nodeId, int mode, {int endpoint = 1}) =>
       _invoke('writeSystemMode', false, args: {'nodeId': nodeId, 'mode': mode});
 
   // ── Sensors / Battery / Humidity ───────────────────────────────────────────
@@ -313,15 +313,15 @@ class MatterChannel implements MatterPort {
   Future<int?> readDeviceTypeId(int nodeId) => _invoke<int?>('readDeviceType', null, args: {'nodeId': nodeId});
 
   @override
-  Future<void> identify(int nodeId, {int seconds = 15}) =>
+  Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1}) =>
       _invoke('identify', null, args: {'nodeId': nodeId, 'seconds': seconds});
 
   @override
-  Future<bool> lockDoor(int nodeId, {String? pin}) =>
+  Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1}) =>
       _invoke('lockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
 
   @override
-  Future<bool> unlockDoor(int nodeId, {String? pin}) =>
+  Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) =>
       _invoke('unlockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
 
   Future<DeviceStateResult> readDeviceState(int nodeId) => _invoke(

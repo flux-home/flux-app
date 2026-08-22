@@ -1386,7 +1386,8 @@ class DeviceProvider extends ChangeNotifier {
 
     // Optimistic update — immediate UI feedback before the round-trip.
     _mergeLiveCache(deviceId, (e) => e.merge({'onOff': newOn}));
-    final ok = await _channel.toggleDevice(device.nodeId, on: newOn);
+    final ok = await _channel.toggleDevice(device.nodeId,
+        on: newOn, endpoint: device.commandEndpoint);
     if (ok) {
       await _flushSnapshot(deviceId);
     } else {
@@ -1401,7 +1402,8 @@ class DeviceProvider extends ChangeNotifier {
     final level = (value * 254).round().clamp(0, 254);
     // Update live cache immediately for responsive slider feedback.
     _mergeLiveCache(deviceId, (e) => e.merge({'level': level}));
-    await _channel.setLevel(_devices[idx].nodeId, level);
+    await _channel.setLevel(_devices[idx].nodeId, level,
+        endpoint: _devices[idx].commandEndpoint);
     await _flushSnapshot(deviceId);
   }
 
@@ -1414,67 +1416,77 @@ class DeviceProvider extends ChangeNotifier {
     final hasBrightness = _devices[idx].deviceType.hasBrightness ||
         (_liveCache[deviceId]?.attrs.containsKey('level') ?? false);
     if (!hasBrightness) return;
-    await _channel.stepLevel(_devices[idx].nodeId, stepUp: up);
+    await _channel.stepLevel(_devices[idx].nodeId,
+        stepUp: up, endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> coveringUp(String deviceId) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
-    await _channel.coveringUp(_devices[idx].nodeId);
+    await _channel.coveringUp(_devices[idx].nodeId,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> coveringDown(String deviceId) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
-    await _channel.coveringDown(_devices[idx].nodeId);
+    await _channel.coveringDown(_devices[idx].nodeId,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> coveringStop(String deviceId) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
-    await _channel.coveringStop(_devices[idx].nodeId);
+    await _channel.coveringStop(_devices[idx].nodeId,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> coveringGoToLift(String deviceId, int percent100ths) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'liftPercent100ths': percent100ths}));
-    await _channel.coveringGoToLift(_devices[idx].nodeId, percent100ths);
+    await _channel.coveringGoToLift(_devices[idx].nodeId, percent100ths,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> setFanMode(String deviceId, int mode) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'fanMode': mode}));
-    await _channel.setFanMode(_devices[idx].nodeId, mode);
+    await _channel.setFanMode(_devices[idx].nodeId, mode,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> setFanPercent(String deviceId, int percent) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'fanPercent': percent}));
-    await _channel.setFanPercent(_devices[idx].nodeId, percent);
+    await _channel.setFanPercent(_devices[idx].nodeId, percent,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   Future<void> setColorTemperature(String deviceId, int mireds) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return;
     _mergeLiveCache(deviceId, (e) => e.merge({'colorTempMireds': mireds}));
-    await _channel.setColorTemperature(_devices[idx].nodeId, mireds);
+    await _channel.setColorTemperature(_devices[idx].nodeId, mireds,
+        endpoint: _devices[idx].commandEndpoint);
   }
 
   /// Sends LockDoor command. Returns true on success, false on failure.
   Future<bool> lockDoor(String deviceId, {String? pin}) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return false;
-    return _channel.lockDoor(_devices[idx].nodeId, pin: pin);
+    return _channel.lockDoor(_devices[idx].nodeId,
+        pin: pin, endpoint: _devices[idx].commandEndpoint);
   }
 
   /// Sends UnlockDoor command. Returns true on success, false on failure.
   Future<bool> unlockDoor(String deviceId, {String? pin}) async {
     final idx = _indexById(deviceId);
     if (idx == -1) return false;
-    return _channel.unlockDoor(_devices[idx].nodeId, pin: pin);
+    return _channel.unlockDoor(_devices[idx].nodeId,
+        pin: pin, endpoint: _devices[idx].commandEndpoint);
   }
 
   // ── Refresh (on-demand one-shot read) ─────────────────────────────────────
@@ -1749,7 +1761,8 @@ class DeviceProvider extends ChangeNotifier {
           final cur = _liveCache[deviceId]?.systemMode ?? 0;
           final next = cur == 0 ? 4 : 0;
           _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': next}));
-          await _channel.writeSystemMode(device.nodeId, next);
+          await _channel.writeSystemMode(device.nodeId, next,
+              endpoint: device.commandEndpoint);
         } else {
           await toggle(deviceId);
         }
@@ -1761,7 +1774,8 @@ class DeviceProvider extends ChangeNotifier {
         await _channel.toggleDevice(device.nodeId, on: false);
       case AutomationAction.thermostatOff:
         _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': 0}));
-        await _channel.writeSystemMode(device.nodeId, 0);
+        await _channel.writeSystemMode(device.nodeId, 0,
+            endpoint: device.commandEndpoint);
       case AutomationAction.brightnessStepUp:
         await stepBrightness(deviceId, up: true);
       case AutomationAction.brightnessStepDown:
@@ -1779,13 +1793,15 @@ class DeviceProvider extends ChangeNotifier {
     final currentMode = _liveCache[deviceId]?.systemMode;
     if (currentMode == null || currentMode == 0) {
       _mergeLiveCache(deviceId, (e) => e.merge({'systemMode': 4}));
-      await _channel.writeSystemMode(device.nodeId, 4);
+      await _channel.writeSystemMode(device.nodeId, 4,
+          endpoint: device.commandEndpoint);
     }
     const defaultCenti = 2000;
     final current = _liveCache[deviceId]?.heatingSetptCenti ?? defaultCenti;
     final next = (current + (deltaCelsius * 100).round()).clamp(500, 3500);
     _mergeLiveCache(deviceId, (e) => e.merge({'heatingSetptCenti': next}));
-    await _channel.writeHeatingSetpoint(device.nodeId, next);
+    await _channel.writeHeatingSetpoint(device.nodeId, next,
+        endpoint: device.commandEndpoint);
   }
 
   // ── Connection API ─────────────────────────────────────────────────────────

@@ -81,26 +81,26 @@ class FakeMatterPort implements MatterPort {
   Future<int?> readDeviceTypeId(int nodeId) async => readDeviceTypeIdResult;
 
   @override
-  Future<bool> toggleDevice(int nodeId, {required bool on}) async {
+  Future<bool> toggleDevice(int nodeId, {required bool on, int endpoint = 1}) async {
     toggleCalls.add((nodeId: nodeId, on: on));
     if (toggleOverride != null) return toggleOverride!(nodeId, on: on);
     return defaultCommandResult;
   }
 
   @override
-  Future<bool> setLevel(int nodeId, int level) async {
+  Future<bool> setLevel(int nodeId, int level, {int endpoint = 1}) async {
     setLevelCalls.add((nodeId: nodeId, level: level));
     return defaultCommandResult;
   }
 
   @override
-  Future<bool> writeSystemMode(int nodeId, int mode) async {
+  Future<bool> writeSystemMode(int nodeId, int mode, {int endpoint = 1}) async {
     writeSystemModeCalls.add((nodeId: nodeId, mode: mode));
     return defaultCommandResult;
   }
 
   @override
-  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees) async {
+  Future<bool> writeHeatingSetpoint(int nodeId, int centidegrees, {int endpoint = 1}) async {
     writeHeatingSetpointCalls.add((nodeId: nodeId, centi: centidegrees));
     return defaultCommandResult;
   }
@@ -164,40 +164,40 @@ class FakeMatterPort implements MatterPort {
   Future<String?> readClusters(int nodeId, {bool full = false}) async => null;
 
   @override
-  Future<bool> stepLevel(int nodeId, {required bool stepUp}) async =>
+  Future<bool> stepLevel(int nodeId, {required bool stepUp, int endpoint = 1}) async =>
       defaultCommandResult;
 
   @override
-  Future<bool> coveringUp(int nodeId) async => defaultCommandResult;
+  Future<bool> coveringUp(int nodeId, {int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> coveringDown(int nodeId) async => defaultCommandResult;
+  Future<bool> coveringDown(int nodeId, {int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> coveringStop(int nodeId) async => defaultCommandResult;
+  Future<bool> coveringStop(int nodeId, {int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> coveringGoToLift(int nodeId, int percent100ths) async =>
+  Future<bool> coveringGoToLift(int nodeId, int percent100ths, {int endpoint = 1}) async =>
       defaultCommandResult;
 
   @override
-  Future<bool> setFanMode(int nodeId, int mode) async => defaultCommandResult;
+  Future<bool> setFanMode(int nodeId, int mode, {int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> setFanPercent(int nodeId, int percent) async => defaultCommandResult;
+  Future<bool> setFanPercent(int nodeId, int percent, {int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> setColorTemperature(int nodeId, int mireds) async =>
+  Future<bool> setColorTemperature(int nodeId, int mireds, {int endpoint = 1}) async =>
       defaultCommandResult;
 
   @override
-  Future<bool> lockDoor(int nodeId, {String? pin}) async => defaultCommandResult;
+  Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<bool> unlockDoor(int nodeId, {String? pin}) async => defaultCommandResult;
+  Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) async => defaultCommandResult;
 
   @override
-  Future<void> identify(int nodeId, {int seconds = 15}) async {}
+  Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1}) async {}
 }
 
 /// Builds a [DeviceProvider] backed by [FakeMatterPort] and an in-memory store.
