@@ -1,0 +1,1 @@
+please show only rooms on the screens if they contain devices
