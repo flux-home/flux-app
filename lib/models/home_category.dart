@@ -30,6 +30,16 @@ enum HomeCategory {
         HomeCategory.climate  => const Color(0xFF8FCDEF), // pastel blue
       };
 
+  /// Whether this category's devices are listed room by room, with the room's
+  /// shared controls above each set.
+  ///
+  /// Lighting only, for now. It is the category where "everything in here" is a
+  /// thing people actually want to act on, and where the devices have controls
+  /// that mean the same thing across a room. Energy is a dashboard, not a set of
+  /// controls; Climate wants a room setpoint rather than a room slider, and gets
+  /// this once it has one.
+  bool get groupsByRoom => this == HomeCategory.lighting;
+
   /// Whether [v] belongs in this category's device grid.
   bool matches(DeviceView v) => switch (this) {
         HomeCategory.energy => v.energyRole != EnergyRole.none ||
