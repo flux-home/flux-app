@@ -1219,11 +1219,15 @@ class DeviceProvider extends ChangeNotifier {
       }
     }
 
-    // Update persisted isOnline flag only on transition false → true
-    // (avoids a disk write on every subscription event).
+    // Update the persisted isOnline flag only on a transition (avoids a disk
+    // write on every subscription event). An update proves the NODE is talking,
+    // but a device bridged behind it (Hue bulb switched off at the wall) stays
+    // reachable-by-session while its bridge reports `reachable: false` — so the
+    // cached `reachable` attribute, when the controller sent one, wins.
+    final online = _liveCache[device.id]?.attrs['reachable'] as bool? ?? true;
     final idx = _indexById(device.id);
-    if (idx != -1 && !_devices[idx].isOnline) {
-      _devices[idx] = _devices[idx].copyWith(isOnline: true);
+    if (idx != -1 && _devices[idx].isOnline != online) {
+      _devices[idx] = _devices[idx].copyWith(isOnline: online);
       unawaited(_persist());
     }
     notifyListeners();
