@@ -71,6 +71,15 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Timeline series the user has switched off; everything else is drawn, so a
   /// series added by a later version arrives visible rather than hidden.
+  /// Usable battery capacity in kWh, or null when unset. Turns a charge level
+  /// from a percentage into an amount of energy, which is the only form in which
+  /// it can be compared with what the house is using.
+  double? get batteryCapacityKwh => _store.loadBatteryCapacityKwh();
+  Future<void> setBatteryCapacityKwh(double? kwh) async {
+    await _store.saveBatteryCapacityKwh(kwh);
+    notifyListeners();
+  }
+
   List<String> get chartHidden => _store.loadChartHidden();
   Future<void> setChartHidden(List<String> keys) async {
     await _store.saveChartHidden(keys);
@@ -220,8 +229,36 @@ class DeviceProvider extends ChangeNotifier {
   /// closes that seam.
   int _historyOffsetDays = 0;
 
-  /// How many days back the Energy view is looking. 0 = the last 24 hours.
+  /// Which day the Energy view is showing, as an offset in days: 0 = today,
+  /// positive = days back, **negative = days ahead**.
+  ///
+  /// Days ahead hold no measurement at all — only the price curve and the PV
+  /// forecast — and that is the point: prediction and measurement are different
+  /// claims, and putting them on the same axis was what forced the forecast to be
+  /// squeezed into whatever width the measured day left over.
   int get historyOffsetDays => _historyOffsetDays;
+
+  /// True when the day on screen has not happened yet.
+  bool get isFutureDay => _historyOffsetDays < 0;
+
+  /// How many days ahead can be paged to — however far the price curve and the
+  /// forecast actually reach, and no further. There is nothing to show on a page
+  /// beyond coverage, so there should be no page.
+  int get maxAheadDays {
+    final today = DateTime.now();
+    final midnight = DateTime(today.year, today.month, today.day);
+    var end = midnight;
+    final p = _energyPrices;
+    if (p != null && p.points.isNotEmpty) {
+      final last = p.points.last.time.add(p.resolution);
+      if (last.isAfter(end)) end = last;
+    }
+    final f = _solarForecast;
+    if (f != null && !f.isEmpty && f.end.isAfter(end)) end = f.end;
+    // Whole days only: a page covering three remaining hours of coverage is a
+    // page that is mostly blank.
+    return end.difference(midnight).inDays.clamp(0, 7);
+  }
 
   /// Moves the window and shows whatever the cache already holds for it before
   /// asking the controller for the rest.
@@ -230,18 +267,65 @@ class DeviceProvider extends ChangeNotifier {
   /// than one day: stepping back a day is instant for any day already visited,
   /// and costs one request for a day that is not.
   Future<void> setHistoryOffsetDays(int days) async {
-    final next = days < 0 ? 0 : days;
+    final next = days < -maxAheadDays ? -maxAheadDays : days;
     if (next == _historyOffsetDays) return;
     _historyOffsetDays = next;
+    // Blank first. Leaving the previous day's bars up while the new day loads
+    // showed yesterday's measurements under today's date — and on a day ahead,
+    // which has no measurements at all, they would simply have stayed there.
+    _energyHistory = null;
     notifyListeners();
+    if (next < 0) return;   // nothing measured yet; price + forecast carry it
     await loadCachedHistory();
     await fetchEnergyHistory();
   }
 
-  /// The window currently being shown, as (from, to).
+  /// The newest bucket end the controller has actually reported, or null before
+  /// the first successful fetch.
+  ///
+  /// Bucket times are stamped by the CONTROLLER; the window that selects them was
+  /// stamped by the PHONE. The two clocks differ — the controller is SNTP-synced
+  /// and the phone drifts — and the mismatch is not cosmetic: a bucket stamped
+  /// after the phone's `now` falls outside the window, so the newest hour is
+  /// dropped from the chart while sitting in the cache, and `newestEnd` then
+  /// anchors the tail fetch ahead of its own end time. Using the later of the two
+  /// clocks as the window end puts both on the controller's basis, which is the
+  /// one every timestamp in this view already uses.
+  DateTime? _controllerEnd;
+
+  /// The end of the live window: the later of the phone's clock and the newest
+  /// thing the controller has reported.
+  DateTime get _liveEnd {
+    final now = DateTime.now();
+    final c = _controllerEnd;
+    if (c == null || c.isBefore(now)) return now;
+    // A controller clock that is wildly ahead is a fault, not a skew; trusting it
+    // would push the window past anything that can ever be filled.
+    return c.difference(now) > EnergyCache.clockSkew ? now : c;
+  }
+
+  /// The calendar day currently on screen, local midnight to midnight.
+  ///
+  /// A calendar day rather than a rolling 24 hours, which is what a page IS: days
+  /// are then comparable with each other (the same hour sits at the same place on
+  /// every page), "yesterday" means yesterday rather than "25 to 49 hours ago",
+  /// and the axis no longer moves under the chart between frames.
+  ///
+  /// Day arithmetic goes through the DateTime constructor rather than
+  /// `subtract(Duration(days: n))` so the 23- and 25-hour days at a DST boundary
+  /// stay whole days.
+  (DateTime, DateTime) get historyDay {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day - _historyOffsetDays);
+    return (start, DateTime(start.year, start.month, start.day + 1));
+  }
+
+  /// The window to ask the controller for: the day on screen, never reaching past
+  /// the newest moment that can exist.
   (DateTime, DateTime) get historyWindow {
-    final to = DateTime.now().subtract(Duration(days: _historyOffsetDays));
-    return (to.subtract(_window), to);
+    final (start, end) = historyDay;
+    final cap = _liveEnd;
+    return (start, end.isAfter(cap) ? cap : end);
   }
 
   Future<void> loadCachedHistory() async {
@@ -269,6 +353,63 @@ class DeviceProvider extends ChangeNotifier {
         }())
           r,
     ];
+  }
+
+  /// The price curve to draw under the window currently on screen.
+  ///
+  /// The live curve when it actually covers that window, the archive otherwise —
+  /// which is what puts prices on a past day at all. Null when neither has
+  /// anything for it (prices disabled, or a day older than the archive).
+  EnergyPrices? get historyPrices {
+    final live = _energyPrices;
+    final h = _energyHistory;
+    // The live curve covers today and tomorrow, so it serves every page that is
+    // not in the past — sliced to that day by the chart's own axis.
+    if (_historyOffsetDays <= 0 && live != null && !live.isEmpty) return live;
+    if (h == null || h.points.isEmpty || !h.hasArchivedPrice) return null;
+    return EnergyPrices.fromArchive(
+      [for (final p in h.points) p.time],
+      h.spotUeur,
+      resolution: h.bucket,
+      markupUeurPerKwh: _pricingConfig?.markupUeurPerKwh ?? 0,
+      vatPercent: _pricingConfig?.vatPercent ?? 0,
+    );
+  }
+
+  /// The net spot price in force during the bucket starting at [t], in µEUR/kWh,
+  /// or null when the live curve does not cover it.
+  ///
+  /// Read while the bucket is being written to the cache, because this is the
+  /// only moment the value exists: the controller holds one curve covering today
+  /// and tomorrow and overwrites it on each fetch, so nothing anywhere remembers
+  /// what yesterday cost.
+  int? _archivedSpotAt(DateTime t) {
+    final p = _energyPrices;
+    if (p == null || p.isEmpty) return null;
+    return p.currentAt(t)?.spotUeur;
+  }
+
+  /// What the PV forecast predicted for the bucket starting at [t], in Wh.
+  ///
+  /// Captured rather than re-read later: the controller revises the forecast as
+  /// the sky changes, so a value fetched tomorrow is no longer the prediction
+  /// that was made — and comparing production against a revised forecast would
+  /// score the forecast against itself.
+  int? _archivedForecastAt(DateTime t) {
+    final f = _solarForecast;
+    if (f == null || f.isEmpty) return null;
+    if (t.isBefore(f.start) || !t.isBefore(f.end)) return null;
+    final i = t.difference(f.start).inSeconds ~/ f.resolution.inSeconds;
+    if (i < 0 || i >= f.wattHours.length) return null;
+    // A forecast interval finer or coarser than the history bucket is scaled to
+    // the bucket, so the archived number is per bucket like everything beside it.
+    final ratio = _bucket.inSeconds / f.resolution.inSeconds;
+    if (ratio <= 1) return (f.wattHours[i] * ratio).round();
+    var sum = 0;
+    for (var k = 0; k < ratio.round() && i + k < f.wattHours.length; k++) {
+      sum += f.wattHours[i + k];
+    }
+    return sum;
   }
 
   /// Windows already fetched this session, by window-start epoch.
@@ -312,7 +453,12 @@ class DeviceProvider extends ChangeNotifier {
         if (newestEnd != null) {
           final tailFrom =
               newestEnd.subtract(_bucket).millisecondsSinceEpoch ~/ 1000;
-          if (tailFrom > from) from = tailFrom;
+          // Never past the window's own end. Without this clamp a bucket stamped
+          // ahead of the phone's clock makes `from` exceed `to`, the controller
+          // is asked for an inverted range, and the tail stops advancing for
+          // good — the row is on disk, so a restart does not clear it.
+          final latest = to - _bucket.inSeconds;
+          if (tailFrom > from) from = tailFrom < latest ? tailFrom : latest;
         }
       } else {
         // A past day is fixed history: nothing to ask for once the cache has it,
@@ -344,6 +490,12 @@ class DeviceProvider extends ChangeNotifier {
       if (h == null) return;
 
       final fresh = EnergyHistoryData.fromProto(h);
+      // The newest bucket the controller reports is the best reading we get of
+      // its clock: fromProto has already dropped the in-progress bucket, so this
+      // is at most one bucket behind the controller's own now.
+      if (fresh.points.isNotEmpty) {
+        _controllerEnd = fresh.points.last.time.add(fresh.bucket);
+      }
       if (cache == null) {
         _energyHistory = fresh;
         return;
@@ -351,7 +503,10 @@ class DeviceProvider extends ChangeNotifier {
       // Merge, then rebuild the window from the merged set rather than from the
       // response: a tail fetch holds only the newest hour or two, and showing it
       // alone would blank the chart every 30 seconds.
-      final merged = await cache.merge(fresh.toRows());
+      final merged = await cache.merge(fresh.toRows(
+        spotAt: _archivedSpotAt,
+        forecastAt: _archivedForecastAt,
+      ));
       // The window may have moved while this was in flight. The rows are still
       // worth keeping — they are cached above — but they must not be painted as
       // if they belonged to the day now on screen.
@@ -370,6 +525,81 @@ class DeviceProvider extends ChangeNotifier {
     });
     return _energyHistoryInflight!;
   }
+
+  // ── This month, in whole days ───────────────────────────────────────────────
+
+  /// Hours actually present for each day of [monthHistory], index-aligned to its
+  /// points. A day the phone slept through has fewer than 24 and is drawn as a
+  /// gap rather than as a quiet day.
+  List<int> _monthHours = const [];
+  List<int> get monthHoursPerDay => _monthHours;
+
+  EnergyHistoryData? _monthHistory;
+
+  /// The month so far, one bucket per day, summed from the bucket cache.
+  ///
+  /// Built on the phone rather than asked of the controller, for a measured
+  /// reason: `/energy/history` over 19 days with day buckets returns nothing —
+  /// the bucket cap is 1024, so the range is well within limits, but aggregating
+  /// it means reading nineteen days of per-sample CSV off the SD card and the
+  /// request does not come back inside its 30 s budget. The controller needs a
+  /// daily rollup written once a day for that query to be cheap; until it has
+  /// one, the phone already holds six weeks of completed hours and can add them
+  /// up for nothing.
+  ///
+  /// The trade is honest and visible: days before this app was installed, or days
+  /// it slept through, are incomplete, and [monthHoursPerDay] says which so the
+  /// card can draw them as gaps instead of quiet days.
+  EnergyHistoryData? get monthHistory => _monthHistory;
+  bool get monthHistoryLoading => false;
+
+  /// Groups the cached hours into LOCAL days.
+  ///
+  /// Local rather than UTC deliberately: the controller aligns a 24-hour bucket
+  /// down to a multiple of its width, which is a UTC day — 02:00 to 02:00 here —
+  /// and a "day" that starts at two in the morning is not the day anybody means.
+  void rebuildMonth() {
+    final cache = _energyCache;
+    if (cache == null) return;
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month);
+
+    final byDay = <DateTime, List<EnergyBucketRow>>{};
+    for (final r in cache.load().values) {
+      final t = DateTime.fromMillisecondsSinceEpoch(r.epoch * 1000, isUtc: true)
+          .toLocal();
+      if (t.isBefore(monthStart)) continue;
+      byDay.putIfAbsent(DateTime(t.year, t.month, t.day), () => []).add(r);
+    }
+    if (byDay.isEmpty) return;
+
+    final days = byDay.keys.toList()..sort();
+    final rows = <EnergyBucketRow>[];
+    final hours = <int>[];
+    for (final d in days) {
+      final rs = byDay[d]!;
+      var pv = 0, imp = 0, exp = 0, load = 0, chg = 0, dis = 0;
+      int? soc;
+      for (final r in rs) {
+        pv += r.pvWh; imp += r.importWh; exp += r.exportWh;
+        load += r.loadWh; chg += r.chargeWh; dis += r.dischargeWh;
+        if (r.socPct != null) soc = r.socPct;   // the level at the day's end
+      }
+      rows.add(EnergyBucketRow(
+        epoch: d.toUtc().millisecondsSinceEpoch ~/ 1000,
+        pvWh: pv, importWh: imp, exportWh: exp, loadWh: load,
+        chargeWh: chg, dischargeWh: dis, socPct: soc,
+      ));
+      hours.add(rs.length);
+    }
+    _monthHours = hours;
+    _monthHistory =
+        EnergyHistoryData.fromRows(rows, bucket: const Duration(days: 1));
+    notifyListeners();
+  }
+
+  /// Kept so the card can ask without knowing where the answer comes from.
+  Future<void> fetchMonthHistory() async => rebuildMonth();
 
   // ── Day-ahead energy prices ──────────────────────────────────────────────────
 

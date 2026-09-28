@@ -126,6 +126,8 @@ class EnergyHistoryData {
     this.batteryDischargeKwh = 0,
     this.pvSeries = const [],
     this.batterySoc = const [],
+    this.spotUeur = const [],
+    this.forecastWh = const [],
   });
 
   final List<EnergyHistoryPoint> points;
@@ -149,6 +151,23 @@ class EnergyHistoryData {
   /// Per-battery charge level over the window. Empty when the controller reported
   /// none (older firmware, or no battery).
   final List<BatterySocSeries> batterySoc;
+
+  /// The archived wholesale spot price (µEUR/kWh, NET) per bucket, index-aligned
+  /// to [points]; null where nothing was recorded. Empty when this window came
+  /// straight off the wire rather than out of the cache.
+  ///
+  /// This is what makes price visible on a day that has already passed: the
+  /// controller keeps one live curve covering today and tomorrow and overwrites
+  /// it on every fetch, so yesterday's prices exist nowhere else.
+  final List<int?> spotUeur;
+
+  /// The PV forecast for each bucket (Wh) as it stood while that bucket was live,
+  /// index-aligned to [points]. See [EnergyBucketRow.forecastWh] for why the
+  /// value is captured rather than re-read.
+  final List<int?> forecastWh;
+
+  bool get hasArchivedPrice => spotUeur.any((v) => v != null);
+  bool get hasArchivedForecast => forecastWh.any((v) => v != null);
 
   /// Charge level per bucket averaged across batteries, or null where no battery
   /// reported in that bucket. Most houses have one battery, in which case this is
@@ -251,10 +270,14 @@ class EnergyHistoryData {
     final points = <EnergyHistoryPoint>[];
     var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0, chgWh = 0, disWh = 0;
     final soc = <int?>[];
+    final spot = <int?>[];
+    final fcast = <int?>[];
     for (final r in sorted) {
       pvWh += r.pvWh; impWh += r.importWh; expWh += r.exportWh;
       loadWh += r.loadWh; chgWh += r.chargeWh; disWh += r.dischargeWh;
       soc.add(r.socPct);
+      spot.add(r.spotUeur);
+      fcast.add(r.forecastWh);
       points.add(EnergyHistoryPoint(
         time: DateTime.fromMillisecondsSinceEpoch(r.epoch * 1000, isUtc: true)
             .toLocal(),
@@ -278,6 +301,8 @@ class EnergyHistoryData {
       loadKwh: loadWh / 1000.0,
       batteryChargeKwh: chgWh / 1000.0,
       batteryDischargeKwh: disWh / 1000.0,
+      spotUeur: spot.any((v) => v != null) ? spot : const [],
+      forecastWh: fcast.any((v) => v != null) ? fcast : const [],
       batterySoc: soc.any((v) => v != null)
           ? [
               BatterySocSeries(
@@ -293,7 +318,15 @@ class EnergyHistoryData {
 
   /// The completed buckets of this window, for the cache. The in-progress bucket
   /// is already excluded by [fromProto], which is what makes caching safe.
-  List<EnergyBucketRow> toRows() {
+  ///
+  /// [spotAt] and [forecastAt] are read for each bucket as it is written, so the
+  /// price that was in force and the production that was predicted are stored
+  /// beside what actually happened. Both are optional: without them the columns
+  /// are simply empty, and a later pass can fill them.
+  List<EnergyBucketRow> toRows({
+    int? Function(DateTime)? spotAt,
+    int? Function(DateTime)? forecastAt,
+  }) {
     final perHour = bucket.inSeconds / 3600.0;
     int wh(double w) => (w * perHour).round();
     final soc = socPerBucket;
@@ -308,6 +341,10 @@ class EnergyHistoryData {
           chargeWh: wh(points[i].batteryChargeW),
           dischargeWh: wh(points[i].batteryDischargeW),
           socPct: i < soc.length && soc[i] != null ? soc[i]!.round() : null,
+          spotUeur: spotAt?.call(points[i].time) ??
+              (i < spotUeur.length ? spotUeur[i] : null),
+          forecastWh: forecastAt?.call(points[i].time) ??
+              (i < forecastWh.length ? forecastWh[i] : null),
         ),
     ];
   }

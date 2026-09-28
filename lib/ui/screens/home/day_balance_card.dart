@@ -7,6 +7,18 @@ const _avoidedColor  = Color(0xFFF6D08A); // solar amber — import you did not 
 const _exportedColor = Color(0xFFA9E0C0); // mint — what went to the grid
 const _paidColor     = Color(0xFFF2A9A0); // coral — what you had to buy
 
+/// Names the day the figures belong to. It said "over the last 24 hours" on every
+/// page, including pages that are neither the last 24 hours nor even today.
+String _windowLabel(int offset) {
+  switch (offset) {
+    case 0:  return 'today so far';
+    case 1:  return 'yesterday';
+    case -1: return 'expected tomorrow';
+  }
+  return offset < 0 ? 'expected, in $offset days'.replaceFirst('-', '')
+                    : '$offset days ago';
+}
+
 /// How the day came out, in money.
 ///
 /// One net figure, then the three amounts it is made of, each on its own labelled
@@ -75,7 +87,7 @@ class DayBalanceCard extends StatelessWidget {
                             letterSpacing: -0.8)),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('over the last 24 hours',
+                      child: Text(_windowLabel(provider.historyOffsetDays),
                           style: TextStyle(
                               fontSize: 12, color: cs.onSurfaceVariant)),
                     ),
