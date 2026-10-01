@@ -14,6 +14,7 @@ enum DeviceType {
   // ── Smart energy ──────────────────────────────────────────────────────────
   onOffPlugInUnit,
   electricalSensor,
+  batteryStorage,
   // ── HVAC ──────────────────────────────────────────────────────────────────
   thermostat,
   fan,
@@ -48,6 +49,7 @@ enum DeviceType {
         genericSwitch         => 'Switch',
         onOffPlugInUnit       => 'Smart Plug',
         electricalSensor      => 'Electrical Sensor',
+        batteryStorage        => 'Battery',
         thermostat            => 'Thermostat',
         fan                   => 'Fan',
         airPurifier           => 'Air Purifier',
@@ -67,7 +69,8 @@ enum DeviceType {
       };
 
   // ── Capability flags ───────────────────────────────────────────────────────
-  bool get hasEnergyMeasurement => this == electricalSensor || this == onOffPlugInUnit;
+  bool get hasEnergyMeasurement =>
+      this == electricalSensor || this == onOffPlugInUnit || this == batteryStorage;
 
   bool get hasOnOff => switch (this) {
         onOffLight ||
@@ -131,6 +134,7 @@ enum DeviceType {
         // Smart energy
         0x010A => onOffPlugInUnit,
         0x0510 => electricalSensor,
+        0x0018 => batteryStorage,
         // HVAC
         0x0301 => thermostat,
         0x002B => fan,
@@ -165,6 +169,7 @@ enum DeviceType {
         genericSwitch         => Icons.toggle_on_outlined,
         onOffPlugInUnit       => Icons.power_outlined,
         electricalSensor      => Icons.electric_meter_outlined,
+        batteryStorage        => Icons.battery_charging_full_outlined,
         thermostat            => Icons.thermostat,
         fan                   => Icons.wind_power_outlined,
         airPurifier           => Icons.air_outlined,
