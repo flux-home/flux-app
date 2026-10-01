@@ -1,3 +1,4 @@
+import 'package:matter_home/models/power_adjust.dart';
 import 'package:matter_home/models/persisted_snapshot.dart' show PersistedSnapshot;
 
 import 'package:matter_home/models/thermostat_models.dart';
@@ -151,6 +152,10 @@ class DeviceLiveData {
   // Wh getters are computed for backward-compat (gate checks, chart section).
   int? get cumulativeEnergyMwh         => attrs['cumulativeEnergyMwh']         as int?;
   int? get cumulativeEnergyExportedMwh => attrs['cumulativeEnergyExportedMwh'] as int?;
+
+  // Device Energy Management (0x0098) — battery power adjustment. Null unless
+  // the device offers the PowerAdjustment feature.
+  PowerAdjust? get powerAdjust => PowerAdjust.fromAttrs(attrs);
 
   // ── BasicInfo delegation (unchanged public API) ───────────────────────────
 

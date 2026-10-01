@@ -324,6 +324,22 @@ class MatterChannel implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) =>
       _invoke('unlockDoor', false, args: {'nodeId': nodeId, if (pin != null) 'pin': pin});
 
+  // The native Matter stack has no Device Energy Management client; battery
+  // control goes through the controller (FluxCoapService).
+  @override
+  Future<bool> powerAdjust(int nodeId, {
+    required int powerMw,
+    required Duration duration,
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async => false;
+
+  @override
+  Future<bool> cancelPowerAdjust(int nodeId, {
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async => false;
+
   Future<DeviceStateResult> readDeviceState(int nodeId) => _invoke(
     'readDeviceState',
     const DeviceStateResult(isOnline: false),

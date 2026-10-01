@@ -108,6 +108,23 @@ abstract interface class MatterClusterPort {
 
   Future<bool> lockDoor(int nodeId, {String? pin, int endpoint = 1});
   Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1});
+
+  /// Device Energy Management (0x0098) PowerAdjustRequest: hold [powerMw]
+  /// (+ charge / − discharge) for [duration], after which the device returns
+  /// to its own mode. [kind] routes the command — the controller drives Modbus
+  /// batteries itself and forwards to Matter ones.
+  Future<bool> powerAdjust(int nodeId, {
+    required int powerMw,
+    required Duration duration,
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  });
+
+  /// DEM CancelPowerAdjustRequest: end a running hold early.
+  Future<bool> cancelPowerAdjust(int nodeId, {
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  });
 }
 
 /// Fabric-level operations: remove, fabric identity, Thread credentials.

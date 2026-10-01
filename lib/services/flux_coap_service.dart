@@ -691,8 +691,9 @@ class FluxCoapService implements MatterPort {
   // ── Cluster commands — POST /command ───────────────────────────────────────
 
   static $proto.CommandArg _arg(String name,
-      {bool? boolVal, int? uintVal, int? intVal, String? strVal}) {
+      {bool? boolVal, int? uintVal, int? intVal, String? strVal, int? tag}) {
     final a = $proto.CommandArg()..name = name;
+    if (tag != null) a.tag = tag;
     if (boolVal != null)      a.boolVal = boolVal;
     else if (uintVal != null) a.uintVal = uintVal;
     else if (intVal  != null) a.intVal  = intVal;
@@ -703,6 +704,7 @@ class FluxCoapService implements MatterPort {
   Future<bool> _sendCmd(
     int nodeId, int clusterId, int commandId, List<$proto.CommandArg> args, {
     int endpoint = 1, Duration timeout = _timeout30,
+    DeviceKind kind = DeviceKind.unknown,
   }) async {
     final cmd = $proto.DeviceCommand()
       ..nodeId     = Int64(nodeId)
@@ -710,6 +712,9 @@ class FluxCoapService implements MatterPort {
       ..clusterId  = clusterId
       ..commandId  = commandId
       ..args.addAll(args);
+    // Unset (unknown) lets the controller resolve the kind from its registry.
+    final wireKind = $proto.DeviceKind.valueOf(kind.wire);
+    if (kind != DeviceKind.unknown && wireKind != null) cmd.kind = wireKind;
     // Not idempotent: stepLevel / covering / lock commands would be applied
     // twice if the request landed but its response was lost. The retry runs on a
     // new DTLS session with a new token, so controller-side dedup can't suppress it.
@@ -791,6 +796,32 @@ class FluxCoapService implements MatterPort {
       _sendCmd(nodeId, _clLock, 1,
           pin != null && pin.isNotEmpty ? [_arg('PINCode', strVal: pin)] : [],
           endpoint: endpoint);
+
+  // ── Device Energy Management (battery power adjustment) ────────────────────
+
+  static const _clDem = 0x0098;
+
+  // Tags are the TLV field numbers from the DEM spec; the controller and the
+  // Matter TLV encoder both key the arguments by them.
+  @override
+  Future<bool> powerAdjust(int nodeId, {
+    required int powerMw,
+    required Duration duration,
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) =>
+      _sendCmd(nodeId, _clDem, 0x00, endpoint: endpoint, kind: kind, [
+        _arg('Power',    intVal:  powerMw,            tag: 0),
+        _arg('Duration', uintVal: duration.inSeconds, tag: 1),
+        _arg('Cause',    uintVal: 0,                  tag: 2),  // LocalOptimization
+      ]);
+
+  @override
+  Future<bool> cancelPowerAdjust(int nodeId, {
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) =>
+      _sendCmd(nodeId, _clDem, 0x01, [], endpoint: endpoint, kind: kind);
 
   // ── Identify ───────────────────────────────────────────────────────────────
 

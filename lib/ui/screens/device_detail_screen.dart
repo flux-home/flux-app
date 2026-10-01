@@ -7,6 +7,7 @@ import 'package:matter_home/models/basic_info.dart';
 import 'package:matter_home/models/device_live_data.dart';
 import 'package:matter_home/models/device_type.dart';
 import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/power_adjust.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/providers/device_provider.dart';
@@ -32,6 +33,7 @@ part 'device_detail/thermostat_card.dart';
 part 'device_detail/connecting_banner.dart';
 part 'device_detail/energy_card.dart';
 part 'device_detail/door_lock_card.dart';
+part 'device_detail/battery_control_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -347,6 +349,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     (view.live?.activePower != null)) &&
                 view.live != null) ...[
               EnergyCard(live: view.live!),
+              const SizedBox(height: 12),
+            ],
+            // Gated on the DEM feature, not the device type, so any battery
+            // offering power adjustment gets it — Modbus or Matter.
+            if (accessible && view.live?.powerAdjust != null) ...[
+              BatteryControlCard(
+                adjust: view.live!.powerAdjust!,
+                enabled: !view.isStale,
+                onStart: (mw, d) => provider.powerAdjust(view.id, powerMw: mw, duration: d),
+                onCancel: () => provider.cancelPowerAdjust(view.id),
+              ),
               const SizedBox(height: 12),
             ],
             // For switch devices, filter out per-endpoint switch readings
