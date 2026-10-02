@@ -154,16 +154,21 @@ class ModbusProfile extends $pb.ProtobufEnum {
   static const ModbusProfile MODBUS_PROFILE_SHELLY_PRO3EM =
       ModbusProfile._(4, _omitEnumNames ? '' : 'MODBUS_PROFILE_SHELLY_PRO3EM');
 
+  /// float32 input registers (FC04)
+  static const ModbusProfile MODBUS_PROFILE_MARSTEK_VENUS =
+      ModbusProfile._(5, _omitEnumNames ? '' : 'MODBUS_PROFILE_MARSTEK_VENUS');
+
   static const $core.List<ModbusProfile> values = <ModbusProfile>[
     MODBUS_PROFILE_SUNSPEC,
     MODBUS_PROFILE_UNKNOWN,
     MODBUS_PROFILE_VM3P75CT,
     MODBUS_PROFILE_VICTRON_VENUS,
     MODBUS_PROFILE_SHELLY_PRO3EM,
+    MODBUS_PROFILE_MARSTEK_VENUS,
   ];
 
   static final $core.List<ModbusProfile?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 4);
+      $pb.ProtobufEnum.$_initByValueList(values, 5);
   static ModbusProfile? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

@@ -3889,6 +3889,8 @@ class EnergyBucket extends $pb.GeneratedMessage {
     $core.int? loadWh,
     $core.int? batteryChargeWh,
     $core.int? batteryDischargeWh,
+    $core.int? pvForecastWh,
+    $core.int? priceUeurPerKwh,
   }) {
     final result = create();
     if (index != null) result.index = index;
@@ -3899,6 +3901,8 @@ class EnergyBucket extends $pb.GeneratedMessage {
     if (batteryChargeWh != null) result.batteryChargeWh = batteryChargeWh;
     if (batteryDischargeWh != null)
       result.batteryDischargeWh = batteryDischargeWh;
+    if (pvForecastWh != null) result.pvForecastWh = pvForecastWh;
+    if (priceUeurPerKwh != null) result.priceUeurPerKwh = priceUeurPerKwh;
     return result;
   }
 
@@ -3926,6 +3930,10 @@ class EnergyBucket extends $pb.GeneratedMessage {
         fieldType: $pb.PbFieldType.OU3)
     ..aI(7, _omitFieldNames ? '' : 'batteryDischargeWh',
         fieldType: $pb.PbFieldType.OU3)
+    ..aI(8, _omitFieldNames ? '' : 'pvForecastWh',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(9, _omitFieldNames ? '' : 'priceUeurPerKwh',
+        fieldType: $pb.PbFieldType.OS3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -4009,6 +4017,33 @@ class EnergyBucket extends $pb.GeneratedMessage {
   $core.bool hasBatteryDischargeWh() => $_has(6);
   @$pb.TagNumber(7)
   void clearBatteryDischargeWh() => $_clearField(7);
+
+  /// Forecast + price context for the same bucket. Both are SITE-WIDE values
+  /// logged next to the measurements as they were at the time (see
+  /// flux_energy_log's `site` rows), so a past window can be charted against
+  /// what was predicted and what the energy cost — a forecast reconstructed
+  /// later from today's curve would not be the forecast that was actually made.
+  @$pb.TagNumber(8)
+  $core.int get pvForecastWh => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set pvForecastWh($core.int value) => $_setUnsignedInt32(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasPvForecastWh() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearPvForecastWh() => $_clearField(8);
+
+  /// Mean wholesale day-ahead price over the bucket, canonical µEUR/kWh (see
+  /// PriceUnit). Signed — EPEX prices go negative — so absence needs a
+  /// sentinel: PRICE_NODATA = -2147483648 means no price was logged in this
+  /// bucket. Markup/VAT are NOT applied; the app adds them from PricingConfig.
+  @$pb.TagNumber(9)
+  $core.int get priceUeurPerKwh => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set priceUeurPerKwh($core.int value) => $_setSignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasPriceUeurPerKwh() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearPriceUeurPerKwh() => $_clearField(9);
 }
 
 /// Per-device energy contribution over the same time base as EnergyHistory —
@@ -4222,6 +4257,8 @@ class EnergyHistory extends $pb.GeneratedMessage {
     $core.Iterable<EnergyBucket>? buckets,
     $core.Iterable<EnergyDeviceSeries>? deviceSeries,
     $core.Iterable<BatterySocSeries>? batterySoc,
+    $core.bool? hasPvForecast,
+    $core.bool? hasPrices,
   }) {
     final result = create();
     if (start != null) result.start = start;
@@ -4233,6 +4270,8 @@ class EnergyHistory extends $pb.GeneratedMessage {
     if (buckets != null) result.buckets.addAll(buckets);
     if (deviceSeries != null) result.deviceSeries.addAll(deviceSeries);
     if (batterySoc != null) result.batterySoc.addAll(batterySoc);
+    if (hasPvForecast != null) result.hasPvForecast = hasPvForecast;
+    if (hasPrices != null) result.hasPrices = hasPrices;
     return result;
   }
 
@@ -4262,6 +4301,8 @@ class EnergyHistory extends $pb.GeneratedMessage {
         subBuilder: EnergyDeviceSeries.create)
     ..pPM<BatterySocSeries>(9, _omitFieldNames ? '' : 'batterySoc',
         subBuilder: BatterySocSeries.create)
+    ..aOB(10, _omitFieldNames ? '' : 'hasPvForecast')
+    ..aOB(11, _omitFieldNames ? '' : 'hasPrices')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -4348,6 +4389,28 @@ class EnergyHistory extends $pb.GeneratedMessage {
   /// Per-battery SOC lines (measured), index-aligned to buckets.
   @$pb.TagNumber(9)
   $pb.PbList<BatterySocSeries> get batterySoc => $_getList(8);
+
+  /// Whether the forecast / price columns carry anything in this window — a
+  /// pv_forecast_wh of 0 is a real prediction (night), and every bucket at
+  /// PRICE_NODATA is indistinguishable from "the feature was off", so the app
+  /// uses these to decide whether to draw the lines at all.
+  @$pb.TagNumber(10)
+  $core.bool get hasPvForecast => $_getBF(9);
+  @$pb.TagNumber(10)
+  set hasPvForecast($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasHasPvForecast() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearHasPvForecast() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.bool get hasPrices => $_getBF(10);
+  @$pb.TagNumber(11)
+  set hasPrices($core.bool value) => $_setBool(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasHasPrices() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearHasPrices() => $_clearField(11);
 }
 
 /// GET /prices — the current + upcoming day-ahead curve.
