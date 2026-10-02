@@ -7,6 +7,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// properties that make that safe: a re-fetch corrects a bucket rather than
 /// being ignored, and a round trip through storage changes nothing.
 void main() {
+
+  test('per-battery levels survive a row round trip', () {
+    const row = EnergyBucketRow(
+      epoch: 1000, pvWh: 1, importWh: 2, exportWh: 3,
+      loadWh: 4, chargeWh: 5, dischargeWh: 6,
+      socPct: 58,                       // the legacy mean
+      socs: {0x1A: 73, 0x1C: 44},       // what actually happened
+    );
+    final back = EnergyBucketRow.decode(row.encode())!;
+    expect(back.socs, {0x1A: 73, 0x1C: 44});
+    expect(back.socPct, 58);
+  });
+
+  test('a row written before the per-battery column still decodes', () {
+    // Exactly what the old encoder produced: ten columns, no levels map.
+    final back = EnergyBucketRow.decode('1000,1,2,3,4,5,6,58,,')!;
+    expect(back.socPct, 58);
+    expect(back.socs, isEmpty);
+  });
+
+  test('no batteries encodes an empty column rather than junk', () {
+    const row = EnergyBucketRow(
+      epoch: 1000, pvWh: 0, importWh: 0, exportWh: 0,
+      loadWh: 0, chargeWh: 0, dischargeWh: 0,
+    );
+    expect(EnergyBucketRow.decode(row.encode())!.socs, isEmpty);
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   EnergyBucketRow row(int epoch, {int pv = 0, int imp = 0, int? soc}) =>

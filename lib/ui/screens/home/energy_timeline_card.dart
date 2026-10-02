@@ -14,6 +14,22 @@ const _cSolar    = Color(0xFFF6D08A);
 const _cGrid     = Color(0xFFC4483A);
 const _cExport   = Color(0xFF6FBF9B);
 const _cSoc      = Color(0xFF8FA5E8);
+
+/// One hue per battery, in registration order. A house with two stores has two
+/// independent charge levels, and averaging them into one band hid the case that
+/// matters most — one pack full while the other sits empty.
+///
+/// The first entry IS [_cSoc], so a single-battery house looks exactly as it did
+/// and the chip that toggles the band keeps its colour. Past the end of the list
+/// the hues repeat; a home with five batteries can live with two blues.
+const _cSocPalette = <Color>[
+  _cSoc,                // 1st — the original blue
+  Color(0xFF7FC8C0),    // 2nd — teal
+  Color(0xFFC2A2E6),    // 3rd — violet
+  Color(0xFFE0B88C),    // 4th — amber
+];
+
+Color _socColor(int i) => _cSocPalette[i % _cSocPalette.length];
 /// The house, in the pink the flow card and the breakdown card already use for
 /// it — the same thing should not change colour between cards.
 const _cHome     = Color(0xFFF3B8D6);
@@ -512,10 +528,27 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   /// to turn it off.
   Widget _chips(BuildContext context, DeviceProvider p, Set<_Series> shown) {
     final cs = Theme.of(context).colorScheme;
+
+    // The Battery chip becomes one chip per battery once a second pack reports,
+    // each carrying the hue of its own band so the chart can be read without a
+    // separate key. They all toggle the SAME 'charge' series: the chips name the
+    // bands, they do not switch them independently — one battery hidden and the
+    // other shown would be a chart nobody asked for, and the stored key is a
+    // single series.
+    final socs = p.energyHistory?.batterySoc ?? const [];
+    final entries = <(_Series, Color, String)>[
+      for (final s in _Series.values)
+        if (s == _Series.charge && socs.length > 1)
+          for (var b = 0; b < socs.length; b++)
+            (s, _socColor(b), socs[b].name)
+        else
+          (s, s.color, s.label),
+    ];
+
     return Wrap(
       spacing: 6, runSpacing: 6,
       children: [
-        for (final s in _Series.values)
+        for (final (s, colour, label) in entries)
           GestureDetector(
             onTap: () => _toggle(p, s),
             child: Container(
@@ -524,11 +557,11 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
                     color: shown.contains(s)
-                        ? s.color
+                        ? colour
                         : cs.outlineVariant,
                     width: 1.2),
                 color: shown.contains(s)
-                    ? s.color.withValues(alpha: 0.12)
+                    ? colour.withValues(alpha: 0.12)
                     : Colors.transparent,
               ),
               child: Row(
@@ -539,7 +572,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: shown.contains(s)
-                          ? s.color
+                          ? colour
                           : cs.onSurfaceVariant.withValues(alpha: 0.35),
                       // The grid chip carries both of its colours: bought above
                       // the line, sold below it, one toggle for the one meter.
@@ -554,7 +587,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text(s.label, style: TextStyle(
+                  Text(label, style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: shown.contains(s)
@@ -823,30 +856,40 @@ class _TimelinePainter extends CustomPainter {
     canvas.drawLine(Offset(plotL, zeroY), Offset(plotR, zeroY),
         Paint()..color = axisColor..strokeWidth = 1);
 
-    // ── charge band, behind everything ─────────────────────────────────
+    // ── charge bands, behind everything ────────────────────────────────
+    //
+    // One band per battery rather than one for their mean. Two packs charge and
+    // empty at different times and rates, and the average drew a line that
+    // neither of them ever took.
+    //
+    // The fill stays faint (0.06) because bands now overlap: two at full alpha
+    // would read as a third, darker region that means nothing.
     if (shown.contains(_Series.charge) && data.hasSoc) {
-      final soc = _hourSoc;
-      var i = 0;
-      while (i < soc.length) {
-        if (soc[i] == null) { i++; continue; }
-        var j = i;
-        while (j + 1 < soc.length && soc[j + 1] != null) { j++; }
-        double socY(double pct) => zeroY - (pct / 100) * (zeroY - top);
-        final edge = Path();
-        for (var k = i; k <= j; k++) {
-          final o = Offset(x(pts[k].time), socY(soc[k]!));
-          k == i ? edge.moveTo(o.dx, o.dy) : edge.lineTo(o.dx, o.dy);
+      double socY(double pct) => zeroY - (pct / 100) * (zeroY - top);
+      for (var b = 0; b < _hourSocPer.length; b++) {
+        final soc = _hourSocPer[b];
+        final colour = _socColor(b);
+        var i = 0;
+        while (i < soc.length) {
+          if (soc[i] == null) { i++; continue; }
+          var j = i;
+          while (j + 1 < soc.length && soc[j + 1] != null) { j++; }
+          final edge = Path();
+          for (var k = i; k <= j; k++) {
+            final o = Offset(x(pts[k].time), socY(soc[k]!));
+            k == i ? edge.moveTo(o.dx, o.dy) : edge.lineTo(o.dx, o.dy);
+          }
+          final fill = Path.from(edge)
+            ..lineTo(x(pts[j].time), zeroY)
+            ..lineTo(x(pts[i].time), zeroY)
+            ..close();
+          canvas.drawPath(fill, Paint()..color = colour.withValues(alpha: 0.06));
+          canvas.drawPath(edge, Paint()
+            ..color = colour.withValues(alpha: 0.28)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2);
+          i = j + 1;
         }
-        final fill = Path.from(edge)
-          ..lineTo(x(pts[j].time), zeroY)
-          ..lineTo(x(pts[i].time), zeroY)
-          ..close();
-        canvas.drawPath(fill, Paint()..color = _cSoc.withValues(alpha: 0.06));
-        canvas.drawPath(edge, Paint()
-          ..color = _cSoc.withValues(alpha: 0.28)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2);
-        i = j + 1;
       }
     }
 
@@ -1060,15 +1103,28 @@ class _TimelinePainter extends CustomPainter {
     // weighed against an hour that used 1.3 kWh; "12.4 kWh" can, and that is the
     // comparison the chart exists to make.
     if (shown.contains(_Series.charge)) {
-      for (var i = 0; i < pts.length && i < _hourSoc.length; i++) {
-        if (pts[i].time != hour) continue;
-        final pct = _hourSoc[i];
-        if (pct == null) break;
-        final cap = batteryKwh;
-        parts.add(cap == null
-            ? '${pct.round()}%'
-            : '${(pct / 100 * cap).toStringAsFixed(1)} kWh stored');
-        break;
+      // With one battery the readout stays bare ("12.4 kWh stored"); with two it
+      // has to say which, or the second number looks like a correction of the
+      // first. The stored amount uses the house capacity, which is a single
+      // figure covering every pack — so it is only shown when there is one pack
+      // for it to describe. Two batteries fall back to the honest percentage.
+      final named = data.hasMultipleBatteries;
+      for (var b = 0; b < _hourSocPer.length; b++) {
+        final col = _hourSocPer[b];
+        for (var i = 0; i < pts.length && i < col.length; i++) {
+          if (pts[i].time != hour) continue;
+          final pct = col[i];
+          if (pct == null) break;
+          final cap = named ? null : batteryKwh;
+          final value = cap == null
+              ? '${pct.round()}%'
+              : '${(pct / 100 * cap).toStringAsFixed(1)} kWh stored';
+          final label = named && b < data.batterySoc.length
+              ? '${data.batterySoc[b].name} $value'
+              : value;
+          parts.add(label);
+          break;
+        }
       }
     }
 
@@ -1084,10 +1140,13 @@ class _TimelinePainter extends CustomPainter {
     // Cleared per call: paint runs on every frame that touches this widget, and
     // an accumulating list would both grow without bound and slide the charge
     // samples out of step with the bars after the first repaint.
-    _hourSoc.clear();
+    _hourSocPer
+      ..clear()
+      ..addAll(List.generate(d.batterySoc.length, (_) => <double?>[]));
     _hourForecastWh.clear();
     final out = <EnergyHistoryPoint>[];
-    final soc = d.socPerBucket;
+    // Each battery's own samples, not their mean — see [_hourSocPer].
+    final socs = [for (final b in d.batterySoc) b.percentPerBucket];
     final fc = d.forecastWh;
     final perHour = 3600 / d.bucket.inSeconds;
     var i = 0;
@@ -1096,7 +1155,7 @@ class _TimelinePainter extends CustomPainter {
           d.points[i].time.day, d.points[i].time.hour);
       var pv = 0.0, dis = 0.0, imp = 0.0, exp = 0.0, chg = 0.0, load = 0.0;
       var n = 0;
-      double? lastSoc;
+      final lastSoc = List<double?>.filled(socs.length, null);
       // A forecast is energy, so it SUMS across the hour — unlike the charge
       // level beside it, which is carried.
       int? fcSum;
@@ -1106,7 +1165,10 @@ class _TimelinePainter extends CustomPainter {
         if (h != hour) break;
         pv += p.pvW; dis += p.batteryDischargeW; imp += p.gridImportW;
         exp += p.gridExportW; chg += p.batteryChargeW; load += p.loadW;
-        if (i < soc.length && soc[i] != null) lastSoc = soc[i];
+        for (var b = 0; b < socs.length; b++) {
+          final v = i < socs[b].length ? socs[b][i] : null;
+          if (v != null) lastSoc[b] = v.toDouble();
+        }
         if (i < fc.length && fc[i] != null) fcSum = (fcSum ?? 0) + fc[i]!;
         n++; i++;
       }
@@ -1118,15 +1180,22 @@ class _TimelinePainter extends CustomPainter {
         pvW: pv / n, gridImportW: imp / n, gridExportW: exp / n,
         loadW: load / n, batteryChargeW: chg / n, batteryDischargeW: dis / n,
       ));
-      _hourSoc.add(lastSoc);
+      for (var b = 0; b < socs.length; b++) {
+        _hourSocPer[b].add(lastSoc[b]);
+      }
       _hourForecastWh.add(fcSum);
       if (n < perHour && i >= d.points.length) break;   // partial trailing hour
     }
     return out;
   }
 
-  /// Charge level per aggregated hour, filled by [_hourly] alongside its result.
-  final List<double?> _hourSoc = [];
+  /// Charge level per aggregated hour, PER BATTERY, filled by [_hourly]
+  /// alongside its result. Outer index matches `data.batterySoc`, so it also
+  /// indexes [_socColor]; inner index matches the hourly points.
+  ///
+  /// A level is carried, never summed: the last sample inside the hour is what
+  /// the pack held at the end of it.
+  final List<List<double?>> _hourSocPer = [];
 
   /// Forecast Wh per aggregated hour, filled by [_hourly] the same way.
   final List<int?> _hourForecastWh = [];

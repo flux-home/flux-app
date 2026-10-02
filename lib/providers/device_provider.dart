@@ -328,13 +328,25 @@ class DeviceProvider extends ChangeNotifier {
     return (start, end.isAfter(cap) ? cap : end);
   }
 
+  /// Node id → display name for every battery the house has, read fresh each
+  /// time a cached window is rebuilt.
+  ///
+  /// Names are deliberately NOT cached beside the levels: a rename should show
+  /// up on yesterday's chart too, and a name stored per bucket would repeat the
+  /// same string a hundred times to go stale anyway.
+  Map<int, String> get _batteryNames => {
+        for (final d in _devices)
+          if (d.energyRole == EnergyRole.homeBattery) d.nodeId: d.name,
+      };
+
   Future<void> loadCachedHistory() async {
     if (_energyCache == null) return;
     final rows = _energyCache!.load();
     if (rows.isEmpty) return;
     final window = _rowsIn(rows, historyWindow);
     if (window.isEmpty) return;
-    _energyHistory = EnergyHistoryData.fromRows(window, bucket: _bucket);
+    _energyHistory = EnergyHistoryData.fromRows(window, bucket: _bucket,
+        batteryNames: _batteryNames);
     debugPrint('EnergyCache: painted ${window.length} cached bucket(s) '
         'before any fetch');
     notifyListeners();
@@ -467,7 +479,8 @@ class DeviceProvider extends ChangeNotifier {
         final want = _window.inSeconds ~/ _bucket.inSeconds;
         if (have >= want || _fetchedWindows.contains(from)) {
           _energyHistory = EnergyHistoryData.fromRows(
-              _rowsIn(cached, w), bucket: _bucket);
+              _rowsIn(cached, w), bucket: _bucket,
+              batteryNames: _batteryNames);
           return;
         }
         // Ask for one bucket BEYOND the window. fromProto drops the bucket
@@ -515,7 +528,7 @@ class DeviceProvider extends ChangeNotifier {
       _energyHistory = window.isEmpty
           ? fresh
           : EnergyHistoryData.fromRows(window, bucket: _bucket,
-              timeSynced: fresh.timeSynced);
+              timeSynced: fresh.timeSynced, batteryNames: _batteryNames);
     }();
     _energyHistoryInflight = f.whenComplete(() {
       _energyHistoryInflight = null;
@@ -594,7 +607,8 @@ class DeviceProvider extends ChangeNotifier {
     }
     _monthHours = hours;
     _monthHistory =
-        EnergyHistoryData.fromRows(rows, bucket: const Duration(days: 1));
+        EnergyHistoryData.fromRows(rows, bucket: const Duration(days: 1),
+            batteryNames: _batteryNames);
     notifyListeners();
   }
 

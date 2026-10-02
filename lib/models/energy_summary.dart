@@ -15,6 +15,28 @@ import 'package:matter_home/models/energy_role.dart';
 ///
 /// Multiple devices may carry the same role; their power is summed.
 @immutable
+/// One home battery's own level and flow, so a house with two stores can show
+/// them as two facts rather than one mean of the two.
+@immutable
+class BatteryState {
+  const BatteryState({
+    required this.nodeId,
+    required this.name,
+    required this.netW,
+    this.socPercent,
+  });
+
+  final int nodeId;
+  final String name;
+
+  /// Positive = charging, negative = discharging. Same sign convention as the
+  /// combined [EnergySummary.batteryCharge] / [EnergySummary.batteryDischarge]
+  /// pair, so a per-battery note cannot contradict the aggregate bar.
+  final double netW;
+
+  final int? socPercent;
+}
+
 class EnergySummary {
   const EnergySummary({
     this.gridImport = 0,
@@ -23,6 +45,7 @@ class EnergySummary {
     this.batteryCharge = 0,
     this.batteryDischarge = 0,
     this.batterySocPercent,
+    this.batteries = const [],
     this.carSocPercent,
     this.carCharging = 0,
     this.heatPump = 0,
@@ -41,7 +64,16 @@ class EnergySummary {
   final double batteryCharge;    // W flowing into the battery
   final double batteryDischarge; // W flowing out of the battery
   /// Charge level of the home battery, averaged across battery devices.
+  ///
+  /// An UNWEIGHTED mean, and therefore only meaningful with one battery: two
+  /// packs at 73% and 44% read 59% here, which is neither of them and is not
+  /// the house's actual stored fraction either (that needs capacities nothing
+  /// records). Kept for the single-battery case; [batteries] is what a house
+  /// with more than one should show.
   final int?   batterySocPercent;
+
+  /// Every home battery separately, in device order.
+  final List<BatteryState> batteries;
 
   /// Charge level of the car, when a wallbox reports it. Same mechanism as the
   /// home battery (a `batPercentRaw` attribute on the car-charger device), so a
@@ -107,6 +139,7 @@ class EnergySummary {
     double gridNet = 0, pv = 0, batNet = 0, car = 0, heat = 0, consumers = 0;
     var gridN = 0, pvN = 0, batN = 0, carN = 0, heatN = 0, consumerN = 0;
     var socSum = 0, socCount = 0;
+    final batteries = <BatteryState>[];
     var carSocSum = 0, carSocCount = 0;
 
     for (final d in devices) {
@@ -133,6 +166,8 @@ class EnergySummary {
           batN++;
           final soc = d.batteryPercent;
           if (soc != null) { socSum += soc; socCount++; }
+          batteries.add(BatteryState(
+            nodeId: d.nodeId, name: d.name, netW: w, socPercent: soc));
         case EnergyRole.homeConsumer:
           // Attribution only — see [homeConsumers]. Summed so it can be taken
           // OUT of the unattributed remainder, never added to the balance.
@@ -158,6 +193,7 @@ class EnergySummary {
       batteryCharge:    batNet > 0 ? batNet : 0,
       batteryDischarge: batNet < 0 ? -batNet : 0,
       batterySocPercent: socCount > 0 ? (socSum / socCount).round() : null,
+      batteries:        batteries,
       carSocPercent: carSocCount > 0 ? (carSocSum / carSocCount).round() : null,
       carCharging:      car,
       heatPump:         heat,

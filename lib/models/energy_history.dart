@@ -170,8 +170,15 @@ class EnergyHistoryData {
   bool get hasArchivedForecast => forecastWh.any((v) => v != null);
 
   /// Charge level per bucket averaged across batteries, or null where no battery
-  /// reported in that bucket. Most houses have one battery, in which case this is
-  /// simply that battery's line.
+  /// reported in that bucket. With one battery this is simply that battery's
+  /// line.
+  ///
+  /// The mean is UNWEIGHTED, which is only honest when every battery holds the
+  /// same amount: a full 2.5 kWh pack beside an empty 5 kWh one reads 50% here
+  /// when the house actually holds 33% of its storage. Weighting needs a
+  /// per-battery capacity, which nothing records yet. The timeline therefore
+  /// draws [batterySoc] a band at a time instead of using this; it survives for
+  /// the single-figure readouts that have nowhere to put two numbers.
   List<double?> get socPerBucket {
     if (batterySoc.isEmpty) return const [];
     return [
@@ -188,6 +195,10 @@ class EnergyHistoryData {
   }
 
   bool get hasSoc => batterySoc.isNotEmpty;
+
+  /// True once a second battery reports — the point at which a single combined
+  /// charge line stops describing the house.
+  bool get hasMultipleBatteries => batterySoc.length > 1;
 
   /// True when the controller reported a per-device PV breakdown — then the
   /// individual inverter lines are drawn (by device name) instead of the summed
@@ -257,10 +268,16 @@ class EnergyHistoryData {
   /// The per-inverter PV breakdown is deliberately absent: it is not cached
   /// (nothing reads it today), and inventing an empty series is more honest than
   /// implying the breakdown was unavailable for this window.
+  ///
+  /// [batteryNames] labels the rebuilt charge series. Names are not cached: they
+  /// are read from the live device list at the moment the window is built, so a
+  /// battery renamed today is not still called its old name by yesterday's rows.
+  /// A battery missing from the map falls back to its node id.
   factory EnergyHistoryData.fromRows(
     Iterable<EnergyBucketRow> rows, {
     required Duration bucket,
     bool timeSynced = true,
+    Map<int, String> batteryNames = const {},
   }) {
     final sorted = rows.toList()
       ..sort((a, b) => a.epoch.compareTo(b.epoch));
@@ -272,7 +289,19 @@ class EnergyHistoryData {
     final soc = <int?>[];
     final spot = <int?>[];
     final fcast = <int?>[];
+    // Node ids in first-seen order, so a battery keeps the same hue across
+    // rebuilds of the same window.
+    final socIds = <int>[];
     for (final r in sorted) {
+      for (final id in r.socs.keys) {
+        if (!socIds.contains(id)) socIds.add(id);
+      }
+    }
+    final socCols = {for (final id in socIds) id: <int?>[]};
+    for (final r in sorted) {
+      for (final id in socIds) {
+        socCols[id]!.add(r.socs[id]);
+      }
       pvWh += r.pvWh; impWh += r.importWh; expWh += r.exportWh;
       loadWh += r.loadWh; chgWh += r.chargeWh; disWh += r.dischargeWh;
       soc.add(r.socPct);
@@ -303,16 +332,31 @@ class EnergyHistoryData {
       batteryDischargeKwh: disWh / 1000.0,
       spotUeur: spot.any((v) => v != null) ? spot : const [],
       forecastWh: fcast.any((v) => v != null) ? fcast : const [],
-      batterySoc: soc.any((v) => v != null)
+      // One series per battery when the rows carry them. Rows written before
+      // the per-battery column existed have only the mean, which rebuilds as
+      // the single unnamed series it has always been — a window that predates
+      // the second battery genuinely only knows one number.
+      batterySoc: socIds.isNotEmpty
           ? [
-              BatterySocSeries(
-                kind: DeviceKind.modbus,
-                nodeId: 0,
-                name: 'Battery',
-                percentPerBucket: soc,
-              ),
+              for (final id in socIds)
+                BatterySocSeries(
+                  kind: DeviceKind.modbus,
+                  nodeId: id,
+                  name: batteryNames[id] ??
+                      'Battery 0x${id.toRadixString(16).toUpperCase()}',
+                  percentPerBucket: socCols[id]!,
+                ),
             ]
-          : const [],
+          : soc.any((v) => v != null)
+              ? [
+                  BatterySocSeries(
+                    kind: DeviceKind.modbus,
+                    nodeId: 0,
+                    name: 'Battery',
+                    percentPerBucket: soc,
+                  ),
+                ]
+              : const [],
     );
   }
 
@@ -341,6 +385,13 @@ class EnergyHistoryData {
           chargeWh: wh(points[i].batteryChargeW),
           dischargeWh: wh(points[i].batteryDischargeW),
           socPct: i < soc.length && soc[i] != null ? soc[i]!.round() : null,
+          // Per battery, so the cache stops being lossier than the wire. The
+          // mean above is still written for builds that only know that column.
+          socs: {
+            for (final b in batterySoc)
+              if (i < b.percentPerBucket.length && b.percentPerBucket[i] != null)
+                b.nodeId: b.percentPerBucket[i]!,
+          },
           spotUeur: spotAt?.call(points[i].time) ??
               (i < spotUeur.length ? spotUeur[i] : null),
           forecastWh: forecastAt?.call(points[i].time) ??

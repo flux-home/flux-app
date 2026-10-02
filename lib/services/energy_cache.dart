@@ -13,6 +13,7 @@ class EnergyBucketRow {
     this.socPct,
     this.spotUeur,
     this.forecastWh,
+    this.socs = const {},
   });
 
   final int epoch;   // UTC seconds at the bucket's START
@@ -23,7 +24,21 @@ class EnergyBucketRow {
   final int chargeWh;
   final int dischargeWh;
   /// Charge level at the bucket's end, or null if no battery reported.
+  ///
+  /// The mean across batteries. Kept for rows written before [socs] existed, and
+  /// still written so an older build reading this cache sees what it expects.
+  /// [socs] is what the chart uses.
   final int? socPct;
+
+  /// Charge level at the bucket's end PER BATTERY, keyed by node id.
+  ///
+  /// A house can have more than one store, and they do not move together — one
+  /// pack can sit full while another is run flat. [socPct] averaged them, which
+  /// made the cache lossy in a way the wire format was not: the controller sends
+  /// a series per battery and this threw that apart before it reached the chart.
+  ///
+  /// Empty for rows written by an older build; those fall back to [socPct].
+  final Map<int, int> socs;
 
   /// The wholesale spot price in force during this bucket, in µEUR/kWh — the
   /// wire unit, stored NET.
@@ -42,8 +57,20 @@ class EnergyBucketRow {
   /// it as the sky changes, so only the value captured at the time can be scored.
   final int? forecastWh;
 
+  /// Node-keyed levels as `1a:73|1c:44` — hex node id, decimal percent.
+  ///
+  /// A trailing column, because every reader tolerates columns it does not know
+  /// (see [decode]): an older build keeps working against a newer cache, and a
+  /// newer build keeps working against an older one.
+  String _encodeSocs() => socs.isEmpty
+      ? ''
+      : socs.entries
+          .map((e) => '${e.key.toRadixString(16)}:${e.value}')
+          .join('|');
+
   String encode() => '$epoch,$pvWh,$importWh,$exportWh,$loadWh,$chargeWh,'
-      '$dischargeWh,${socPct ?? ''},${spotUeur ?? ''},${forecastWh ?? ''}';
+      '$dischargeWh,${socPct ?? ''},${spotUeur ?? ''},${forecastWh ?? ''},'
+      '${_encodeSocs()}';
 
   static EnergyBucketRow? decode(String s) {
     final p = s.split(',');
@@ -62,7 +89,21 @@ class EnergyBucketRow {
       socPct: p.length > 7 ? n(p[7]) : null,
       spotUeur: p.length > 8 ? n(p[8]) : null,
       forecastWh: p.length > 9 ? n(p[9]) : null,
+      socs: p.length > 10 ? _decodeSocs(p[10]) : const {},
     );
+  }
+
+  static Map<int, int> _decodeSocs(String v) {
+    if (v.isEmpty) return const {};
+    final out = <int, int>{};
+    for (final pair in v.split('|')) {
+      final i = pair.indexOf(':');
+      if (i <= 0) continue;
+      final id = int.tryParse(pair.substring(0, i), radix: 16);
+      final pct = int.tryParse(pair.substring(i + 1));
+      if (id != null && pct != null) out[id] = pct;
+    }
+    return out;
   }
 }
 
