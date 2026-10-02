@@ -55,6 +55,9 @@ class FakeMatterPort implements MatterPort {
   final List<({int nodeId, int mode})>  writeSystemModeCalls      = [];
   final List<({int nodeId, int centi})> writeHeatingSetpointCalls = [];
   final List<int>                        removeDeviceCalls         = [];
+  final List<({int nodeId, int powerMw, Duration duration, int endpoint, DeviceKind kind})>
+      powerAdjustCalls = [];
+  final List<({int nodeId, int endpoint, DeviceKind kind})> cancelPowerAdjustCalls = [];
 
   // ── MatterSubscriptionPort ────────────────────────────────────────────────
 
@@ -195,6 +198,27 @@ class FakeMatterPort implements MatterPort {
 
   @override
   Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) async => defaultCommandResult;
+
+  @override
+  Future<bool> powerAdjust(int nodeId, {
+    required int powerMw,
+    required Duration duration,
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async {
+    powerAdjustCalls.add((nodeId: nodeId, powerMw: powerMw, duration: duration,
+        endpoint: endpoint, kind: kind));
+    return defaultCommandResult;
+  }
+
+  @override
+  Future<bool> cancelPowerAdjust(int nodeId, {
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async {
+    cancelPowerAdjustCalls.add((nodeId: nodeId, endpoint: endpoint, kind: kind));
+    return defaultCommandResult;
+  }
 
   @override
   Future<void> identify(int nodeId, {int seconds = 15, int endpoint = 1}) async {}

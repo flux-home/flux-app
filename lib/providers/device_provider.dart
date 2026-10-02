@@ -1783,6 +1783,28 @@ class DeviceProvider extends ChangeNotifier {
         pin: pin, endpoint: _devices[idx].commandEndpoint);
   }
 
+  /// Holds a battery at [powerMw] (+ charge / − discharge) for [duration]
+  /// via Device Energy Management. Returns true once the controller accepted
+  /// it; the device's esaState shows when it actually took effect.
+  Future<bool> powerAdjust(String deviceId,
+      {required int powerMw, required Duration duration}) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return false;
+    final d = _devices[idx];
+    return _channel.powerAdjust(d.nodeId,
+        powerMw: powerMw, duration: duration,
+        endpoint: d.commandEndpoint, kind: d.kind);
+  }
+
+  /// Ends a running power adjustment early; the battery returns to its own mode.
+  Future<bool> cancelPowerAdjust(String deviceId) async {
+    final idx = _indexById(deviceId);
+    if (idx == -1) return false;
+    final d = _devices[idx];
+    return _channel.cancelPowerAdjust(d.nodeId,
+        endpoint: d.commandEndpoint, kind: d.kind);
+  }
+
   // ── Refresh (on-demand one-shot read) ─────────────────────────────────────
 
   Future<void> refreshDevice(String deviceId) async {

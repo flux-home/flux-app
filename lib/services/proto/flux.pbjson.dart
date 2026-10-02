@@ -79,6 +79,7 @@ const ModbusProfile$json = {
     {'1': 'MODBUS_PROFILE_VM3P75CT', '2': 2},
     {'1': 'MODBUS_PROFILE_VICTRON_VENUS', '2': 3},
     {'1': 'MODBUS_PROFILE_SHELLY_PRO3EM', '2': 4},
+    {'1': 'MODBUS_PROFILE_MARSTEK_VENUS', '2': 5},
   ],
 };
 
@@ -87,7 +88,7 @@ final $typed_data.Uint8List modbusProfileDescriptor = $convert.base64Decode(
     'Cg1Nb2RidXNQcm9maWxlEhoKFk1PREJVU19QUk9GSUxFX1NVTlNQRUMQABIaChZNT0RCVVNfUF'
     'JPRklMRV9VTktOT1dOEAESGwoXTU9EQlVTX1BST0ZJTEVfVk0zUDc1Q1QQAhIgChxNT0RCVVNf'
     'UFJPRklMRV9WSUNUUk9OX1ZFTlVTEAMSIAocTU9EQlVTX1BST0ZJTEVfU0hFTExZX1BSTzNFTR'
-    'AE');
+    'AEEiAKHE1PREJVU19QUk9GSUxFX01BUlNURUtfVkVOVVMQBQ==');
 
 @$core.Deprecated('Use modbusTransportDescriptor instead')
 const ModbusTransport$json = {
@@ -1058,6 +1059,14 @@ const EnergyBucket$json = {
       '5': 13,
       '10': 'batteryDischargeWh'
     },
+    {'1': 'pv_forecast_wh', '3': 8, '4': 1, '5': 13, '10': 'pvForecastWh'},
+    {
+      '1': 'price_ueur_per_kwh',
+      '3': 9,
+      '4': 1,
+      '5': 17,
+      '10': 'priceUeurPerKwh'
+    },
   ],
 };
 
@@ -1067,7 +1076,9 @@ final $typed_data.Uint8List energyBucketDescriptor = $convert.base64Decode(
     'IgASgNUgxncmlkSW1wb3J0V2gSJAoOZ3JpZF9leHBvcnRfd2gYAyABKA1SDGdyaWRFeHBvcnRX'
     'aBITCgVwdl93aBgEIAEoDVIEcHZXaBIXCgdsb2FkX3doGAUgASgNUgZsb2FkV2gSKgoRYmF0dG'
     'VyeV9jaGFyZ2Vfd2gYBiABKA1SD2JhdHRlcnlDaGFyZ2VXaBIwChRiYXR0ZXJ5X2Rpc2NoYXJn'
-    'ZV93aBgHIAEoDVISYmF0dGVyeURpc2NoYXJnZVdo');
+    'ZV93aBgHIAEoDVISYmF0dGVyeURpc2NoYXJnZVdoEiQKDnB2X2ZvcmVjYXN0X3doGAggASgNUg'
+    'xwdkZvcmVjYXN0V2gSKwoScHJpY2VfdWV1cl9wZXJfa3doGAkgASgRUg9wcmljZVVldXJQZXJL'
+    'd2g=');
 
 @$core.Deprecated('Use energyDeviceSeriesDescriptor instead')
 const EnergyDeviceSeries$json = {
@@ -1159,6 +1170,8 @@ const EnergyHistory$json = {
       '6': '.flux.BatterySocSeries',
       '10': 'batterySoc'
     },
+    {'1': 'has_pv_forecast', '3': 10, '4': 1, '5': 8, '10': 'hasPvForecast'},
+    {'1': 'has_prices', '3': 11, '4': 1, '5': 8, '10': 'hasPrices'},
   ],
 };
 
@@ -1170,7 +1183,8 @@ final $typed_data.Uint8List energyHistoryDescriptor = $convert.base64Decode(
     'RydW5jYXRlZBIsCgdidWNrZXRzGAcgAygLMhIuZmx1eC5FbmVyZ3lCdWNrZXRSB2J1Y2tldHMS'
     'PQoNZGV2aWNlX3NlcmllcxgIIAMoCzIYLmZsdXguRW5lcmd5RGV2aWNlU2VyaWVzUgxkZXZpY2'
     'VTZXJpZXMSNwoLYmF0dGVyeV9zb2MYCSADKAsyFi5mbHV4LkJhdHRlcnlTb2NTZXJpZXNSCmJh'
-    'dHRlcnlTb2M=');
+    'dHRlcnlTb2MSJgoPaGFzX3B2X2ZvcmVjYXN0GAogASgIUg1oYXNQdkZvcmVjYXN0Eh0KCmhhc1'
+    '9wcmljZXMYCyABKAhSCWhhc1ByaWNlcw==');
 
 @$core.Deprecated('Use priceCurveDescriptor instead')
 const PriceCurve$json = {

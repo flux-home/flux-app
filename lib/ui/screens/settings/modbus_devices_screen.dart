@@ -254,7 +254,7 @@ class _ScanSheetState extends State<_ScanSheet> {
               if (_found.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Text('No devices found on your network.',
+                  child: Text('No new devices found on your network.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: cs.onSurfaceVariant)),
                 )
@@ -286,6 +286,14 @@ class _ScanSheetState extends State<_ScanSheet> {
                     ],
                   ),
                 ),
+              // The controller leaves out devices it already polls: many accept
+              // only one Modbus connection, and the poller is holding it.
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Text('Devices you have already added are not listed.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -338,6 +346,9 @@ class _ConfigSheetState extends State<_ConfigSheet> {
   static const _profiles = [
     $enum.ModbusProfile.MODBUS_PROFILE_SUNSPEC,
     $enum.ModbusProfile.MODBUS_PROFILE_VM3P75CT,
+    $enum.ModbusProfile.MODBUS_PROFILE_SHELLY_PRO3EM,
+    $enum.ModbusProfile.MODBUS_PROFILE_VICTRON_VENUS,
+    $enum.ModbusProfile.MODBUS_PROFILE_MARSTEK_VENUS,
   ];
 
   @override
@@ -360,6 +371,9 @@ class _ConfigSheetState extends State<_ConfigSheet> {
 
   String _profileLabel($enum.ModbusProfile p) => switch (p) {
         $enum.ModbusProfile.MODBUS_PROFILE_VM3P75CT => 'Victron VM-3P75CT meter',
+        $enum.ModbusProfile.MODBUS_PROFILE_SHELLY_PRO3EM => 'Shelly Pro 3EM meter',
+        $enum.ModbusProfile.MODBUS_PROFILE_VICTRON_VENUS => 'Victron GX battery (Venus OS)',
+        $enum.ModbusProfile.MODBUS_PROFILE_MARSTEK_VENUS => 'Marstek Venus E 3.0 battery',
         _ => 'SunSpec PV inverter',
       };
 

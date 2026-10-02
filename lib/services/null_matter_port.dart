@@ -126,6 +126,20 @@ class NullMatterPort implements MatterPort {
   Future<bool> unlockDoor(int nodeId, {String? pin, int endpoint = 1}) async => false;
 
   @override
+  Future<bool> powerAdjust(int nodeId, {
+    required int powerMw,
+    required Duration duration,
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async => false;
+
+  @override
+  Future<bool> cancelPowerAdjust(int nodeId, {
+    int endpoint = 1,
+    DeviceKind kind = DeviceKind.unknown,
+  }) async => false;
+
+  @override
   Future<bool> removeDevice(int nodeId, {DeviceKind kind = DeviceKind.matter}) async => false;
 
   @override
