@@ -164,7 +164,30 @@ class _EnergyFlowCardState extends State<EnergyFlowCard> {
   }
 
   List<_Gauge> _gauges(EnergySummary s) => [
-        if (s.batterySocPercent != null)
+        // One gauge per battery, because a mean is not a charge level: two packs
+        // at 73% and 44% averaged to "59%", a number neither of them held and
+        // which moved when either did. With a single battery the gauge keeps its
+        // old unnamed 'BATTERY' label, so nothing changes for a one-pack house.
+        //
+        // The flow rows above stay aggregated — one BATTERY line for the watts —
+        // because the house has one net battery flow; what it does not have is
+        // one charge level.
+        if (s.batteries.length > 1)
+          for (final b in s.batteries)
+            if (b.socPercent != null)
+              _Gauge(
+                name: b.name.toUpperCase(),
+                percent: b.socPercent!,
+                note: switch (netFlow(
+                    consuming: b.netW > 0 ? b.netW : 0,
+                    supplying: b.netW < 0 ? -b.netW : 0,
+                    deadbandW: _deadbandW)) {
+                  > 0 => 'charging',
+                  < 0 => 'discharging',
+                  _   => 'idle',
+                },
+              )
+        else if (s.batterySocPercent != null)
           _Gauge(
             name: 'BATTERY',
             percent: s.batterySocPercent!,

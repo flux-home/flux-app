@@ -7,6 +7,7 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/ui/screens/home/energy_timeline_card.dart';
 import 'package:matter_home/ui/screens/home/energy_flow_card.dart';
 import 'package:matter_home/ui/screens/home/house_breakdown_card.dart';
+import 'package:matter_home/ui/screens/home/month_summary_card.dart';
 import 'package:matter_home/ui/screens/home/day_balance_card.dart';
 import 'package:matter_home/ui/screens/settings/energy_settings_screen.dart';
 import 'package:matter_home/ui/widgets/device_card.dart';
@@ -156,6 +157,7 @@ class _EnergyCards extends StatelessWidget {
     'house': HouseBreakdownCard(),
     'timeline': EnergyTimelineCard(),
     'balance': DayBalanceCard(),
+    'month': MonthSummaryCard(),
   };
 
   List<String> get _order {

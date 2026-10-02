@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
 import 'package:matter_home/ui/screens/settings/solar_settings_screen.dart';
@@ -54,11 +55,17 @@ class EnergySettingsScreen extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          // Stored on the phone, not the controller, and separated from the rows
+          // above for exactly that reason: nothing on the wire carries a battery
+          // capacity yet, so this one setting cannot follow the others onto the
+          // device record.
+          const _BatteryCapacityCard(),
           if (!online)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: Text(
-                'Both write to the controller — reconnect to change them.',
+                'Those three write to the controller — reconnect to change them.',
                 style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
               ),
             ),
@@ -86,6 +93,74 @@ class EnergySettingsScreen extends StatelessWidget {
           ? () => Navigator.push(context,
               MaterialPageRoute<void>(builder: (_) => builder()))
           : null,
+    );
+  }
+}
+
+
+/// Usable battery capacity, so a charge level can be read as an amount of energy.
+///
+/// "78%" cannot be compared with an hour that used 1.3 kWh; "12.4 kWh stored"
+/// can, and that comparison — how long the battery will carry the house — is the
+/// thing a percentage never answers.
+class _BatteryCapacityCard extends StatefulWidget {
+  const _BatteryCapacityCard();
+
+  @override
+  State<_BatteryCapacityCard> createState() => _BatteryCapacityCardState();
+}
+
+class _BatteryCapacityCardState extends State<_BatteryCapacityCard> {
+  late final TextEditingController _c = TextEditingController(
+    text: context.read<DeviceProvider>().batteryCapacityKwh?.toString() ?? '',
+  );
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _save(String raw) {
+    final v = double.tryParse(raw.trim().replaceAll(',', '.'));
+    context.read<DeviceProvider>().setBatteryCapacityKwh(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Battery capacity',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600,
+                    color: cs.onSurface)),
+            const SizedBox(height: 4),
+            Text('Usable kWh. Leave empty to show charge as a percentage.',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _c,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                suffixText: 'kWh',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onSubmitted: _save,
+              onTapOutside: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+                _save(_c.text);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

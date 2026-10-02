@@ -5,6 +5,72 @@ import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
 void main() {
   group('EnergyHistoryData.fromProto', () {
+    test('two batteries stay two series, each with its own name and levels', () {
+      // The house this models: a 5 kWh pack still half full while a 2.5 kWh one
+      // has been run flat. One combined line cannot say that.
+      final h = $proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [
+          $proto.EnergyBucket(index: 0),
+          $proto.EnergyBucket(index: 1),
+        ],
+        batterySoc: [
+          $proto.BatterySocSeries(
+            nodeId: Int64(0x1A), name: 'Venus Battery',
+            socPct: [80, 50],
+          ),
+          $proto.BatterySocSeries(
+            nodeId: Int64(0x1C), name: 'Marstek Venus',
+            socPct: [40, 0],
+          ),
+        ],
+      );
+
+      final d = EnergyHistoryData.fromProto(h);
+
+      expect(d.hasSoc, isTrue);
+      expect(d.hasMultipleBatteries, isTrue);
+      expect(d.batterySoc.length, 2);
+      // Names survive: the chips and the readout label the bands with them.
+      expect(d.batterySoc[0].name, 'Venus Battery');
+      expect(d.batterySoc[1].name, 'Marstek Venus');
+      // And so do the levels, separately — 0% is a real reading, not a gap.
+      expect(d.batterySoc[0].percentPerBucket, [80, 50]);
+      expect(d.batterySoc[1].percentPerBucket, [40, 0]);
+    });
+
+    test('one battery is not "multiple"', () {
+      final d = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [$proto.EnergyBucket(index: 0)],
+        batterySoc: [
+          $proto.BatterySocSeries(
+            nodeId: Int64(0x1A), name: 'Venus Battery', socPct: [70],
+          ),
+        ],
+      ));
+      expect(d.hasSoc, isTrue);
+      expect(d.hasMultipleBatteries, isFalse);
+    });
+
+    test('255 means no sample, and stays distinct from an empty battery', () {
+      final d = EnergyHistoryData.fromProto($proto.EnergyHistory(
+        bucketSeconds: 900,
+        buckets: [
+          $proto.EnergyBucket(index: 0),
+          $proto.EnergyBucket(index: 1),
+        ],
+        batterySoc: [
+          $proto.BatterySocSeries(
+            nodeId: Int64(0x1A), name: 'Venus Battery', socPct: [255, 0],
+          ),
+        ],
+      ));
+      // Unheard-from, then empty: a band must break for the first and sit on
+      // the floor for the second.
+      expect(d.batterySoc[0].percentPerBucket, [null, 0]);
+    });
+
     test('converts Wh buckets to average watts and sums kWh totals', () {
       // 15-min buckets → a full-bucket 250 Wh = 1000 W average.
       final h = $proto.EnergyHistory(

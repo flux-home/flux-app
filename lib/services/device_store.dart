@@ -141,6 +141,24 @@ class DeviceStore {
   Future<void> saveChartHidden(List<String> keys) =>
       _prefs.setStringList(_kHidden, keys);
 
+  static const _kBatteryKwh = 'battery_capacity_kwh';
+
+  /// Usable battery capacity in kWh, or null when nobody has said.
+  ///
+  /// App-side rather than controller-side only because nothing on the wire
+  /// carries it yet — no Modbus profile reports a capacity and the proto has no
+  /// field for it. It belongs on the device record with the room and the energy
+  /// role; until it can live there, this is a local stand-in.
+  double? loadBatteryCapacityKwh() {
+    final v = _prefs.getDouble(_kBatteryKwh);
+    return (v == null || v <= 0) ? null : v;
+  }
+
+  Future<void> saveBatteryCapacityKwh(double? kwh) =>
+      (kwh == null || kwh <= 0)
+          ? _prefs.remove(_kBatteryKwh)
+          : _prefs.setDouble(_kBatteryKwh, kwh);
+
   /// The series keys that existed when the shown-set format was retired. Used
   /// only by the migration above, so it must not grow.
   static const _knownSeries = ['solar', 'battery', 'grid', 'export', 'charge',

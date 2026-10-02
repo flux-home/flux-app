@@ -1,11 +1,73 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/energy_history.dart';
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/energy_summary.dart';
+import 'package:matter_home/models/matter_device.dart';
+
+/// A home battery reporting [watts] (negative = discharging) and [soc].
+DeviceView battery({
+  required int nodeId,
+  required String name,
+  required double watts,
+  required int soc,
+}) {
+  final now = DateTime(2026);
+  return DeviceView(
+    MatterDevice(
+      id: '0x${nodeId.toRadixString(16)}',
+      name: name,
+      deviceType: DeviceType.unknown,
+      nodeId: nodeId,
+      commissionedAt: now,
+      lastModified: now,
+      energyRole: EnergyRole.homeBattery,
+    ),
+    DeviceLiveData(
+      updatedAt: now,
+      isStale: false,
+      // batPercentRaw is in half-percent units, as the controller sends it.
+      attrs: {
+        'activePower': (watts * 1000).round(),
+        'batPercentRaw': soc * 2,
+      },
+    ),
+  );
+}
 
 /// The battery belongs on both sides of the energy balance. These pin the two
 /// figures a house with storage is judged by, because both were wrong before the
 /// per-bucket battery data was used.
 void main() {
+
+  group('two batteries', () {
+    test('each keeps its own level instead of being averaged away', () {
+      final s = EnergySummary.fromDevices([
+        battery(nodeId: 0x1A, name: 'Venus Battery', watts: -500, soc: 73),
+        battery(nodeId: 0x1C, name: 'Marstek Venus', watts: 200, soc: 44),
+      ]);
+
+      expect(s.batteries.length, 2);
+      expect(s.batteries[0].socPercent, 73);
+      expect(s.batteries[1].socPercent, 44);
+      // Direction is per battery too: one can charge while the other empties.
+      expect(s.batteries[0].netW, lessThan(0));
+      expect(s.batteries[1].netW, greaterThan(0));
+      // The old mean still exists, and is still the number that describes
+      // neither pack — which is why the card stops showing it.
+      expect(s.batterySocPercent, 59);
+    });
+
+    test('one battery still reports a single level', () {
+      final s = EnergySummary.fromDevices([
+        battery(nodeId: 0x1A, name: 'Venus Battery', watts: -500, soc: 73),
+      ]);
+      expect(s.batteries.length, 1);
+      expect(s.batterySocPercent, 73);
+    });
+  });
   _homeConsumerTests();
 
   EnergyHistoryPoint p({

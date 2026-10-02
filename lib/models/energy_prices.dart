@@ -7,9 +7,15 @@ import 'package:matter_home/services/proto/flux.pbenum.dart' as $enum;
 /// day-ahead spot prices can go below zero).
 @immutable
 class PricePoint {
-  const PricePoint({required this.time, required this.ctPerKwh});
+  const PricePoint({required this.time, required this.ctPerKwh, this.spotUeur});
   final DateTime time;
   final double ctPerKwh;
+
+  /// The raw wholesale value in µEUR/kWh, before markup and VAT — kept so the
+  /// archive can store what the market said rather than what this tariff made of
+  /// it. A tariff correction then reprices history instead of being locked out
+  /// of it. Null on a curve rebuilt from the archive, where it is the source.
+  final int? spotUeur;
 }
 
 /// Decoded day-ahead price curve: per-interval ct/kWh plus the min/max/avg for
@@ -123,6 +129,52 @@ class EnergyPrices {
     return history.gridExportKwh * feedInCt;
   }
 
+  /// Rebuilds a curve from archived net spot values — one per bucket, in the
+  /// same order and on the same time base as the history window, with nulls where
+  /// nothing was recorded.
+  ///
+  /// The markup and VAT are applied here rather than having been baked in when
+  /// the row was written, so a day from six weeks ago is priced with today's
+  /// understanding of the tariff. That is the point of storing the net value.
+  factory EnergyPrices.fromArchive(
+    List<DateTime> times,
+    List<int?> spotUeur, {
+    required Duration resolution,
+    int markupUeurPerKwh = 0,
+    int vatPercent = 0,
+    String currency = 'EUR',
+  }) {
+    final markupCt = markupUeurPerKwh / 10000.0;
+    final vatMul = 1 + vatPercent / 100.0;
+    final points = <PricePoint>[
+      for (var i = 0; i < times.length && i < spotUeur.length; i++)
+        if (spotUeur[i] != null)
+          PricePoint(
+            time: times[i],
+            ctPerKwh: (spotUeur[i]! / 10000.0 + markupCt) * vatMul,
+            spotUeur: spotUeur[i],
+          ),
+    ];
+    if (points.isEmpty) {
+      return EnergyPrices(
+        points: const [], resolution: resolution, currency: currency,
+        stale: false, minCt: 0, maxCt: 0, avgCt: 0,
+      );
+    }
+    final cts = points.map((p) => p.ctPerKwh).toList(growable: false);
+    return EnergyPrices(
+      points: points,
+      resolution: resolution,
+      currency: currency,
+      // Not stale: an archived curve is not a prediction that ran out, it is a
+      // record of what the price was.
+      stale: false,
+      minCt: cts.reduce((a, b) => a < b ? a : b),
+      maxCt: cts.reduce((a, b) => a > b ? a : b),
+      avgCt: cts.reduce((a, b) => a + b) / cts.length,
+    );
+  }
+
   /// [markupUeurPerKwh] (grid fees + levies + taxes, net) and [vatPercent] come
   /// from the controller's PricingConfig and turn the raw wholesale spot curve
   /// into the gross consumer price the user actually pays:
@@ -161,11 +213,15 @@ class EnergyPrices {
     final maxCt = cts.reduce((a, b) => a > b ? a : b);
     final avgCt = cts.reduce((a, b) => a + b) / cts.length;
 
+    // Normalise the raw value to µEUR/kWh regardless of the wire unit, so the
+    // archive has one unit to store and one to read back.
+    final toUeur = c.unit == $enum.PriceUnit.PRICE_UNIT_EUR_PER_MWH ? 1000.0 : 1.0;
     final points = <PricePoint>[
       for (var i = 0; i < cts.length; i++)
         PricePoint(
           time: DateTime.fromMillisecondsSinceEpoch((start + i * res) * 1000),
           ctPerKwh: cts[i],
+          spotUeur: (c.prices[i] * toUeur).round(),
         ),
     ];
 

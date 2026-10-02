@@ -11,6 +11,9 @@ class EnergyBucketRow {
     required this.chargeWh,
     required this.dischargeWh,
     this.socPct,
+    this.spotUeur,
+    this.forecastWh,
+    this.socs = const {},
   });
 
   final int epoch;   // UTC seconds at the bucket's START
@@ -21,10 +24,53 @@ class EnergyBucketRow {
   final int chargeWh;
   final int dischargeWh;
   /// Charge level at the bucket's end, or null if no battery reported.
+  ///
+  /// The mean across batteries. Kept for rows written before [socs] existed, and
+  /// still written so an older build reading this cache sees what it expects.
+  /// [socs] is what the chart uses.
   final int? socPct;
 
+  /// Charge level at the bucket's end PER BATTERY, keyed by node id.
+  ///
+  /// A house can have more than one store, and they do not move together — one
+  /// pack can sit full while another is run flat. [socPct] averaged them, which
+  /// made the cache lossy in a way the wire format was not: the controller sends
+  /// a series per battery and this threw that apart before it reached the chart.
+  ///
+  /// Empty for rows written by an older build; those fall back to [socPct].
+  final Map<int, int> socs;
+
+  /// The wholesale spot price in force during this bucket, in µEUR/kWh — the
+  /// wire unit, stored NET.
+  ///
+  /// Net rather than gross on purpose: markup and VAT come from the controller's
+  /// PricingConfig and can be corrected later, and a gross figure would freeze
+  /// whatever the tariff happened to say on the day. Null where the curve did not
+  /// cover the bucket (the app was not running, or prices are disabled).
+  final int? spotUeur;
+
+  /// What the PV forecast predicted for this bucket, in Wh, as it stood while the
+  /// bucket was live. Null when no forecast covered it.
+  ///
+  /// Kept because the interesting comparison is prediction against outcome, and
+  /// a forecast re-read later is no longer a prediction — the controller revises
+  /// it as the sky changes, so only the value captured at the time can be scored.
+  final int? forecastWh;
+
+  /// Node-keyed levels as `1a:73|1c:44` — hex node id, decimal percent.
+  ///
+  /// A trailing column, because every reader tolerates columns it does not know
+  /// (see [decode]): an older build keeps working against a newer cache, and a
+  /// newer build keeps working against an older one.
+  String _encodeSocs() => socs.isEmpty
+      ? ''
+      : socs.entries
+          .map((e) => '${e.key.toRadixString(16)}:${e.value}')
+          .join('|');
+
   String encode() => '$epoch,$pvWh,$importWh,$exportWh,$loadWh,$chargeWh,'
-      '$dischargeWh,${socPct ?? ''}';
+      '$dischargeWh,${socPct ?? ''},${spotUeur ?? ''},${forecastWh ?? ''},'
+      '${_encodeSocs()}';
 
   static EnergyBucketRow? decode(String s) {
     final p = s.split(',');
@@ -41,7 +87,23 @@ class EnergyBucketRow {
       chargeWh: n(p[5]) ?? 0,
       dischargeWh: n(p[6]) ?? 0,
       socPct: p.length > 7 ? n(p[7]) : null,
+      spotUeur: p.length > 8 ? n(p[8]) : null,
+      forecastWh: p.length > 9 ? n(p[9]) : null,
+      socs: p.length > 10 ? _decodeSocs(p[10]) : const {},
     );
+  }
+
+  static Map<int, int> _decodeSocs(String v) {
+    if (v.isEmpty) return const {};
+    final out = <int, int>{};
+    for (final pair in v.split('|')) {
+      final i = pair.indexOf(':');
+      if (i <= 0) continue;
+      final id = int.tryParse(pair.substring(0, i), radix: 16);
+      final pct = int.tryParse(pair.substring(i + 1));
+      if (id != null && pct != null) out[id] = pct;
+    }
+    return out;
   }
 }
 
@@ -68,23 +130,55 @@ class EnergyBucketRow {
 class EnergyCache {
   EnergyCache(this._prefs);
 
-  static const _key = 'energy_buckets_v1';
+  /// Bumped to v2 for two reasons at once: the rows gained a price and a
+  /// forecast column, and — the reason it could not simply be widened — every
+  /// row written before the controller's 2026-09-15 fix carries the old device
+  /// classification, which read a sub-meter as the grid connection. Those rows
+  /// are wrong, not merely old, and the controller now re-resolves the class on
+  /// every query, so dropping them is how the correction reaches the phone.
+  static const _key = 'energy_buckets_v2';
+
+  /// The pre-2026-09-16 key. Its rows are not migrated — they carry the device
+  /// classification the controller has since corrected — but they are ~45 KB of
+  /// dead weight in SharedPreferences, so they are dropped once.
+  static const _legacyKey = 'energy_buckets_v1';
   static const _maxRows = 24 * 45;
 
   final SharedPreferences _prefs;
 
+  /// How far past the phone's clock a bucket may be stamped and still be kept.
+  ///
+  /// Bucket times come from the controller; the window that selects them is the
+  /// phone's. The two clocks differ, and a bucket stamped a little ahead is the
+  /// newest data rather than a future event. Anything beyond this is a clock
+  /// fault, and keeping it wedges the tail fetch for ever — see
+  /// DeviceProvider.fetchEnergyHistory.
+  static const clockSkew = Duration(hours: 2);
+
   /// Cached buckets by start epoch, oldest first.
+  ///
+  /// Rows stamped implausibly far in the future are dropped on the way out: a
+  /// single one of them pins `newestEnd` ahead of the window and stops the live
+  /// window ever advancing again, which survives restarts because the row is on
+  /// disk. Dropping them here self-heals an install that already wedged.
   Map<int, EnergyBucketRow> load() {
+    final horizon = DateTime.now().add(clockSkew).millisecondsSinceEpoch ~/ 1000;
     final out = <int, EnergyBucketRow>{};
     for (final line in _prefs.getStringList(_key) ?? const <String>[]) {
       final r = EnergyBucketRow.decode(line);
-      if (r != null) out[r.epoch] = r;
+      if (r != null && r.epoch <= horizon) out[r.epoch] = r;
     }
     return out;
   }
 
+  bool _legacyPruned = false;
+
   /// Merges [rows] over what is stored and persists the result.
   Future<Map<int, EnergyBucketRow>> merge(Iterable<EnergyBucketRow> rows) async {
+    if (!_legacyPruned) {
+      _legacyPruned = true;
+      if (_prefs.containsKey(_legacyKey)) await _prefs.remove(_legacyKey);
+    }
     final all = load();
     for (final r in rows) {
       all[r.epoch] = r;   // newer wins
