@@ -169,19 +169,26 @@ class _Plan {
     // belongs here is the one sentence someone would say if asked what the
     // house is doing — and that sentence should not change every few seconds
     // because a kettle went on.
+    // One shape — "Running on X" — so the eye lands on the source rather than
+    // re-reading the sentence. "House running on…" repeated the obvious: there
+    // is only one house, and it is the subject of every line on this screen.
     final String headline;
     if (s.gridImport > 300) {
-      headline = 'House running on the grid';
+      headline = s.pvProduction > 300
+          ? 'Running on solar and grid'
+          : 'Running on grid power';
     } else if (s.batteryDischarge > 300) {
-      headline = 'House running on the battery';
+      headline = s.pvProduction > 300
+          ? 'Running on solar and battery'
+          : 'Running on the battery';
     } else if (s.pvProduction > 300) {
       headline = s.gridExport > 300
-          ? 'House on the roof, surplus going to the grid'
-          : 'House running on the roof';
+          ? 'Running on solar, surplus to the grid'
+          : 'Running on solar';
     } else if (s.batteryCharge > 300) {
-      headline = 'Charging the battery';
+      headline = 'Storing surplus in the battery';
     } else {
-      headline = 'Nothing much happening';
+      headline = 'Everything quiet';
     }
 
     final _Tone tone;
