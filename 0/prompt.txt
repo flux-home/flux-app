@@ -1,0 +1,17 @@
+can you find a better wording for the single states?
+
+---
+
+this is better
+
+---
+
+can you install
+
+---
+
+the energy/price graph says bottom overflowed by 5 pixels sometimes, and since 2 days i see strange peaks for grid + obviously my home consumption for today is not correct, can you check this? furthermore I'm not seeing the solar forecast in the history when going a few days back
+
+---
+
+the app is still showing the spike, did you install it
