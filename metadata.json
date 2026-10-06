@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M49E8HBK51677VZJ6Q2K9A3X",
+  "strategy": "manual-commit",
+  "branch": "feat/energy-automation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "lib/services/energy_cache.dart",
+    "lib/ui/screens/home/energy_timeline_card.dart",
+    "test/energy_cache_test.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 57754,
+    "cache_read_tokens": 7067445,
+    "output_tokens": 27028,
+    "api_call_count": 49
+  }
+}
