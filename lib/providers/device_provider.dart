@@ -669,6 +669,18 @@ class DeviceProvider extends ChangeNotifier {
     return ok;
   }
 
+  List<$proto.EnergyEvent> _energyEvents = const [];
+
+  /// The engine's decision log, oldest first.
+  List<$proto.EnergyEvent> get energyEvents => _energyEvents;
+
+  Future<void> fetchEnergyEvents() async {
+    final svc = _ctrlService;
+    if (svc == null) return;
+    _energyEvents = await svc.getEnergyEvents();
+    notifyListeners();
+  }
+
   Future<$proto.EnergyControl?> fetchEnergyControl() async {
     final svc = _ctrlService;
     if (svc == null) return null;

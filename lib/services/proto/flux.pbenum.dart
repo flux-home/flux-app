@@ -282,6 +282,77 @@ class PriceUnit extends $pb.ProtobufEnum {
   const PriceUnit._(super.value, super.name);
 }
 
+/// GET /energy/events — why the engine did what it did, newest last.
+///
+/// A decision log rather than a measurement log. The engine acts continuously
+/// and mostly invisibly: a limit held and a cloud passing produce the same power
+/// readings, so without this the only way to tell what happened is to infer it
+/// from curves. Entries are written on TRANSITIONS, not on every cycle.
+///
+/// The controller records what happened and to which device; the words are the
+/// app's, so phrasing can improve without a firmware flash and no strings are
+/// kept in flash.
+class EnergyEventKind extends $pb.ProtobufEnum {
+  static const EnergyEventKind ENERGY_EVENT_UNSPECIFIED =
+      EnergyEventKind._(0, _omitEnumNames ? '' : 'ENERGY_EVENT_UNSPECIFIED');
+  static const EnergyEventKind ENERGY_EVENT_LIMIT_APPLIED =
+      EnergyEventKind._(1, _omitEnumNames ? '' : 'ENERGY_EVENT_LIMIT_APPLIED');
+  static const EnergyEventKind ENERGY_EVENT_LIMIT_RAISED =
+      EnergyEventKind._(2, _omitEnumNames ? '' : 'ENERGY_EVENT_LIMIT_RAISED');
+  static const EnergyEventKind ENERGY_EVENT_LIMIT_CLEARED =
+      EnergyEventKind._(3, _omitEnumNames ? '' : 'ENERGY_EVENT_LIMIT_CLEARED');
+  static const EnergyEventKind ENERGY_EVENT_ABSORB_START =
+      EnergyEventKind._(4, _omitEnumNames ? '' : 'ENERGY_EVENT_ABSORB_START');
+  static const EnergyEventKind ENERGY_EVENT_ABSORB_STOP =
+      EnergyEventKind._(5, _omitEnumNames ? '' : 'ENERGY_EVENT_ABSORB_STOP');
+  static const EnergyEventKind ENERGY_EVENT_BATTERY_FULL =
+      EnergyEventKind._(6, _omitEnumNames ? '' : 'ENERGY_EVENT_BATTERY_FULL');
+  static const EnergyEventKind ENERGY_EVENT_BATTERY_STALL =
+      EnergyEventKind._(7, _omitEnumNames ? '' : 'ENERGY_EVENT_BATTERY_STALL');
+  static const EnergyEventKind ENERGY_EVENT_METER_LOST =
+      EnergyEventKind._(8, _omitEnumNames ? '' : 'ENERGY_EVENT_METER_LOST');
+  static const EnergyEventKind ENERGY_EVENT_METER_OK =
+      EnergyEventKind._(9, _omitEnumNames ? '' : 'ENERGY_EVENT_METER_OK');
+  static const EnergyEventKind ENERGY_EVENT_CONFIG_SET =
+      EnergyEventKind._(10, _omitEnumNames ? '' : 'ENERGY_EVENT_CONFIG_SET');
+
+  /// Observations, not decisions. Where the house's power is coming from is
+  /// mostly somebody else's doing — a battery inverter running its own
+  /// policy — but it is half the story of a day, and a log that recorded only
+  /// what flux chose would read as though nothing else happened.
+  static const EnergyEventKind ENERGY_EVENT_HOUSE_ON_SOLAR = EnergyEventKind._(
+      11, _omitEnumNames ? '' : 'ENERGY_EVENT_HOUSE_ON_SOLAR');
+  static const EnergyEventKind ENERGY_EVENT_HOUSE_ON_BATTERY =
+      EnergyEventKind._(
+          12, _omitEnumNames ? '' : 'ENERGY_EVENT_HOUSE_ON_BATTERY');
+  static const EnergyEventKind ENERGY_EVENT_HOUSE_ON_GRID =
+      EnergyEventKind._(13, _omitEnumNames ? '' : 'ENERGY_EVENT_HOUSE_ON_GRID');
+
+  static const $core.List<EnergyEventKind> values = <EnergyEventKind>[
+    ENERGY_EVENT_UNSPECIFIED,
+    ENERGY_EVENT_LIMIT_APPLIED,
+    ENERGY_EVENT_LIMIT_RAISED,
+    ENERGY_EVENT_LIMIT_CLEARED,
+    ENERGY_EVENT_ABSORB_START,
+    ENERGY_EVENT_ABSORB_STOP,
+    ENERGY_EVENT_BATTERY_FULL,
+    ENERGY_EVENT_BATTERY_STALL,
+    ENERGY_EVENT_METER_LOST,
+    ENERGY_EVENT_METER_OK,
+    ENERGY_EVENT_CONFIG_SET,
+    ENERGY_EVENT_HOUSE_ON_SOLAR,
+    ENERGY_EVENT_HOUSE_ON_BATTERY,
+    ENERGY_EVENT_HOUSE_ON_GRID,
+  ];
+
+  static final $core.List<EnergyEventKind?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 13);
+  static EnergyEventKind? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const EnergyEventKind._(super.value, super.name);
+}
+
 /// POST /remote/signal — one MAC'd offer/answer/candidate (ADR-0003/0005/0006).
 /// Our impl (libjuice, ADR-0013) carries the opaque SDP description/candidate.
 class IceSignalKind extends $pb.ProtobufEnum {

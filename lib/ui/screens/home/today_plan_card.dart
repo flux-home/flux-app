@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
+import 'package:fixnum/fixnum.dart';
 import 'package:provider/provider.dart';
 
 
 import 'package:matter_home/models/energy_role.dart';
+import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
+import 'package:matter_home/services/proto/flux.pbenum.dart' as $enum;
 import 'package:matter_home/ui/screens/settings/grid_settings_screen.dart';
 import 'package:matter_home/utils/power_format.dart';
 
@@ -29,8 +34,26 @@ import 'package:matter_home/utils/power_format.dart';
 /// level says whether there is anywhere to put surplus, and the solar forecast
 /// says when the two will matter. The only figure the app cannot learn is the
 /// export cap, which comes from the grid operator and is asked for once.
-class TodayPlanCard extends StatelessWidget {
+class TodayPlanCard extends StatefulWidget {
   const TodayPlanCard({super.key});
+
+  @override
+  State<TodayPlanCard> createState() => _TodayPlanCardState();
+}
+
+class _TodayPlanCardState extends State<TodayPlanCard> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final p = context.read<DeviceProvider>();
+      p
+        ..fetchEnergyLimits()
+        ..fetchEnergyControl()
+        ..fetchEnergyEvents();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,9 +85,25 @@ class TodayPlanCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _Headline(plan: plan),
+            if (plan.because != null) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 17),
+                child: Text(plan.because!,
+                    style: TextStyle(
+                        fontSize: 13, height: 1.3, color: cs.onSurfaceVariant)),
+              ),
+            ],
             if (plan.events.isNotEmpty) ...[
               const SizedBox(height: 14),
               for (final e in plan.events) _EventRow(event: e),
+            ],
+            if (p.energyEvents.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const _Divider(),
+              const SizedBox(height: 10),
+              for (final e in p.energyEvents.reversed.take(6))
+                _LogRow(event: e, devices: p.deviceViews),
             ],
             if (cap == null) ...[
               const SizedBox(height: 12),
@@ -96,11 +135,13 @@ class _Event {
 class _Plan {
   const _Plan({
     required this.headline,
+    required this.because,
     required this.tone,
     required this.events,
   });
 
   final String headline;
+  final String? because;
   final _Tone tone;
   final List<_Event> events;
 
@@ -125,32 +166,53 @@ class _Plan {
         batteries.every((b) => (b.socPercent ?? 0) >= 97);
     final anyCharging = batteries.any((b) => b.netW > 50);
 
-    final String headline;
+    // Facts first. The engine's own words come after the numbers, because the
+    // numbers are what a glance is for and the sentence is what a second look
+    // is for.
+    final parts = <String>[];
+    if (s.pvProduction > 20) {
+      parts.add('Roof ${powerLabelW(s.pvProduction)}');
+    }
+    if (s.gridExport > 20) {
+      parts.add('exporting ${powerLabelW(s.gridExport)}');
+    } else if (s.gridImport > 20) {
+      parts.add('importing ${powerLabelW(s.gridImport)}');
+    }
+    if (s.batteryCharge > 20) {
+      parts.add('battery +${powerLabelW(s.batteryCharge)}');
+    } else if (s.batteryDischarge > 20) {
+      parts.add('battery −${powerLabelW(s.batteryDischarge)}');
+    }
+    parts.add('house ${powerLabelW(s.homeExcludingAssets + s.heatPump + s.carCharging)}');
+
+    final headline = parts.join(' · ');
+
     final _Tone tone;
     if (pvLimitW != null && full) {
-      headline = 'Solar held at ${powerLabelW(pvLimitW.toDouble())} — '
-          'the grid is at its limit and the battery is full, so the rest is '
-          'being left on the roof.';
       tone = _Tone.warn;
-    } else if (pvLimitW != null && anyCharging) {
-      headline = 'Solar held at ${powerLabelW(pvLimitW.toDouble())} — '
-          'the extra is going into the battery instead of the grid.';
-      tone = _Tone.holding;
     } else if (pvLimitW != null) {
-      headline = 'Solar held at ${powerLabelW(pvLimitW.toDouble())} to stay '
-          'under the feed-in limit.';
       tone = _Tone.holding;
-    } else if (s.pvProduction > 50) {
-      headline = 'Everything the roof makes is being used or exported — '
-          'nothing is being held back.';
-      tone = _Tone.ok;
     } else {
-      headline = 'Nothing from the roof right now.';
       tone = _Tone.ok;
+    }
+
+    final String? because;
+    if (pvLimitW != null && full) {
+      because = 'Roof capped at ${powerLabelW(pvLimitW.toDouble())} — '
+          'battery full, so the rest is left on the roof.';
+    } else if (pvLimitW != null && anyCharging) {
+      because = 'Roof capped at ${powerLabelW(pvLimitW.toDouble())} — '
+          'the extra is going into the battery.';
+    } else if (pvLimitW != null) {
+      because = 'Roof capped at ${powerLabelW(pvLimitW.toDouble())} '
+          'to stay under the feed-in limit.';
+    } else {
+      because = null;
     }
 
     return _Plan(
       headline: headline,
+      because: because,
       tone: tone,
       events: _outlook(p, cap, full),
     );
@@ -324,6 +386,109 @@ class _NoLimitSet extends StatelessWidget {
           child: const Text('Set it'),
         ),
       ],
+    );
+  }
+}
+
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) => Divider(
+      height: 1, color: Theme.of(context).colorScheme.outlineVariant);
+}
+
+/// One decision, in the past tense.
+///
+/// The controller stores what happened and to which device; the sentence is
+/// built here, so the wording can improve without a firmware flash. Anything
+/// automatic that spends money or throws energy away earns a line — that is the
+/// difference between a system that is trusted and one that is merely obeyed.
+class _LogRow extends StatelessWidget {
+  const _LogRow({required this.event, required this.devices});
+
+  final $proto.EnergyEvent event;
+  final List<DeviceView> devices;
+
+  String _name(Int64 nodeId) {
+    if (nodeId.toInt() == 0) return 'the house';
+    for (final d in devices) {
+      if (d.nodeId == nodeId.toInt()) return d.name;
+    }
+    return 'a device';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final w = event.valueW.abs();
+    final name = _name(event.nodeId);
+
+    final String text;
+    switch (event.kind) {
+      case $enum.EnergyEventKind.ENERGY_EVENT_LIMIT_APPLIED:
+        text = 'Capped $name at ${powerLabelW(w.toDouble())} — the roof was '
+            'making more than the grid will take.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_LIMIT_RAISED:
+        text = 'Raised $name to ${powerLabelW(w.toDouble())} — more room to '
+            'store.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_LIMIT_CLEARED:
+        text = 'Stopped capping $name.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_ABSORB_START:
+        text = 'Started charging $name at ${powerLabelW(w.toDouble())} — '
+            'surplus the grid would not take.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_ABSORB_STOP:
+        text = 'Stopped charging $name — no surplus left.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_BATTERY_FULL:
+        text = '$name full — surplus is being left on the roof.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_BATTERY_STALL:
+        text = '$name is not taking the setpoints it accepts.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_METER_LOST:
+        text = 'Lost the meter — fell back to the safe limit.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_METER_OK:
+        text = 'Measuring at ${_name(event.nodeId)} again.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_CONFIG_SET:
+        text = 'Feed-in limit set to ${powerLabelW(w.toDouble())}.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_SOLAR:
+        text = 'House running on the roof.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_BATTERY:
+        text = 'House running on the battery, not the grid.';
+      case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_GRID:
+        text = 'House back on the grid.';
+      default:
+        return const SizedBox.shrink();
+    }
+
+    final at = event.at.toInt();
+    final clock = at == 0
+        ? '--:--'
+        : () {
+            final t = DateTime.fromMillisecondsSinceEpoch(at * 1000).toLocal();
+            return '${t.hour.toString().padLeft(2, '0')}:'
+                '${t.minute.toString().padLeft(2, '0')}';
+          }();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 46,
+            child: Text(clock,
+                style: TextStyle(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontSize: 12.5,
+                  color: cs.onSurfaceVariant,
+                )),
+          ),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 13, height: 1.3, color: cs.onSurfaceVariant)),
+          ),
+        ],
+      ),
     );
   }
 }

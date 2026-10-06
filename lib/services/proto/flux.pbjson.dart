@@ -154,6 +154,39 @@ final $typed_data.Uint8List priceUnitDescriptor = $convert.base64Decode(
     'CglQcmljZVVuaXQSGwoXUFJJQ0VfVU5JVF9VRVVSX1BFUl9LV0gQABIaChZQUklDRV9VTklUX0'
     'VVUl9QRVJfTVdIEAE=');
 
+@$core.Deprecated('Use energyEventKindDescriptor instead')
+const EnergyEventKind$json = {
+  '1': 'EnergyEventKind',
+  '2': [
+    {'1': 'ENERGY_EVENT_UNSPECIFIED', '2': 0},
+    {'1': 'ENERGY_EVENT_LIMIT_APPLIED', '2': 1},
+    {'1': 'ENERGY_EVENT_LIMIT_RAISED', '2': 2},
+    {'1': 'ENERGY_EVENT_LIMIT_CLEARED', '2': 3},
+    {'1': 'ENERGY_EVENT_ABSORB_START', '2': 4},
+    {'1': 'ENERGY_EVENT_ABSORB_STOP', '2': 5},
+    {'1': 'ENERGY_EVENT_BATTERY_FULL', '2': 6},
+    {'1': 'ENERGY_EVENT_BATTERY_STALL', '2': 7},
+    {'1': 'ENERGY_EVENT_METER_LOST', '2': 8},
+    {'1': 'ENERGY_EVENT_METER_OK', '2': 9},
+    {'1': 'ENERGY_EVENT_CONFIG_SET', '2': 10},
+    {'1': 'ENERGY_EVENT_HOUSE_ON_SOLAR', '2': 11},
+    {'1': 'ENERGY_EVENT_HOUSE_ON_BATTERY', '2': 12},
+    {'1': 'ENERGY_EVENT_HOUSE_ON_GRID', '2': 13},
+  ],
+};
+
+/// Descriptor for `EnergyEventKind`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List energyEventKindDescriptor = $convert.base64Decode(
+    'Cg9FbmVyZ3lFdmVudEtpbmQSHAoYRU5FUkdZX0VWRU5UX1VOU1BFQ0lGSUVEEAASHgoaRU5FUk'
+    'dZX0VWRU5UX0xJTUlUX0FQUExJRUQQARIdChlFTkVSR1lfRVZFTlRfTElNSVRfUkFJU0VEEAIS'
+    'HgoaRU5FUkdZX0VWRU5UX0xJTUlUX0NMRUFSRUQQAxIdChlFTkVSR1lfRVZFTlRfQUJTT1JCX1'
+    'NUQVJUEAQSHAoYRU5FUkdZX0VWRU5UX0FCU09SQl9TVE9QEAUSHQoZRU5FUkdZX0VWRU5UX0JB'
+    'VFRFUllfRlVMTBAGEh4KGkVORVJHWV9FVkVOVF9CQVRURVJZX1NUQUxMEAcSGwoXRU5FUkdZX0'
+    'VWRU5UX01FVEVSX0xPU1QQCBIZChVFTkVSR1lfRVZFTlRfTUVURVJfT0sQCRIbChdFTkVSR1lf'
+    'RVZFTlRfQ09ORklHX1NFVBAKEh8KG0VORVJHWV9FVkVOVF9IT1VTRV9PTl9TT0xBUhALEiEKHU'
+    'VORVJHWV9FVkVOVF9IT1VTRV9PTl9CQVRURVJZEAwSHgoaRU5FUkdZX0VWRU5UX0hPVVNFX09O'
+    'X0dSSUQQDQ==');
+
 @$core.Deprecated('Use iceSignalKindDescriptor instead')
 const IceSignalKind$json = {
   '1': 'IceSignalKind',
@@ -1390,6 +1423,51 @@ final $typed_data.Uint8List energyControlDescriptor = $convert.base64Decode(
     'xsEicKD2JhdHRlcnlfc3RhbGxlZBgKIAEoCFIOYmF0dGVyeVN0YWxsZWQSFgoGZmF1bHRzGAsg'
     'ASgNUgZmYXVsdHMSIgoNbWV0ZXJfbm9kZV9pZBgMIAEoBFILbWV0ZXJOb2RlSWQSHwoLaW50ZX'
     'J2YWxfbXMYDSABKA1SCmludGVydmFsTXM=');
+
+@$core.Deprecated('Use energyEventDescriptor instead')
+const EnergyEvent$json = {
+  '1': 'EnergyEvent',
+  '2': [
+    {'1': 'at', '3': 1, '4': 1, '5': 3, '10': 'at'},
+    {
+      '1': 'kind',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.flux.EnergyEventKind',
+      '10': 'kind'
+    },
+    {'1': 'node_id', '3': 3, '4': 1, '5': 4, '10': 'nodeId'},
+    {'1': 'value_w', '3': 4, '4': 1, '5': 17, '10': 'valueW'},
+    {'1': 'grid_w', '3': 5, '4': 1, '5': 17, '10': 'gridW'},
+  ],
+};
+
+/// Descriptor for `EnergyEvent`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyEventDescriptor = $convert.base64Decode(
+    'CgtFbmVyZ3lFdmVudBIOCgJhdBgBIAEoA1ICYXQSKQoEa2luZBgCIAEoDjIVLmZsdXguRW5lcm'
+    'd5RXZlbnRLaW5kUgRraW5kEhcKB25vZGVfaWQYAyABKARSBm5vZGVJZBIXCgd2YWx1ZV93GAQg'
+    'ASgRUgZ2YWx1ZVcSFQoGZ3JpZF93GAUgASgRUgVncmlkVw==');
+
+@$core.Deprecated('Use energyEventListDescriptor instead')
+const EnergyEventList$json = {
+  '1': 'EnergyEventList',
+  '2': [
+    {
+      '1': 'events',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.flux.EnergyEvent',
+      '10': 'events'
+    },
+  ],
+};
+
+/// Descriptor for `EnergyEventList`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List energyEventListDescriptor = $convert.base64Decode(
+    'Cg9FbmVyZ3lFdmVudExpc3QSKQoGZXZlbnRzGAEgAygLMhEuZmx1eC5FbmVyZ3lFdmVudFIGZX'
+    'ZlbnRz');
 
 @$core.Deprecated('Use stunServerDescriptor instead')
 const StunServer$json = {

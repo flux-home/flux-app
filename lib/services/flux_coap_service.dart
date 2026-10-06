@@ -47,6 +47,7 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// GET  /energy/limits                → EnergyLimits
 /// POST /energy/limits                ← EnergyLimits → StatusResponse (LAN only)
 /// GET  /energy/control               → EnergyControl
+/// GET  /energy/events                → EnergyEventList
 /// GET  /solar/config                 → SolarConfig
 /// POST /solar/config                 ← SolarConfig → StatusResponse (LAN only)
 /// GET  /solar/forecast               → SolarForecast
@@ -400,6 +401,17 @@ class FluxCoapService implements MatterPort {
     on Exception catch (e) {
       debugPrint('FluxCoapService getEnergyControl: $e');
       return null;
+    }
+  }
+
+  /// Why the engine did what it did (GET /energy/events), oldest first.
+  Future<List<$proto.EnergyEvent>> getEnergyEvents() async {
+    final b = await _get('/energy/events');
+    if (b == null) return const [];
+    try { return $proto.EnergyEventList.fromBuffer(b).events; }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getEnergyEvents: $e');
+      return const [];
     }
   }
 

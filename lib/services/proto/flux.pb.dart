@@ -5418,6 +5418,159 @@ class EnergyControl extends $pb.GeneratedMessage {
   void clearIntervalMs() => $_clearField(13);
 }
 
+class EnergyEvent extends $pb.GeneratedMessage {
+  factory EnergyEvent({
+    $fixnum.Int64? at,
+    EnergyEventKind? kind,
+    $fixnum.Int64? nodeId,
+    $core.int? valueW,
+    $core.int? gridW,
+  }) {
+    final result = create();
+    if (at != null) result.at = at;
+    if (kind != null) result.kind = kind;
+    if (nodeId != null) result.nodeId = nodeId;
+    if (valueW != null) result.valueW = valueW;
+    if (gridW != null) result.gridW = gridW;
+    return result;
+  }
+
+  EnergyEvent._();
+
+  factory EnergyEvent.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyEvent.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyEvent',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aInt64(1, _omitFieldNames ? '' : 'at')
+    ..aE<EnergyEventKind>(2, _omitFieldNames ? '' : 'kind',
+        enumValues: EnergyEventKind.values)
+    ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'nodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(4, _omitFieldNames ? '' : 'valueW', fieldType: $pb.PbFieldType.OS3)
+    ..aI(5, _omitFieldNames ? '' : 'gridW', fieldType: $pb.PbFieldType.OS3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyEvent clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyEvent copyWith(void Function(EnergyEvent) updates) =>
+      super.copyWith((message) => updates(message as EnergyEvent))
+          as EnergyEvent;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyEvent create() => EnergyEvent._();
+  @$core.override
+  EnergyEvent createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyEvent getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyEvent>(create);
+  static EnergyEvent? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get at => $_getI64(0);
+  @$pb.TagNumber(1)
+  set at($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasAt() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearAt() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  EnergyEventKind get kind => $_getN(1);
+  @$pb.TagNumber(2)
+  set kind(EnergyEventKind value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasKind() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearKind() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get nodeId => $_getI64(2);
+  @$pb.TagNumber(3)
+  set nodeId($fixnum.Int64 value) => $_setInt64(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasNodeId() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearNodeId() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get valueW => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set valueW($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasValueW() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearValueW() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get gridW => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set gridW($core.int value) => $_setSignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasGridW() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearGridW() => $_clearField(5);
+}
+
+class EnergyEventList extends $pb.GeneratedMessage {
+  factory EnergyEventList({
+    $core.Iterable<EnergyEvent>? events,
+  }) {
+    final result = create();
+    if (events != null) result.events.addAll(events);
+    return result;
+  }
+
+  EnergyEventList._();
+
+  factory EnergyEventList.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyEventList.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyEventList',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..pPM<EnergyEvent>(1, _omitFieldNames ? '' : 'events',
+        subBuilder: EnergyEvent.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyEventList clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyEventList copyWith(void Function(EnergyEventList) updates) =>
+      super.copyWith((message) => updates(message as EnergyEventList))
+          as EnergyEventList;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyEventList create() => EnergyEventList._();
+  @$core.override
+  EnergyEventList createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyEventList getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyEventList>(create);
+  static EnergyEventList? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<EnergyEvent> get events => $_getList(0);
+}
+
 class StunServer extends $pb.GeneratedMessage {
   factory StunServer({
     $core.String? host,
