@@ -11,7 +11,6 @@ import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 import 'package:matter_home/services/proto/flux.pbenum.dart' as $enum;
-import 'package:matter_home/ui/screens/settings/grid_settings_screen.dart';
 import 'package:matter_home/utils/power_format.dart';
 
 /// What the system is doing right now, and roughly what is left of today.
@@ -106,10 +105,6 @@ class _TodayPlanCardState extends State<TodayPlanCard> {
                   const SizedBox(height: 10),
                   for (final e in p.energyEvents.reversed.take(6))
                     _LogRow(event: e, devices: p.deviceViews),
-                ],
-                if (cap == null) ...[
-                  const SizedBox(height: 10),
-                  const _NoLimitSet(),
                 ],
               ],
             ),
@@ -360,38 +355,6 @@ class _EventRow extends StatelessWidget {
     );
   }
 }
-
-/// The limit lives in Settings → Energy setup → Energy Management, because the
-/// controller owns it. Asking for it here would create a second copy of a value
-/// that is only meaningful in one place.
-class _NoLimitSet extends StatelessWidget {
-  const _NoLimitSet();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(Icons.info_outline, size: 16, color: cs.onSurfaceVariant),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'No feed-in limit set, so nothing is being held back.',
-            style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
-          ),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-                builder: (_) => const GridSettingsScreen()),
-          ),
-          child: const Text('Set it'),
-        ),
-      ],
-    );
-  }
-}
-
 
 class _Divider extends StatelessWidget {
   const _Divider();
