@@ -1,0 +1,1 @@
+instead of showing the menu path to the settings better add a gear icon or whatever to jump directly there, it also shows manual limit at the moment, but it would be adjusted in case of clipping, so overall i'd consider this being in auto mode
