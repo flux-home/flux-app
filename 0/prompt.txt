@@ -1,0 +1,1 @@
+now i see three times feed in limit set to 11.6kw, I did this manually because the app probably didn't fetch it on first boot from the controller, however even in that case i would only show when the limit was changed and i'd label it as manual change
