@@ -69,49 +69,53 @@ class _TodayPlanCardState extends State<TodayPlanCard> {
 
     final plan = _Plan.from(p, cap);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+          child: Text('TODAY', style: TextStyle(
+              fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w700,
+              letterSpacing: 2.4, color: cs.onSurfaceVariant)),
+        ),
+        Card(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.schedule_outlined, size: 18, color: cs.onSurfaceVariant),
-                const SizedBox(width: 8),
-                Text('Today', style: Theme.of(context).textTheme.titleSmall),
+                _Headline(plan: plan),
+                if (plan.because != null) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 17),
+                    child: Text(plan.because!,
+                        style: TextStyle(
+                            fontSize: 13, height: 1.3,
+                            color: cs.onSurfaceVariant)),
+                  ),
+                ],
+                if (plan.events.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  for (final e in plan.events) _EventRow(event: e),
+                ],
+                if (p.energyEvents.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const _Divider(),
+                  const SizedBox(height: 10),
+                  for (final e in p.energyEvents.reversed.take(6))
+                    _LogRow(event: e, devices: p.deviceViews),
+                ],
+                if (cap == null) ...[
+                  const SizedBox(height: 10),
+                  const _NoLimitSet(),
+                ],
               ],
             ),
-            const SizedBox(height: 12),
-            _Headline(plan: plan),
-            if (plan.because != null) ...[
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.only(left: 17),
-                child: Text(plan.because!,
-                    style: TextStyle(
-                        fontSize: 13, height: 1.3, color: cs.onSurfaceVariant)),
-              ),
-            ],
-            if (plan.events.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              for (final e in plan.events) _EventRow(event: e),
-            ],
-            if (p.energyEvents.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const _Divider(),
-              const SizedBox(height: 10),
-              for (final e in p.energyEvents.reversed.take(6))
-                _LogRow(event: e, devices: p.deviceViews),
-            ],
-            if (cap == null) ...[
-              const SizedBox(height: 12),
-              const _NoLimitSet(),
-            ],
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
