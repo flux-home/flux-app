@@ -1,0 +1,9 @@
+install
+
+---
+
+attached
+
+---
+
+Other is now squeezed in, I'd rather keep the size and make the list scollable
