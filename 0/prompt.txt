@@ -1,0 +1,5 @@
+in the headline i don't want to see live data, but the current state, House running on battery e.g.
+
+---
+
+in the headline i don't want to see live data, but the current state, House running on battery e.g. and I see a 20:20 LOG measuring at grid meter again, that doesn't make any sense to a user
