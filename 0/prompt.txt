@@ -1,0 +1,9 @@
+install
+
+---
+
+the current status shows nothing from the roof right now, I'd like to have these statements more pragmatic + a decision log of events, e.g. 10:30 start charging venus battery because PV produces more than allowed by feed in
+
+---
+
+the current status shows nothing from the roof right now, I'd like to have these statements more pragmatic + a decision log of events, e.g. 10:30 start charging venus battery because PV produces more than allowed by feed in, or house running on battery to save grid cost
