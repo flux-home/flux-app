@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
-import 'package:matter_home/utils/power_format.dart';
 
 /// What the grid connection allows, and what the controller is doing about it.
 ///
@@ -30,9 +29,6 @@ class GridSettingsScreen extends StatefulWidget {
 
 class _GridSettingsScreenState extends State<GridSettingsScreen> {
   final _limit = TextEditingController();
-  final _margin = TextEditingController();
-  final _pvBase = TextEditingController();
-  final _basis = TextEditingController();
 
   bool _enabled = false;
   bool _loaded = false;
@@ -44,14 +40,10 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final p = context.read<DeviceProvider>();
       final cfg = await p.fetchEnergyLimits();
-      await p.fetchEnergyControl();
       if (!mounted || cfg == null) return;
       setState(() {
         _enabled = cfg.enabled;
         _limit.text = cfg.exportLimitW == 0 ? '' : cfg.exportLimitW.toString();
-        _margin.text = cfg.exportMarginW == 0 ? '' : cfg.exportMarginW.toString();
-        _pvBase.text = cfg.pvBaseLimitW == 0 ? '' : cfg.pvBaseLimitW.toString();
-        _basis.text = cfg.basis;
         _loaded = true;
       });
     });
@@ -59,9 +51,7 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
 
   @override
   void dispose() {
-    for (final c in [_limit, _margin, _pvBase, _basis]) {
-      c.dispose();
-    }
+    _limit.dispose();
     super.dispose();
   }
 
@@ -73,25 +63,16 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
       _snack('Enter the limit your grid operator allows');
       return;
     }
-    final margin = _int(_margin) ?? 0;
-    final base = _int(_pvBase) ?? 0;
-    if (_enabled && margin >= (limit ?? 0)) {
-      _snack('The margin has to be smaller than the limit');
-      return;
-    }
-    if (_enabled && base > (limit ?? 0)) {
-      _snack('What the inverter may make alone cannot exceed the limit');
-      return;
-    }
-
     final p = context.read<DeviceProvider>();
     final cfg = p.energyLimits?.deepCopy() ?? $proto.EnergyLimits();
+    // Margin and the inverter's unaided limit are left at zero on purpose: the
+    // controller fills in its own default for the first and measures the second
+    // from whatever else feeds in. Neither is a number a person should maintain.
     cfg
       ..enabled = _enabled
       ..exportLimitW = limit ?? 0
-      ..exportMarginW = margin
-      ..pvBaseLimitW = base
-      ..basis = _basis.text.trim();
+      ..exportMarginW = 0
+      ..pvBaseLimitW = 0;
 
     setState(() => _saving = true);
     final ok = await p.updateEnergyLimits(cfg);
@@ -109,7 +90,6 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final hub = context.watch<HubConnection>();
-    final p = context.watch<DeviceProvider>();
     final canWrite = hub.connectionKind == ConnectionKind.local;
 
     return Scaffold(
@@ -120,53 +100,31 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'How much your installation may feed into the grid. Your grid '
-            'operator sets this — nothing on the network reports it, so it is '
-            'the one number you have to supply.',
-            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-
-          if (p.energyControl != null) _NowPanel(state: p.energyControl!),
-
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _enabled,
             onChanged: _loaded ? (v) => setState(() => _enabled = v) : null,
-            title: const Text('Hold the house inside the limit'),
+            title: const Text('Limit what I feed in'),
             subtitle: Text(
-                'Off means the controller enforces nothing at all.',
+                'Off means the controller enforces nothing.',
                 style: TextStyle(color: cs.onSurfaceVariant)),
           ),
-          const Divider(height: 24),
-
-          _label(context, 'THE LIMIT'),
-          _field(_limit, 'Feed-in limit', '11600', 'W',
-              helper: 'Measured where the meter sees everything that feeds in, '
-                  'including a balcony plant on the same connection.'),
-          const SizedBox(height: 14),
-          _field(_basis, 'Where it comes from',
-              '60% of 18 kWp + 800 W balcony', '',
-              text: true,
-              helper: 'For your own benefit later. A limit outlives the memory '
-                  'of why it was set.'),
-          const SizedBox(height: 24),
-
-          _label(context, 'HOW IT IS HELD'),
-          _field(_pvBase, 'Solar alone may make', '10800', 'W',
-              helper: 'The limit minus anything else that feeds in beside the '
-                  'inverter. Safe to leave in place, so it is what the '
-                  'controller falls back to whenever it is not in control.'),
-          const SizedBox(height: 14),
-          _field(_margin, 'Stay below by', '200', 'W',
-              helper: 'Absorbs what changes between two readings. Blank = 200.'),
-          const SizedBox(height: 10),
-          Text(
-            'Surplus above the limit goes into a battery first, and the '
-            'inverter is only throttled when there is nowhere to put it.',
-            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _limit,
+            enabled: _enabled,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
+            decoration: const InputDecoration(
+              labelText: 'Feed-in limit',
+              hintText: '11600',
+              suffixText: 'W',
+              border: OutlineInputBorder(),
+            ),
           ),
+          const SizedBox(height: 8),
+          Text('Set by your grid operator.',
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
           const SizedBox(height: 24),
 
           if (!canWrite)
@@ -174,7 +132,7 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 hub.isOnline
-                    ? 'Connected remotely — these can only be changed on your '
+                    ? 'Connected remotely — this can only be changed on your '
                       'home network.'
                     : 'Controller unreachable.',
                 style: tt.bodySmall?.copyWith(color: cs.error),
@@ -183,114 +141,6 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
           FilledButton(
             onPressed: (_saving || !canWrite || !_loaded) ? null : _save,
             child: Text(_saving ? 'Saving…' : 'Save'),
-          ),
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-
-  Widget _label(BuildContext context, String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(text, style: TextStyle(
-            fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w700,
-            letterSpacing: 1.8,
-            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      );
-
-  Widget _field(TextEditingController c, String label, String hint, String unit,
-      {String? helper, bool text = false}) {
-    return TextField(
-      controller: c,
-      keyboardType: text ? TextInputType.text : TextInputType.number,
-      inputFormatters: text
-          ? null
-          : [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        helperText: helper,
-        helperMaxLines: 3,
-        suffixText: unit.isEmpty ? null : unit,
-        border: const OutlineInputBorder(),
-      ),
-    );
-  }
-}
-
-/// What the engine is doing, above the settings that cause it.
-///
-/// A held limit and a passing cloud look identical in the power readings, so
-/// this is the only place the difference is visible. It also names why a
-/// battery is not absorbing: full is a limitation, not following is a fault,
-/// and they want different reactions from the reader.
-class _NowPanel extends StatelessWidget {
-  const _NowPanel({required this.state});
-  final $proto.EnergyControl state;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    final String line;
-    Color tone = cs.primary;
-    if (!state.enabled) {
-      line = 'Not enforcing anything.';
-      tone = cs.onSurfaceVariant;
-    } else if (!state.armed) {
-      line = 'Enabled, but not measuring the grid yet.';
-      tone = const Color(0xFFE0894A);
-    } else if (state.curtailing) {
-      line = 'Holding solar at ${powerLabelW(state.pvLimitW.toDouble())} — '
-          'exporting ${powerLabelW(state.exportW.toDouble())}.';
-      tone = const Color(0xFFE8C14A);
-    } else {
-      line = 'Exporting ${powerLabelW(state.exportW.toDouble())}, '
-          'inside the limit.';
-    }
-
-    String? battery;
-    if (!state.enabled || state.batteryNodeId.toInt() == 0) {
-      battery = null;
-    } else if (state.batteryFull) {
-      battery = 'Battery full — surplus is curtailed, not stored.';
-    } else if (state.batteryStalled) {
-      battery = 'Battery is taking setpoints but not following them.';
-    } else if (state.batteryW > 50) {
-      battery = 'Battery absorbing ${powerLabelW(state.batteryW.toDouble())}.';
-    } else {
-      battery = null;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tone.withValues(alpha: 0.08),
-        border: Border.all(color: tone.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 8, height: 8,
-            margin: const EdgeInsets.only(top: 6, right: 10),
-            decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(line, style: const TextStyle(fontSize: 14, height: 1.35)),
-                if (battery != null) ...[
-                  const SizedBox(height: 3),
-                  Text(battery,
-                      style: TextStyle(
-                          fontSize: 12.5, color: cs.onSurfaceVariant)),
-                ],
-              ],
-            ),
           ),
         ],
       ),

@@ -34,6 +34,7 @@ part 'device_detail/connecting_banner.dart';
 part 'device_detail/energy_card.dart';
 part 'device_detail/door_lock_card.dart';
 part 'device_detail/battery_control_card.dart';
+part 'device_detail/pv_limit_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -351,15 +352,25 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               EnergyCard(live: view.live!),
               const SizedBox(height: 12),
             ],
-            // Gated on the DEM feature, not the device type, so any battery
-            // offering power adjustment gets it — Modbus or Matter.
+            // Gated on the DEM feature, not the device type, so any device
+            // offering power adjustment gets something — Modbus or Matter.
+            //
+            // A generator gets a READING, not a control. Its limit follows from
+            // the grid connection's feed-in limit, which the controller
+            // re-asserts every couple of seconds, so a slider here would be
+            // overwritten before it took effect. A battery still gets the real
+            // control: nothing else is driving it minute to minute.
             if (accessible && view.live?.powerAdjust != null) ...[
-              BatteryControlCard(
-                adjust: view.live!.powerAdjust!,
-                enabled: !view.isStale,
-                onStart: (mw, d) => provider.powerAdjust(view.id, powerMw: mw, duration: d),
-                onCancel: () => provider.cancelPowerAdjust(view.id),
-              ),
+              if (view.live!.powerAdjust!.isGenerationOnly)
+                PvLimitCard(adjust: view.live!.powerAdjust!)
+              else
+                BatteryControlCard(
+                  adjust: view.live!.powerAdjust!,
+                  enabled: !view.isStale,
+                  onStart: (mw, d) =>
+                      provider.powerAdjust(view.id, powerMw: mw, duration: d),
+                  onCancel: () => provider.cancelPowerAdjust(view.id),
+                ),
               const SizedBox(height: 12),
             ],
             // For switch devices, filter out per-endpoint switch readings
