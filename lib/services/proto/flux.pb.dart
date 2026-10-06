@@ -5074,6 +5074,7 @@ class EnergyLimits extends $pb.GeneratedMessage {
     $core.int? exportMarginW,
     $core.int? pvBaseLimitW,
     $core.String? basis,
+    $fixnum.Int64? meterNodeId,
   }) {
     final result = create();
     if (enabled != null) result.enabled = enabled;
@@ -5081,6 +5082,7 @@ class EnergyLimits extends $pb.GeneratedMessage {
     if (exportMarginW != null) result.exportMarginW = exportMarginW;
     if (pvBaseLimitW != null) result.pvBaseLimitW = pvBaseLimitW;
     if (basis != null) result.basis = basis;
+    if (meterNodeId != null) result.meterNodeId = meterNodeId;
     return result;
   }
 
@@ -5105,6 +5107,9 @@ class EnergyLimits extends $pb.GeneratedMessage {
     ..aI(4, _omitFieldNames ? '' : 'pvBaseLimitW',
         fieldType: $pb.PbFieldType.OU3)
     ..aOS(5, _omitFieldNames ? '' : 'basis')
+    ..a<$fixnum.Int64>(
+        6, _omitFieldNames ? '' : 'meterNodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -5181,6 +5186,22 @@ class EnergyLimits extends $pb.GeneratedMessage {
   $core.bool hasBasis() => $_has(4);
   @$pb.TagNumber(5)
   void clearBasis() => $_clearField(5);
+
+  /// Which meter the limit is regulated against. 0 = pick one automatically.
+  ///
+  /// Worth choosing on a site with more than one: a system service that
+  /// aggregates the whole installation sees everything that feeds in,
+  /// including a balcony plant on its own supply, while a meter wired to the
+  /// main plant alone does not — and the limit applies to the connection
+  /// point, not to one inverter.
+  @$pb.TagNumber(6)
+  $fixnum.Int64 get meterNodeId => $_getI64(5);
+  @$pb.TagNumber(6)
+  set meterNodeId($fixnum.Int64 value) => $_setInt64(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasMeterNodeId() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearMeterNodeId() => $_clearField(6);
 }
 
 /// GET /energy/control — what the engine is doing right now. Read-only, so the app
@@ -5200,6 +5221,8 @@ class EnergyControl extends $pb.GeneratedMessage {
     $core.bool? batteryFull,
     $core.bool? batteryStalled,
     $core.int? faults,
+    $fixnum.Int64? meterNodeId,
+    $core.int? intervalMs,
   }) {
     final result = create();
     if (enabled != null) result.enabled = enabled;
@@ -5213,6 +5236,8 @@ class EnergyControl extends $pb.GeneratedMessage {
     if (batteryFull != null) result.batteryFull = batteryFull;
     if (batteryStalled != null) result.batteryStalled = batteryStalled;
     if (faults != null) result.faults = faults;
+    if (meterNodeId != null) result.meterNodeId = meterNodeId;
+    if (intervalMs != null) result.intervalMs = intervalMs;
     return result;
   }
 
@@ -5242,6 +5267,11 @@ class EnergyControl extends $pb.GeneratedMessage {
     ..aOB(9, _omitFieldNames ? '' : 'batteryFull')
     ..aOB(10, _omitFieldNames ? '' : 'batteryStalled')
     ..aI(11, _omitFieldNames ? '' : 'faults', fieldType: $pb.PbFieldType.OU3)
+    ..a<$fixnum.Int64>(
+        12, _omitFieldNames ? '' : 'meterNodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(13, _omitFieldNames ? '' : 'intervalMs',
+        fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -5364,6 +5394,28 @@ class EnergyControl extends $pb.GeneratedMessage {
   $core.bool hasFaults() => $_has(10);
   @$pb.TagNumber(11)
   void clearFaults() => $_clearField(11);
+
+  /// Which meter is actually being read, and how often the loop runs. Both
+  /// are consequences rather than settings: the first may differ from what
+  /// was asked for if that device went away, and the second is the engine's
+  /// own cadence.
+  @$pb.TagNumber(12)
+  $fixnum.Int64 get meterNodeId => $_getI64(11);
+  @$pb.TagNumber(12)
+  set meterNodeId($fixnum.Int64 value) => $_setInt64(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasMeterNodeId() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearMeterNodeId() => $_clearField(12);
+
+  @$pb.TagNumber(13)
+  $core.int get intervalMs => $_getIZ(12);
+  @$pb.TagNumber(13)
+  set intervalMs($core.int value) => $_setUnsignedInt32(12, value);
+  @$pb.TagNumber(13)
+  $core.bool hasIntervalMs() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearIntervalMs() => $_clearField(13);
 }
 
 class StunServer extends $pb.GeneratedMessage {

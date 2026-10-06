@@ -1349,6 +1349,7 @@ const EnergyLimits$json = {
     {'1': 'export_margin_w', '3': 3, '4': 1, '5': 13, '10': 'exportMarginW'},
     {'1': 'pv_base_limit_w', '3': 4, '4': 1, '5': 13, '10': 'pvBaseLimitW'},
     {'1': 'basis', '3': 5, '4': 1, '5': 9, '10': 'basis'},
+    {'1': 'meter_node_id', '3': 6, '4': 1, '5': 4, '10': 'meterNodeId'},
   ],
 };
 
@@ -1357,7 +1358,7 @@ final $typed_data.Uint8List energyLimitsDescriptor = $convert.base64Decode(
     'CgxFbmVyZ3lMaW1pdHMSGAoHZW5hYmxlZBgBIAEoCFIHZW5hYmxlZBIkCg5leHBvcnRfbGltaX'
     'RfdxgCIAEoDVIMZXhwb3J0TGltaXRXEiYKD2V4cG9ydF9tYXJnaW5fdxgDIAEoDVINZXhwb3J0'
     'TWFyZ2luVxIlCg9wdl9iYXNlX2xpbWl0X3cYBCABKA1SDHB2QmFzZUxpbWl0VxIUCgViYXNpcx'
-    'gFIAEoCVIFYmFzaXM=');
+    'gFIAEoCVIFYmFzaXMSIgoNbWV0ZXJfbm9kZV9pZBgGIAEoBFILbWV0ZXJOb2RlSWQ=');
 
 @$core.Deprecated('Use energyControlDescriptor instead')
 const EnergyControl$json = {
@@ -1374,6 +1375,8 @@ const EnergyControl$json = {
     {'1': 'battery_full', '3': 9, '4': 1, '5': 8, '10': 'batteryFull'},
     {'1': 'battery_stalled', '3': 10, '4': 1, '5': 8, '10': 'batteryStalled'},
     {'1': 'faults', '3': 11, '4': 1, '5': 13, '10': 'faults'},
+    {'1': 'meter_node_id', '3': 12, '4': 1, '5': 4, '10': 'meterNodeId'},
+    {'1': 'interval_ms', '3': 13, '4': 1, '5': 13, '10': 'intervalMs'},
   ],
 };
 
@@ -1385,7 +1388,8 @@ final $typed_data.Uint8List energyControlDescriptor = $convert.base64Decode(
     'VydGFpbGluZxImCg9iYXR0ZXJ5X25vZGVfaWQYByABKARSDWJhdHRlcnlOb2RlSWQSGwoJYmF0'
     'dGVyeV93GAggASgRUghiYXR0ZXJ5VxIhCgxiYXR0ZXJ5X2Z1bGwYCSABKAhSC2JhdHRlcnlGdW'
     'xsEicKD2JhdHRlcnlfc3RhbGxlZBgKIAEoCFIOYmF0dGVyeVN0YWxsZWQSFgoGZmF1bHRzGAsg'
-    'ASgNUgZmYXVsdHM=');
+    'ASgNUgZmYXVsdHMSIgoNbWV0ZXJfbm9kZV9pZBgMIAEoBFILbWV0ZXJOb2RlSWQSHwoLaW50ZX'
+    'J2YWxfbXMYDSABKA1SCmludGVydmFsTXM=');
 
 @$core.Deprecated('Use stunServerDescriptor instead')
 const StunServer$json = {

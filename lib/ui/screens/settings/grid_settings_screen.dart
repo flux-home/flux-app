@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
+import 'package:matter_home/models/device_view.dart';
+import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
@@ -30,6 +33,8 @@ class GridSettingsScreen extends StatefulWidget {
 
 class _GridSettingsScreenState extends State<GridSettingsScreen> {
   final _limit = TextEditingController();
+  /// 0 = let the controller choose.
+  $fixnum.Int64 _meter = $fixnum.Int64.ZERO;
 
   bool _enabled = false;
   bool _loaded = false;
@@ -41,10 +46,12 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final p = context.read<DeviceProvider>();
       final cfg = await p.fetchEnergyLimits();
+      await p.fetchEnergyControl();
       if (!mounted || cfg == null) return;
       setState(() {
         _enabled = cfg.enabled;
         _limit.text = cfg.exportLimitW == 0 ? '' : cfg.exportLimitW.toString();
+        _meter = cfg.meterNodeId;
         _loaded = true;
       });
     });
@@ -73,7 +80,8 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
       ..enabled = _enabled
       ..exportLimitW = limit ?? 0
       ..exportMarginW = 0
-      ..pvBaseLimitW = 0;
+      ..pvBaseLimitW = 0
+      ..meterNodeId = _meter;
 
     setState(() => _saving = true);
     final ok = await p.updateEnergyLimits(cfg);
@@ -91,6 +99,7 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final hub = context.watch<HubConnection>();
+    final p = context.watch<DeviceProvider>();
     final canWrite = hub.connectionKind == ConnectionKind.local;
 
     return Scaffold(
@@ -126,7 +135,37 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
           const SizedBox(height: 8),
           Text('EEG §9 limit.',
               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 22),
+
+          DropdownButtonFormField<$fixnum.Int64>(
+            initialValue: _meter,
+            decoration: const InputDecoration(
+              labelText: 'Measured at',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              DropdownMenuItem(
+                  value: $fixnum.Int64.ZERO,
+                  child: const Text('Choose automatically')),
+              for (final d in _meterChoices(p))
+                DropdownMenuItem(
+                    value: $fixnum.Int64(d.nodeId), child: Text(d.name)),
+            ],
+            onChanged: _enabled
+                ? (v) => setState(() => _meter = v ?? $fixnum.Int64.ZERO)
+                : null,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'The limit applies at the grid connection, so this has to be a '
+            'meter that sees everything feeding in — including anything on its '
+            'own supply.',
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 18),
+
+          if (p.energyControl != null) _Cadence(state: p.energyControl!),
+          const SizedBox(height: 18),
 
           if (!canWrite)
             Padding(
@@ -145,6 +184,46 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Candidate meters: anything the controller could regulate against. A device
+/// publishing a system-level grid reading qualifies whatever its own role, which
+/// is how a battery inverter's system service ends up in this list.
+List<DeviceView> _meterChoices(DeviceProvider p) => [
+      for (final d in p.deviceViews)
+        if (d.energyRole == EnergyRole.grid ||
+            (d.live?.attrs.containsKey('gridActivePower') ?? false))
+          d,
+    ];
+
+/// How often the loop runs, and against which meter — read-only, because both
+/// are the engine's own doing rather than anything to choose.
+class _Cadence extends StatelessWidget {
+  const _Cadence({required this.state});
+  final $proto.EnergyControl state;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final ms = state.intervalMs;
+    final every = ms >= 1000
+        ? '${(ms / 1000).toStringAsFixed(ms % 1000 == 0 ? 0 : 1)} s'
+        : '$ms ms';
+    return Row(
+      children: [
+        Icon(Icons.update, size: 15, color: cs.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            state.armed
+                ? 'Checked every $every.'
+                : 'Checked every $every — not reading a meter yet.',
+            style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
+          ),
+        ),
+      ],
     );
   }
 }
