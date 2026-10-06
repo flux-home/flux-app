@@ -1,0 +1,5 @@
+each time when i open the app it asks me in the widget to set the limit
+
+---
+
+each time when i open the app it asks me in the widget to set the limit, this question should be removed completley
