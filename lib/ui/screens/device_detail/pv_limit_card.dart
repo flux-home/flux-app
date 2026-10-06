@@ -72,7 +72,7 @@ class _PvLimitCardState extends State<PvLimitCard> {
       detail = 'Held at ${powerLabelW(limitW.toDouble())} by hand. No feed-in '
           'limit is configured, so nothing will adjust it.';
     } else {
-      mode = 'Unlimited';
+      mode = 'Not capped';
       detail = 'No feed-in limit is set, so nothing is being held back.';
     }
 
@@ -107,7 +107,7 @@ class _PvLimitCardState extends State<PvLimitCard> {
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Grid connection settings',
+                  tooltip: 'Energy management',
                   icon: Icon(Icons.tune, size: 18, color: cs.onSurfaceVariant),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(

@@ -59,8 +59,8 @@ class EnergySettingsScreen extends StatelessWidget {
                 // and this is what the connection allows. The three together are
                 // the model the energy engine runs on.
                 _row(context,
-                    title: 'Grid connection',
-                    subtitle: 'What you may feed in, and how it is held',
+                    title: 'Energy Management',
+                    subtitle: 'Feed-in limit and how it is held',
                     enabled: online,
                     builder: () => const GridSettingsScreen()),
               ],

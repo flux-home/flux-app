@@ -297,7 +297,7 @@ class _EventRow extends StatelessWidget {
   }
 }
 
-/// The limit lives in Settings → Energy setup → Grid connection, because the
+/// The limit lives in Settings → Energy setup → Energy Management, because the
 /// controller owns it. Asking for it here would create a second copy of a value
 /// that is only meaningful in one place.
 class _NoLimitSet extends StatelessWidget {

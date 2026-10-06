@@ -6,7 +6,8 @@ import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/services/proto/flux.pb.dart' as $proto;
 
-/// What the grid connection allows, and what the controller is doing about it.
+/// What the grid connection allows: the EEG §9 feed-in limit, and whether the
+/// controller holds the house inside it.
 ///
 /// The limit is the one number in the energy system that nothing on the network
 /// reports: it comes from the grid operator. It lives on the controller because
@@ -94,7 +95,7 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Grid connection',
+        title: const Text('Energy Management',
             style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: ListView(
@@ -104,7 +105,7 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
             contentPadding: EdgeInsets.zero,
             value: _enabled,
             onChanged: _loaded ? (v) => setState(() => _enabled = v) : null,
-            title: const Text('Limit what I feed in'),
+            title: const Text('Feed-in limit'),
             subtitle: Text(
                 'Off means the controller enforces nothing.',
                 style: TextStyle(color: cs.onSurfaceVariant)),
@@ -116,14 +117,14 @@ class _GridSettingsScreenState extends State<GridSettingsScreen> {
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp('[0-9]'))],
             decoration: const InputDecoration(
-              labelText: 'Feed-in limit',
+              labelText: 'Limit',
               hintText: '11600',
               suffixText: 'W',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 8),
-          Text('Set by your grid operator.',
+          Text('EEG §9 limit.',
               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
           const SizedBox(height: 24),
 
