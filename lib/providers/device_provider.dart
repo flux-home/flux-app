@@ -80,15 +80,6 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The grid operator's feed-in ceiling in watts, or null when not set.
-  /// Without it the app can show what the system is doing but not what it is
-  /// about to do, because nothing else says where the ceiling is.
-  int? get exportCapW => _store.loadExportCapW();
-  Future<void> setExportCapW(int? watts) async {
-    await _store.saveExportCapW(watts);
-    notifyListeners();
-  }
-
   List<String> get chartHidden => _store.loadChartHidden();
   Future<void> setChartHidden(List<String> keys) async {
     await _store.saveChartHidden(keys);
@@ -641,6 +632,53 @@ class DeviceProvider extends ChangeNotifier {
   /// The controller's PV production forecast, or null when it has none (feature
   /// disabled, or never fetched).
   SolarForecastData? get solarForecast => _solarForecast;
+
+  $proto.EnergyLimits? _energyLimits;
+  $proto.EnergyControl? _energyControl;
+
+  /// What the grid connection allows, as the controller holds it. Null until
+  /// fetched. The controller owns this: it is what enforces the limit, and the
+  /// app is a cache that must never invent one.
+  $proto.EnergyLimits? get energyLimits => _energyLimits;
+
+  /// What the engine is doing about those limits right now. Null until fetched.
+  $proto.EnergyControl? get energyControl => _energyControl;
+
+  Future<$proto.EnergyLimits?> fetchEnergyLimits() async {
+    final svc = _ctrlService;
+    if (svc == null) return null;
+    final cfg = await svc.getEnergyLimits();
+    if (cfg != null) {
+      _energyLimits = cfg;
+      notifyListeners();
+    }
+    return cfg;
+  }
+
+  Future<bool> updateEnergyLimits($proto.EnergyLimits cfg) async {
+    final svc = _ctrlService;
+    if (svc == null) return false;
+    final ok = await svc.setEnergyLimits(cfg);
+    if (ok) {
+      _energyLimits = cfg;
+      // The engine acts on the new limit within a cycle; read back what it is
+      // doing so the screen shows the consequence rather than just the setting.
+      await fetchEnergyControl();
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  Future<$proto.EnergyControl?> fetchEnergyControl() async {
+    final svc = _ctrlService;
+    if (svc == null) return null;
+    final st = await svc.getEnergyControl();
+    if (st != null) {
+      _energyControl = st;
+      notifyListeners();
+    }
+    return st;
+  }
 
   $proto.SolarConfig? _solarConfig;
 

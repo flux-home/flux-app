@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/settings/modbus_devices_screen.dart';
+import 'package:matter_home/ui/screens/settings/grid_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/solar_settings_screen.dart';
 import 'package:matter_home/ui/screens/settings/tariff_settings_screen.dart';
 
@@ -52,6 +53,16 @@ class EnergySettingsScreen extends StatelessWidget {
                     subtitle: 'Location, roof angle & array size',
                     enabled: online,
                     builder: () => const SolarSettingsScreen()),
+                Divider(height: 1, indent: 16, endIndent: 16,
+                    color: cs.outlineVariant),
+                // Solar is what the roof can make, tariff is what energy costs,
+                // and this is what the connection allows. The three together are
+                // the model the energy engine runs on.
+                _row(context,
+                    title: 'Grid connection',
+                    subtitle: 'What you may feed in, and how it is held',
+                    enabled: online,
+                    builder: () => const GridSettingsScreen()),
               ],
             ),
           ),

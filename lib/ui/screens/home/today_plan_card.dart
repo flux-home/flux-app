@@ -35,7 +35,13 @@ class TodayPlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.watch<DeviceProvider>();
     final cs = Theme.of(context).colorScheme;
-    final cap = p.exportCapW;
+    // The controller owns the limit — it is what enforces it. This card reads
+    // the cached copy and never invents one, so a house with no limit set shows
+    // what it is doing without claiming to know what it is allowed to do.
+    final limits = p.energyLimits;
+    final cap = (limits != null && limits.enabled && limits.exportLimitW > 0)
+        ? limits.exportLimitW
+        : null;
 
     final plan = _Plan.from(p, cap);
 
@@ -61,7 +67,7 @@ class TodayPlanCard extends StatelessWidget {
             ],
             if (cap == null) ...[
               const SizedBox(height: 12),
-              _AskForCap(onSet: p.setExportCapW),
+              const _NoLimitSet(),
             ],
           ],
         ),
@@ -290,58 +296,25 @@ class _EventRow extends StatelessWidget {
   }
 }
 
-/// The one thing the app cannot work out for itself. Asked here, where it first
-/// matters, rather than in a settings screen nobody visits.
-class _AskForCap extends StatefulWidget {
-  const _AskForCap({required this.onSet});
-  final Future<void> Function(int?) onSet;
-
-  @override
-  State<_AskForCap> createState() => _AskForCapState();
-}
-
-class _AskForCapState extends State<_AskForCap> {
-  final _c = TextEditingController();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
+/// The limit lives in Settings → Energy setup → Grid connection, because the
+/// controller owns it. Asking for it here would create a second copy of a value
+/// that is only meaningful in one place.
+class _NoLimitSet extends StatelessWidget {
+  const _NoLimitSet();
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Text('How much may you feed into the grid?',
-            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
-        const SizedBox(height: 2),
-        Text('Your grid operator sets this. Nothing on the network reports it.',
-            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            SizedBox(
-              width: 110,
-              child: TextField(
-                controller: _c,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  isDense: true, suffixText: 'W', hintText: '11600',
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            FilledButton.tonal(
-              onPressed: () {
-                final v = int.tryParse(_c.text.trim());
-                if (v != null && v > 0) unawaited(widget.onSet(v));
-              },
-              child: const Text('Set'),
-            ),
-          ],
+        Icon(Icons.info_outline, size: 16, color: cs.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'No feed-in limit set, so nothing is being held back. '
+            'Settings → Energy setup → Grid connection.',
+            style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
+          ),
         ),
       ],
     );

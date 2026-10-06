@@ -142,7 +142,6 @@ class DeviceStore {
       _prefs.setStringList(_kHidden, keys);
 
   static const _kBatteryKwh = 'battery_capacity_kwh';
-  static const _kExportCapW = 'export_cap_w';
 
   /// Usable battery capacity in kWh, or null when nobody has said.
   ///
@@ -159,23 +158,6 @@ class DeviceStore {
       (kwh == null || kwh <= 0)
           ? _prefs.remove(_kBatteryKwh)
           : _prefs.setDouble(_kBatteryKwh, kwh);
-
-  /// The most the installation may feed into the grid, in watts.
-  ///
-  /// A regulatory fact, not a measurement: it comes from the grid operator and
-  /// nothing on the wire can report it. The controller enforces its own copy;
-  /// this one exists so the app can say what is about to happen today, and the
-  /// two should be set together until the limit lives in the controller's
-  /// config where it belongs.
-  int? loadExportCapW() {
-    final v = _prefs.getInt(_kExportCapW);
-    return (v == null || v <= 0) ? null : v;
-  }
-
-  Future<void> saveExportCapW(int? watts) =>
-      (watts == null || watts <= 0)
-          ? _prefs.remove(_kExportCapW)
-          : _prefs.setInt(_kExportCapW, watts);
 
   /// The series keys that existed when the shown-set format was retired. Used
   /// only by the migration above, so it must not grow.

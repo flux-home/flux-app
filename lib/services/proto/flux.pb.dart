@@ -5055,6 +5055,317 @@ class SolarForecast extends $pb.GeneratedMessage {
   void clearTomorrowWh() => $_clearField(7);
 }
 
+/// GET/POST /energy/limits — what the grid connection allows, and how the
+/// controller is to hold the house inside it. Persisted in NVS; writes are
+/// LAN-only like the other config surfaces (ADR-0012).
+///
+/// This lives on the controller rather than in the app because the controller
+/// is what ENFORCES it. A limit held only on a phone stops existing when the
+/// phone does, which is exactly when it still has to hold.
+///
+/// The limit is a regulatory fact, not a measurement: nothing on the network
+/// reports it, so it is the one number a user has to supply. `basis` records
+/// where it came from, in their words, so a later reader can tell a rule that
+/// still applies from one that expired.
+class EnergyLimits extends $pb.GeneratedMessage {
+  factory EnergyLimits({
+    $core.bool? enabled,
+    $core.int? exportLimitW,
+    $core.int? exportMarginW,
+    $core.int? pvBaseLimitW,
+    $core.String? basis,
+  }) {
+    final result = create();
+    if (enabled != null) result.enabled = enabled;
+    if (exportLimitW != null) result.exportLimitW = exportLimitW;
+    if (exportMarginW != null) result.exportMarginW = exportMarginW;
+    if (pvBaseLimitW != null) result.pvBaseLimitW = pvBaseLimitW;
+    if (basis != null) result.basis = basis;
+    return result;
+  }
+
+  EnergyLimits._();
+
+  factory EnergyLimits.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyLimits.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyLimits',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aI(2, _omitFieldNames ? '' : 'exportLimitW',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'exportMarginW',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aI(4, _omitFieldNames ? '' : 'pvBaseLimitW',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOS(5, _omitFieldNames ? '' : 'basis')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyLimits clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyLimits copyWith(void Function(EnergyLimits) updates) =>
+      super.copyWith((message) => updates(message as EnergyLimits))
+          as EnergyLimits;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyLimits create() => EnergyLimits._();
+  @$core.override
+  EnergyLimits createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyLimits getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyLimits>(create);
+  static EnergyLimits? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => $_clearField(1);
+
+  /// Grid export ceiling at the connection point, watts. 0 = no limit.
+  /// Measured where the meter sees everything that feeds in, which on a site
+  /// with a separate balcony inverter is not the main plant's own meter.
+  @$pb.TagNumber(2)
+  $core.int get exportLimitW => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set exportLimitW($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasExportLimitW() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearExportLimitW() => $_clearField(2);
+
+  /// Held this far below the ceiling, to absorb what changes between two
+  /// samples. 0 = the controller's default.
+  @$pb.TagNumber(3)
+  $core.int get exportMarginW => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set exportMarginW($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasExportMarginW() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearExportMarginW() => $_clearField(3);
+
+  /// What the inverter may produce with no help from a battery: the ceiling
+  /// minus everything else that feeds in beside it. Safe to leave asserted,
+  /// so it is what the controller falls back to whenever it is not in
+  /// control. 0 = derive from export_limit_w.
+  @$pb.TagNumber(4)
+  $core.int get pvBaseLimitW => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set pvBaseLimitW($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasPvBaseLimitW() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearPvBaseLimitW() => $_clearField(4);
+
+  /// Free text, e.g. "60 % of 18 kWp + 800 W balcony · Solarspitzengesetz,
+  /// no Steuerbox". Never parsed.
+  @$pb.TagNumber(5)
+  $core.String get basis => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set basis($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasBasis() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearBasis() => $_clearField(5);
+}
+
+/// GET /energy/control — what the engine is doing right now. Read-only, so the app
+/// can show the decision rather than leaving the user to infer it from power
+/// readings that look identical whether a limit is being held or the sun simply
+/// went in.
+class EnergyControl extends $pb.GeneratedMessage {
+  factory EnergyControl({
+    $core.bool? enabled,
+    $core.bool? armed,
+    $core.int? gridW,
+    $core.int? exportW,
+    $core.int? pvLimitW,
+    $core.bool? curtailing,
+    $fixnum.Int64? batteryNodeId,
+    $core.int? batteryW,
+    $core.bool? batteryFull,
+    $core.bool? batteryStalled,
+    $core.int? faults,
+  }) {
+    final result = create();
+    if (enabled != null) result.enabled = enabled;
+    if (armed != null) result.armed = armed;
+    if (gridW != null) result.gridW = gridW;
+    if (exportW != null) result.exportW = exportW;
+    if (pvLimitW != null) result.pvLimitW = pvLimitW;
+    if (curtailing != null) result.curtailing = curtailing;
+    if (batteryNodeId != null) result.batteryNodeId = batteryNodeId;
+    if (batteryW != null) result.batteryW = batteryW;
+    if (batteryFull != null) result.batteryFull = batteryFull;
+    if (batteryStalled != null) result.batteryStalled = batteryStalled;
+    if (faults != null) result.faults = faults;
+    return result;
+  }
+
+  EnergyControl._();
+
+  factory EnergyControl.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EnergyControl.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EnergyControl',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'flux'),
+      createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aOB(2, _omitFieldNames ? '' : 'armed')
+    ..aI(3, _omitFieldNames ? '' : 'gridW', fieldType: $pb.PbFieldType.OS3)
+    ..aI(4, _omitFieldNames ? '' : 'exportW', fieldType: $pb.PbFieldType.OS3)
+    ..aI(5, _omitFieldNames ? '' : 'pvLimitW', fieldType: $pb.PbFieldType.OU3)
+    ..aOB(6, _omitFieldNames ? '' : 'curtailing')
+    ..a<$fixnum.Int64>(
+        7, _omitFieldNames ? '' : 'batteryNodeId', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aI(8, _omitFieldNames ? '' : 'batteryW', fieldType: $pb.PbFieldType.OS3)
+    ..aOB(9, _omitFieldNames ? '' : 'batteryFull')
+    ..aOB(10, _omitFieldNames ? '' : 'batteryStalled')
+    ..aI(11, _omitFieldNames ? '' : 'faults', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyControl clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EnergyControl copyWith(void Function(EnergyControl) updates) =>
+      super.copyWith((message) => updates(message as EnergyControl))
+          as EnergyControl;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EnergyControl create() => EnergyControl._();
+  @$core.override
+  EnergyControl createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EnergyControl getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EnergyControl>(create);
+  static EnergyControl? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool value) => $_setBool(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get armed => $_getBF(1);
+  @$pb.TagNumber(2)
+  set armed($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasArmed() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearArmed() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get gridW => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set gridW($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasGridW() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearGridW() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get exportW => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set exportW($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasExportW() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearExportW() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get pvLimitW => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set pvLimitW($core.int value) => $_setUnsignedInt32(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasPvLimitW() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearPvLimitW() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.bool get curtailing => $_getBF(5);
+  @$pb.TagNumber(6)
+  set curtailing($core.bool value) => $_setBool(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasCurtailing() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearCurtailing() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $fixnum.Int64 get batteryNodeId => $_getI64(6);
+  @$pb.TagNumber(7)
+  set batteryNodeId($fixnum.Int64 value) => $_setInt64(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasBatteryNodeId() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearBatteryNodeId() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get batteryW => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set batteryW($core.int value) => $_setSignedInt32(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasBatteryW() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearBatteryW() => $_clearField(8);
+
+  /// Why the battery is not absorbing, when it is not: full, or accepting
+  /// setpoints without following them. The difference decides whether the
+  /// user is looking at a limitation or a fault.
+  @$pb.TagNumber(9)
+  $core.bool get batteryFull => $_getBF(8);
+  @$pb.TagNumber(9)
+  set batteryFull($core.bool value) => $_setBool(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasBatteryFull() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearBatteryFull() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.bool get batteryStalled => $_getBF(9);
+  @$pb.TagNumber(10)
+  set batteryStalled($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasBatteryStalled() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearBatteryStalled() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.int get faults => $_getIZ(10);
+  @$pb.TagNumber(11)
+  set faults($core.int value) => $_setUnsignedInt32(10, value);
+  @$pb.TagNumber(11)
+  $core.bool hasFaults() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearFaults() => $_clearField(11);
+}
+
 class StunServer extends $pb.GeneratedMessage {
   factory StunServer({
     $core.String? host,

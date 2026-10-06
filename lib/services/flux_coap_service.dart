@@ -44,6 +44,9 @@ export 'package:matter_home/services/controller_transport/controller_transport.d
 /// GET  /devices                      → DeviceList
 /// POST /devices                      ← RenameDeviceRequest → StatusResponse
 /// POST /devices/meta                 ← DeviceMeta → StatusResponse
+/// GET  /energy/limits                → EnergyLimits
+/// POST /energy/limits                ← EnergyLimits → StatusResponse (LAN only)
+/// GET  /energy/control               → EnergyControl
 /// GET  /solar/config                 → SolarConfig
 /// POST /solar/config                 ← SolarConfig → StatusResponse (LAN only)
 /// GET  /solar/forecast               → SolarForecast
@@ -364,6 +367,41 @@ class FluxCoapService implements MatterPort {
   // The controller owns rooms, room membership and energy roles; the app caches
   // them. Held phone-side they disagreed between phones and were wiped whenever
   // a device was re-added.
+
+  /// What the grid connection allows (GET /energy/limits).
+  ///
+  /// Controller-owned, like the site model and the tariff: it is the thing that
+  /// enforces the limit, and a limit held only on a phone stops existing when
+  /// the phone does.
+  Future<$proto.EnergyLimits?> getEnergyLimits() async {
+    final b = await _get('/energy/limits');
+    if (b == null) return null;
+    try { return $proto.EnergyLimits.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getEnergyLimits: $e');
+      return null;
+    }
+  }
+
+  /// Writes the limits (POST /energy/limits). LAN-only on the controller, like
+  /// the other config surfaces.
+  Future<bool> setEnergyLimits($proto.EnergyLimits cfg) async =>
+      await _post('/energy/limits', cfg.writeToBuffer()) != null;
+
+  /// What the engine is doing about them right now (GET /energy/control).
+  ///
+  /// Read-only, and the reason it exists: a held limit and a passing cloud look
+  /// identical in the power readings, so only the controller can say which it
+  /// is looking at.
+  Future<$proto.EnergyControl?> getEnergyControl() async {
+    final b = await _get('/energy/control');
+    if (b == null) return null;
+    try { return $proto.EnergyControl.fromBuffer(b); }
+    on Exception catch (e) {
+      debugPrint('FluxCoapService getEnergyControl: $e');
+      return null;
+    }
+  }
 
   /// The site model and forecast settings (GET /solar/config).
   Future<$proto.SolarConfig?> getSolarConfig() async {
