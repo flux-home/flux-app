@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M49509FJR30MS1KR60R6VWFN",
+  "strategy": "manual-commit",
+  "branch": "feat/energy-automation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "flux-interface",
+    "lib/services/proto/flux.pb.dart",
+    "lib/services/proto/flux.pbjson.dart",
+    "lib/ui/screens/settings/grid_settings_screen.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 861910,
+    "cache_read_tokens": 9674780,
+    "output_tokens": 9340,
+    "api_call_count": 12
+  }
+}
