@@ -238,11 +238,28 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   /// and a Marstek added last month do not have to be looked at together, and
   /// hiding the one you are not asking about is the whole reason the bands are
   /// drawn apart in the first place.
+  ///
+  /// Switching one ON also switches the series on. Once a house has two packs
+  /// there is no longer a chip that means "batteries" — the per-pack chips
+  /// replaced it — so without this, a series that was off could never be turned
+  /// back on: every tap would hide and show a pack inside a series nothing was
+  /// drawing, and the chip would stay grey however often it was pressed.
   void _toggleBatt(DeviceProvider p, int nodeId) {
-    final next = {..._hiddenBattsFor(p)};
-    next.contains(nodeId) ? next.remove(nodeId) : next.add(nodeId);
-    setState(() => _hiddenBatts = next);
-    _persist(p, _seriesFor(p), next);
+    final hidden = {..._hiddenBattsFor(p)};
+    var series = _seriesFor(p);
+    final turningOn =
+        hidden.contains(nodeId) || !series.contains(_Series.charge);
+    if (turningOn) {
+      hidden.remove(nodeId);
+      series = {...series}..add(_Series.charge);
+    } else {
+      hidden.add(nodeId);
+    }
+    setState(() {
+      _hiddenBatts = hidden;
+      _shown = series;
+    });
+    _persist(p, series, hidden);
   }
 
   void _persist(DeviceProvider p, Set<_Series> shown, Set<int> hiddenBatts) {

@@ -57,6 +57,23 @@ class EnergyBucketRow {
   /// it as the sky changes, so only the value captured at the time can be scored.
   final int? forecastWh;
 
+  /// This row with the two captured-context columns replaced. Used when a
+  /// refetch brings the same bucket back without them — see [EnergyCache.merge].
+  EnergyBucketRow withContext({int? forecastWh, int? spotUeur}) =>
+      EnergyBucketRow(
+        epoch: epoch,
+        pvWh: pvWh,
+        importWh: importWh,
+        exportWh: exportWh,
+        loadWh: loadWh,
+        chargeWh: chargeWh,
+        dischargeWh: dischargeWh,
+        socPct: socPct,
+        spotUeur: spotUeur,
+        forecastWh: forecastWh,
+        socs: socs,
+      );
+
   /// Node-keyed levels as `1a:73|1c:44` — hex node id, decimal percent.
   ///
   /// A trailing column, because every reader tolerates columns it does not know
@@ -189,7 +206,19 @@ class EnergyCache {
     }
     final all = load();
     for (final r in rows) {
-      all[r.epoch] = r;   // newer wins
+      // Newer wins on the measurements, but never on the two columns that can
+      // legitimately arrive empty. The forecast and the price are captured as
+      // they stood, and a refetch made when the live forecast no longer reaches
+      // back that far carries null for buckets it has already recorded — the
+      // old value is the one that was true, and letting a null replace it is
+      // how a past day loses the morning of its sun line.
+      final prev = all[r.epoch];
+      all[r.epoch] = prev == null
+          ? r
+          : r.withContext(
+              forecastWh: r.forecastWh ?? prev.forecastWh,
+              spotUeur: r.spotUeur ?? prev.spotUeur,
+            );
     }
     final keys = all.keys.toList()..sort();
     final kept = keys.length > _maxRows

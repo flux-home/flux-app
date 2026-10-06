@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// properties that make that safe: a re-fetch corrects a bucket rather than
 /// being ignored, and a round trip through storage changes nothing.
 void main() {
+  _mergeKeepsContext();
 
   test('per-battery levels survive a row round trip', () {
     const row = EnergyBucketRow(
@@ -98,5 +99,43 @@ void main() {
     expect(again.pvKwh, original.pvKwh);
     expect(again.gridImportKwh, original.gridImportKwh);
     expect(again.socPerBucket, original.socPerBucket);
+  });
+}
+
+/// A refetch must not erase what was captured while the bucket was live.
+///
+/// The live forecast window moves forward through the day, so a bucket fetched
+/// again in the evening comes back with no forecast for the morning — and the
+/// morning is exactly the part of the sun line that went missing.
+void _mergeKeepsContext() {
+  test('merge keeps a captured forecast when the refetch has none', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cache = EnergyCache(await SharedPreferences.getInstance());
+
+    const base = EnergyBucketRow(
+      epoch: 1000, pvWh: 10, importWh: 0, exportWh: 0,
+      loadWh: 5, chargeWh: 0, dischargeWh: 0,
+    );
+
+    await cache.merge([base.withContext(forecastWh: 3194, spotUeur: 1200)]);
+    // The same bucket, measured again, with no forecast or price this time.
+    final after = await cache.merge([base]);
+
+    expect(after[1000]!.forecastWh, 3194);
+    expect(after[1000]!.spotUeur, 1200);
+    // Measurements still take the newer value.
+    expect(after[1000]!.pvWh, 10);
+  });
+
+  test('a newer forecast still replaces an older one', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cache = EnergyCache(await SharedPreferences.getInstance());
+    const base = EnergyBucketRow(
+      epoch: 2000, pvWh: 0, importWh: 0, exportWh: 0,
+      loadWh: 0, chargeWh: 0, dischargeWh: 0,
+    );
+    await cache.merge([base.withContext(forecastWh: 100)]);
+    final after = await cache.merge([base.withContext(forecastWh: 250)]);
+    expect(after[2000]!.forecastWh, 250);
   });
 }
