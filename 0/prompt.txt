@@ -1,0 +1,1 @@
+way to much info on the settings page, i just want to have an enable/disable button feed in limit and one value
