@@ -451,7 +451,10 @@ class _LogRow extends StatelessWidget {
       case $enum.EnergyEventKind.ENERGY_EVENT_METER_OK:
         text = 'Back in control of the feed-in limit.';
       case $enum.EnergyEventKind.ENERGY_EVENT_CONFIG_SET:
-        text = 'Feed-in limit set to ${powerLabelW(w.toDouble())}.';
+        // Said plainly, because this is the one line in the log that was not
+        // the system's decision — someone changed the rules it works to.
+        text = 'Manual change — feed-in limit set to '
+            '${powerLabelW(w.toDouble())}.';
       case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_SOLAR:
         text = 'House running on the roof.';
       case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_BATTERY:
