@@ -1,0 +1,1 @@
+in the very main screen of the app we show devices that don't fit any category, can we move them to "Other", since this app is focused on energy let's move the widget we just created to the main screen
