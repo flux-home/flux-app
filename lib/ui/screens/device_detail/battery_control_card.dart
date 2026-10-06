@@ -23,6 +23,70 @@ part of '../device_detail_screen.dart';
 
 enum _AdjustMode { charge, discharge }
 
+/// The words for one control verb.
+///
+/// A battery told "−2 kW" is discharging; an inverter told the same is being
+/// capped at 2 kW of output. Identical request, opposite feeling, so the card
+/// carries a vocabulary rather than a second implementation.
+class _Words {
+  const _Words({
+    required this.title,
+    required this.icon,
+    required this.verb,
+    required this.setpointLabel,
+    required this.actionLabel,
+    required this.actionIcon,
+    required this.releaseLabel,
+    required this.noTakeError,
+    required this.refusedError,
+    required this.releaseError,
+  });
+
+  factory _Words.of(PowerAdjust a) => a.isGenerationOnly
+      ? _Words(
+          title: 'Output limit',
+          icon: Icons.solar_power_outlined,
+          // The limit is what the inverter may produce, so it reads as a
+          // ceiling, not as something being done to it.
+          verb: (mw) => 'Limited to',
+          setpointLabel: 'Limit output to',
+          // Not "start" anything: the inverter is already generating, and this
+          // only puts a ceiling on it.
+          actionLabel: 'Limit power',
+          actionIcon: Icons.vertical_align_bottom,
+          releaseLabel: 'Remove limit',
+          noTakeError: 'The inverter did not take the limit. '
+              'It may be asleep — a PV inverter stops answering after dark.',
+          refusedError: 'The inverter refused the limit.',
+          releaseError: 'Could not remove the limit.',
+        )
+      : _Words(
+          title: 'Battery control',
+          icon: Icons.bolt_outlined,
+          verb: (mw) => mw > 0 ? 'Charging at' : 'Discharging at',
+          setpointLabel: 'Power',
+          actionLabel: 'Set power level',
+          actionIcon: Icons.play_arrow_outlined,
+          releaseLabel: 'Return to auto',
+          noTakeError: 'The battery did not take the setpoint. '
+              'Check its connection.',
+          refusedError: 'The battery refused the request.',
+          releaseError: 'Could not return the battery to auto.',
+        );
+
+  final String title;
+  final IconData icon;
+  final String Function(int mw) verb;
+  final String setpointLabel;
+  final String actionLabel;
+  final IconData actionIcon;
+  final String releaseLabel;
+  final String noTakeError;
+  final String refusedError;
+  final String releaseError;
+
+}
+
 class BatteryControlCard extends StatefulWidget {
   const BatteryControlCard({
     required this.adjust,
@@ -61,6 +125,7 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
   Timer? _awaitTimer;
 
   PowerAdjust get _a => widget.adjust;
+  _Words get _w => _Words.of(_a);
 
   @override
   void initState() {
@@ -112,10 +177,10 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
         _awaitTimer = Timer(const Duration(seconds: 20), () {
           if (!mounted || !_awaitingDevice) return;
           setState(() => _awaitingDevice = false);
-          _showError('The battery did not take the setpoint. Check its connection.');
+          _showError(_w.noTakeError);
         });
       } else {
-        _showError('The battery refused the request.');
+        _showError(_w.refusedError);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -128,7 +193,7 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
     setState(() => _busy = true);
     try {
       final ok = await widget.onCancel();
-      if (!ok && mounted) _showError('Could not return the battery to auto.');
+      if (!ok && mounted) _showError(_w.releaseError);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -154,9 +219,9 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
           children: [
             Row(
               children: [
-                Icon(Icons.bolt_outlined, size: 18, color: cs.onSurfaceVariant),
+                Icon(_w.icon, size: 18, color: cs.onSurfaceVariant),
                 const SizedBox(width: 8),
-                Text('Battery control',
+                Text(_w.title,
                     style: Theme.of(context).textTheme.titleSmall),
                 const Spacer(),
                 _StateChip(adjust: _a, awaiting: _awaitingDevice),
@@ -180,8 +245,7 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
     } else if (mw == 0) {
       headline = 'Holding at 0 W';
     } else {
-      final verb = mw > 0 ? 'Charging' : 'Discharging';
-      headline = '$verb at ${powerLabelW(mw.abs() / 1000.0)}';
+      headline = '${_w.verb(mw)} ${powerLabelW(mw.abs() / 1000.0)}';
     }
     final rem = _a.remaining;
     return [
@@ -197,7 +261,7 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
         child: FilledButton.tonalIcon(
           onPressed: controllable ? _cancel : null,
           icon: const Icon(Icons.autorenew),
-          label: const Text('Return to auto'),
+          label: Text(_w.releaseLabel),
         ),
       ),
     ];
@@ -229,7 +293,7 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
       const SizedBox(height: 10),
       Row(
         children: [
-          Text('Power', style: TextStyle(color: cs.onSurfaceVariant)),
+          Text(_w.setpointLabel, style: TextStyle(color: cs.onSurfaceVariant)),
           Expanded(
             child: Slider(
               value: _watts.toDouble().clamp(_stepW.toDouble(), maxW.toDouble()),
@@ -270,10 +334,12 @@ class _BatteryControlCardState extends State<BatteryControlCard> {
         alignment: Alignment.centerRight,
         child: FilledButton.icon(
           onPressed: controllable && !_awaitingDevice ? _start : null,
-          icon: Icon(_mode == _AdjustMode.charge
-              ? Icons.battery_charging_full_outlined
-              : Icons.home_outlined),
-          label: Text(_mode == _AdjustMode.charge ? 'Start charging' : 'Start discharging'),
+          icon: Icon(_a.isGenerationOnly
+              ? _w.actionIcon
+              : (_mode == _AdjustMode.charge
+                  ? Icons.battery_charging_full_outlined
+                  : Icons.home_outlined)),
+          label: Text(_w.actionLabel),
         ),
       ),
     ];

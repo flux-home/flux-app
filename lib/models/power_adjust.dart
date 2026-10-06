@@ -20,12 +20,21 @@ class PowerAdjust {
     required this.maxPowerMw,
     required this.maxDuration,
     required this.state,
+    this.esaType = esaTypeOther,
     this.activePowerMw,
     this.remaining,
   });
 
   /// DEM FeatureMap bit 0 (PA).
   static const int featurePowerAdjustment = 0x1;
+
+  // ESATypeEnum — what kind of appliance is being adjusted. The control verb is
+  // the same for all of them (a power setpoint); only the words change, because
+  // "discharge at 2 kW" and "cap output at 2 kW" are the same request to a
+  // battery and an inverter respectively.
+  static const int esaTypeBattery = 5;
+  static const int esaTypeSolar = 6;
+  static const int esaTypeOther = 0xFF;
 
   // ESAStateEnum.
   static const int stateOffline = 0;
@@ -49,16 +58,35 @@ class PowerAdjust {
   /// ESAStateEnum value.
   final int state;
 
+  /// ESATypeEnum value — see [esaTypeBattery] / [esaTypeSolar].
+  final int esaType;
+
   /// Setpoint of the running hold, when the device reports it.
   final int? activePowerMw;
 
   /// Time left on the running hold, when the device reports it.
   final Duration? remaining;
 
-  bool get isActive => state == statePowerAdjustActive;
+  /// True while the device reports a running hold AND that hold has time left.
+  ///
+  /// Defence in depth only. The remaining-time attribute is published by the
+  /// controller while a hold runs and is never decremented here, so a stale
+  /// value sticks rather than ageing out — this guard cannot catch that case.
+  /// It catches the narrower one of a hold reported as active with no time
+  /// left. The staleness itself is fixed where it is caused: the controller
+  /// republishes DEM state periodically so a client that missed the end of a
+  /// hold still learns about it.
+  bool get isActive =>
+      state == statePowerAdjustActive &&
+      !(remaining != null && remaining! <= Duration.zero);
   bool get isOffline => state == stateOffline;
   bool get canCharge => maxPowerMw > 0;
   bool get canDischarge => minPowerMw < 0;
+
+  /// A source that can only be asked to produce less — a PV inverter. It has no
+  /// positive setpoint, so there is no direction to choose and the control reads
+  /// as a limit rather than a command.
+  bool get isGenerationOnly => esaType == esaTypeSolar || !canCharge;
 
   /// Reads the DEM view out of a device's live attributes, or null if the
   /// device doesn't offer power adjustment (no PA feature bit, or no usable
@@ -84,6 +112,7 @@ class PowerAdjust {
           ? Duration(seconds: maxS)
           : fallbackMaxDuration,
       state: state,
+      esaType: _int(attrs['esaType']) ?? esaTypeOther,
       activePowerMw: active ? _int(attrs['powerAdjPower']) : null,
       remaining: active && remS != null ? Duration(seconds: remS) : null,
     );

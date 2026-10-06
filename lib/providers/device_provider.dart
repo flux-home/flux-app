@@ -80,6 +80,15 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The grid operator's feed-in ceiling in watts, or null when not set.
+  /// Without it the app can show what the system is doing but not what it is
+  /// about to do, because nothing else says where the ceiling is.
+  int? get exportCapW => _store.loadExportCapW();
+  Future<void> setExportCapW(int? watts) async {
+    await _store.saveExportCapW(watts);
+    notifyListeners();
+  }
+
   List<String> get chartHidden => _store.loadChartHidden();
   Future<void> setChartHidden(List<String> keys) async {
     await _store.saveChartHidden(keys);

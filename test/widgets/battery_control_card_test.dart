@@ -14,6 +14,17 @@ PowerAdjust _adjust({int state = 1, int? power, int? remaining}) =>
       if (remaining != null) 'powerAdjRemaining': remaining,
     })!;
 
+/// A PV inverter: generation only (no positive setpoint), ESAType SolarPV.
+PowerAdjust _solar({int state = 1, int? power}) => PowerAdjust.fromAttrs({
+      'esaFeatureMap': 1,
+      'esaType': 6,
+      'powerAdjMinPower': -15000000,   // the device's real WMax, not a placeholder
+      'powerAdjMaxPower': 0,
+      'powerAdjMaxDuration': 14400,
+      'esaState': state,
+      if (power != null) 'powerAdjPower': power,
+    })!;
+
 void main() {
   late List<(int, Duration)> starts;
   late int cancels;
@@ -45,7 +56,7 @@ void main() {
   testWidgets('idle: start charging sends a positive setpoint', (tester) async {
     await tester.pumpWidget(host(_adjust()));
     expect(find.text('Auto'), findsOneWidget);
-    await tester.tap(find.text('Start charging'));
+    await tester.tap(find.text('Set power level'));
     await tester.pump();
     expect(starts, [(500000, const Duration(hours: 1))]);
     expect(find.text('Sending…'), findsOneWidget);
@@ -59,7 +70,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('30 min'));
     await tester.pump();
-    await tester.tap(find.text('Start discharging'));
+    await tester.tap(find.text('Set power level'));
     await tester.pump();
     expect(starts, [(-500000, const Duration(minutes: 30))]);
     await tester.pump(const Duration(seconds: 21));
@@ -70,7 +81,7 @@ void main() {
     expect(find.text('Manual'), findsOneWidget);
     expect(find.text('Discharging at 300 W'), findsOneWidget);
     expect(find.text('10 min left, then back to auto'), findsOneWidget);
-    expect(find.text('Start discharging'), findsNothing);
+    expect(find.text('Set power level'), findsNothing);
     await tester.tap(find.text('Return to auto'));
     await tester.pump();
     expect(cancels, 1);
@@ -78,8 +89,26 @@ void main() {
 
   testWidgets('disabled while the device is stale', (tester) async {
     await tester.pumpWidget(host(_adjust(), enabled: false));
-    await tester.tap(find.text('Start charging'));
+    await tester.tap(find.text('Set power level'));
     await tester.pump();
     expect(starts, isEmpty);
+  });
+
+  testWidgets('a PV inverter is a limit, not a discharge', (tester) async {
+    await tester.pumpWidget(host(_solar()));
+    // An inverter is already generating; the control only puts a ceiling on it.
+    expect(find.text('Output limit'), findsOneWidget);
+    expect(find.text('Limit power'), findsOneWidget);
+    expect(find.text('Limit output to'), findsOneWidget);
+    // Nothing to choose between: there is no positive setpoint for the sun.
+    expect(find.text('Charge'), findsNothing);
+    expect(find.text('Discharge'), findsNothing);
+    expect(find.text('Set power level'), findsNothing);
+  });
+
+  testWidgets('an active limit reads as a ceiling', (tester) async {
+    await tester.pumpWidget(host(_solar(state: 3, power: -2000000)));
+    expect(find.text('Limited to 2.0 kW'), findsOneWidget);
+    expect(find.text('Remove limit'), findsOneWidget);
   });
 }

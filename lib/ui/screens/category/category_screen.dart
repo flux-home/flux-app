@@ -6,6 +6,7 @@ import 'package:matter_home/models/home_category.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/ui/screens/home/energy_timeline_card.dart';
 import 'package:matter_home/ui/screens/home/energy_flow_card.dart';
+import 'package:matter_home/ui/screens/home/today_plan_card.dart';
 import 'package:matter_home/ui/screens/home/house_breakdown_card.dart';
 import 'package:matter_home/ui/screens/home/month_summary_card.dart';
 import 'package:matter_home/ui/screens/home/day_balance_card.dart';
@@ -153,6 +154,7 @@ class _EnergyCards extends StatelessWidget {
   final DeviceProvider provider;
 
   static const _cards = <String, Widget>{
+    'today': TodayPlanCard(),
     'flow': EnergyFlowCard(),
     'house': HouseBreakdownCard(),
     'timeline': EnergyTimelineCard(),
