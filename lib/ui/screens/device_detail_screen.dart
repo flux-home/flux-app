@@ -11,6 +11,7 @@ import 'package:matter_home/models/power_adjust.dart';
 import 'package:matter_home/models/thermostat_models.dart';
 import 'package:matter_home/models/automation_rule.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/ui/screens/settings/grid_settings_screen.dart';
 import 'package:matter_home/services/cluster_parser.dart';
 import 'package:matter_home/services/matter_port.dart';
 import 'package:matter_home/utils/power_format.dart';

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/providers/device_provider.dart';
+import 'package:matter_home/ui/screens/settings/grid_settings_screen.dart';
 import 'package:matter_home/utils/power_format.dart';
 
 /// What the system is doing right now, and roughly what is left of today.
@@ -311,10 +312,16 @@ class _NoLimitSet extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'No feed-in limit set, so nothing is being held back. '
-            'Settings → Energy setup → Grid connection.',
+            'No feed-in limit set, so nothing is being held back.',
             style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
           ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+                builder: (_) => const GridSettingsScreen()),
+          ),
+          child: const Text('Set it'),
         ),
       ],
     );
