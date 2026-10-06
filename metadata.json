@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M48M7JHQ581SCCECZPVGR8VP",
+  "strategy": "manual-commit",
+  "branch": "feat/energy-automation",
+  "checkpoints_count": 55,
+  "files_touched": [
+    "lib/models/power_adjust.dart",
+    "lib/providers/device_provider.dart",
+    "lib/services/device_store.dart",
+    "lib/ui/screens/category/category_screen.dart",
+    "lib/ui/screens/device_detail/battery_control_card.dart",
+    "lib/ui/screens/home/today_plan_card.dart",
+    "test/widgets/battery_control_card_test.dart"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1222,
+    "cache_creation_tokens": 4693634,
+    "cache_read_tokens": 236240728,
+    "output_tokens": 443905,
+    "api_call_count": 611
+  }
+}
