@@ -166,26 +166,24 @@ class _Plan {
         batteries.every((b) => (b.socPercent ?? 0) >= 97);
     final anyCharging = batteries.any((b) => b.netW > 50);
 
-    // Facts first. The engine's own words come after the numbers, because the
-    // numbers are what a glance is for and the sentence is what a second look
-    // is for.
-    final parts = <String>[];
-    if (s.pvProduction > 20) {
-      parts.add('Roof ${powerLabelW(s.pvProduction)}');
+    // The STATE, not the readings. Live numbers belong in the flow card; what
+    // belongs here is the one sentence someone would say if asked what the
+    // house is doing — and that sentence should not change every few seconds
+    // because a kettle went on.
+    final String headline;
+    if (s.gridImport > 300) {
+      headline = 'House running on the grid';
+    } else if (s.batteryDischarge > 300) {
+      headline = 'House running on the battery';
+    } else if (s.pvProduction > 300) {
+      headline = s.gridExport > 300
+          ? 'House on the roof, surplus going to the grid'
+          : 'House running on the roof';
+    } else if (s.batteryCharge > 300) {
+      headline = 'Charging the battery';
+    } else {
+      headline = 'Nothing much happening';
     }
-    if (s.gridExport > 20) {
-      parts.add('exporting ${powerLabelW(s.gridExport)}');
-    } else if (s.gridImport > 20) {
-      parts.add('importing ${powerLabelW(s.gridImport)}');
-    }
-    if (s.batteryCharge > 20) {
-      parts.add('battery +${powerLabelW(s.batteryCharge)}');
-    } else if (s.batteryDischarge > 20) {
-      parts.add('battery −${powerLabelW(s.batteryDischarge)}');
-    }
-    parts.add('house ${powerLabelW(s.homeExcludingAssets + s.heatPump + s.carCharging)}');
-
-    final headline = parts.join(' · ');
 
     final _Tone tone;
     if (pvLimitW != null && full) {
@@ -444,9 +442,10 @@ class _LogRow extends StatelessWidget {
       case $enum.EnergyEventKind.ENERGY_EVENT_BATTERY_STALL:
         text = '$name is not taking the setpoints it accepts.';
       case $enum.EnergyEventKind.ENERGY_EVENT_METER_LOST:
-        text = 'Lost the meter — fell back to the safe limit.';
+        text = 'Could not read the meter — capped the roof at the safe limit '
+            'until it comes back.';
       case $enum.EnergyEventKind.ENERGY_EVENT_METER_OK:
-        text = 'Measuring at ${_name(event.nodeId)} again.';
+        text = 'Back in control of the feed-in limit.';
       case $enum.EnergyEventKind.ENERGY_EVENT_CONFIG_SET:
         text = 'Feed-in limit set to ${powerLabelW(w.toDouble())}.';
       case $enum.EnergyEventKind.ENERGY_EVENT_HOUSE_ON_SOLAR:
