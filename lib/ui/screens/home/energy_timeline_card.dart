@@ -166,6 +166,11 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     });
   }
   Set<_Series>? _shown;
+  /// Node ids of batteries whose band is switched off inside a battery series
+  /// that is otherwise on. Persisted as 'charge:<nodeId>' beside the series
+  /// keys — the node id and not the name, because a pack can be renamed and a
+  /// toggle that forgets itself when you rename a device is a bug.
+  Set<int>? _hiddenBatts;
   Timer? _refresh;
 
   static const _refreshInterval = Duration(seconds: 30);
@@ -207,13 +212,44 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     return _Series.values.toSet().difference(hidden);
   }
 
+  /// Which packs are hidden on their own. Separate from [_seriesFor] because
+  /// the two answer different questions: whether the chart draws batteries at
+  /// all, and which of them it draws.
+  Set<int> _hiddenBattsFor(DeviceProvider p) {
+    if (_hiddenBatts != null) return _hiddenBatts!;
+    const prefix = 'charge:';
+    return {
+      for (final k in p.chartHidden)
+        if (k.startsWith(prefix))
+          int.tryParse(k.substring(prefix.length)) ?? -1,
+    }..remove(-1);
+  }
+
   void _toggle(DeviceProvider p, _Series s) {
     final next = {..._seriesFor(p)};
     next.contains(s) ? next.remove(s) : next.add(s);
     setState(() => _shown = next);
+    _persist(p, next, _hiddenBattsFor(p));
+  }
+
+  /// Turn one battery's band off without touching the other's.
+  ///
+  /// Two packs are two devices. A Victron that has been on the wall for years
+  /// and a Marstek added last month do not have to be looked at together, and
+  /// hiding the one you are not asking about is the whole reason the bands are
+  /// drawn apart in the first place.
+  void _toggleBatt(DeviceProvider p, int nodeId) {
+    final next = {..._hiddenBattsFor(p)};
+    next.contains(nodeId) ? next.remove(nodeId) : next.add(nodeId);
+    setState(() => _hiddenBatts = next);
+    _persist(p, _seriesFor(p), next);
+  }
+
+  void _persist(DeviceProvider p, Set<_Series> shown, Set<int> hiddenBatts) {
     p.setChartHidden([
       for (final e in _Series.values)
-        if (!next.contains(e)) e.key,
+        if (!shown.contains(e)) e.key,
+      for (final id in hiddenBatts) 'charge:$id',
     ]);
   }
 
@@ -222,7 +258,14 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
     final cs = Theme.of(context).colorScheme;
     final provider = context.watch<DeviceProvider>();
     final prices = provider.historyPrices;
-    final shown = _seriesFor(provider);
+    final hiddenBatts = _hiddenBattsFor(provider);
+    var shown = _seriesFor(provider);
+    // Every pack hidden means what the series being off means: there is no
+    // charge or discharge left to draw, only a sum over nothing.
+    final packs = provider.energyHistory?.batterySoc ?? const [];
+    if (packs.isNotEmpty && packs.every((b) => hiddenBatts.contains(b.nodeId))) {
+      shown = {...shown}..remove(_Series.charge);
+    }
     _syncPager(provider);
 
     return Column(
@@ -264,13 +307,14 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                     onPageChanged: (i) =>
                         provider.setHistoryOffsetDays(_offsetFor(i)),
                     itemBuilder: (context, i) =>
-                        _page(context, provider, _offsetFor(i), prices, shown),
+                        _page(context, provider, _offsetFor(i), prices, shown,
+                            hiddenBatts),
                   ),
                 ),
                 const SizedBox(height: 12),
                 // Below the chart: the chips are a control for what is above
                 // them, and reading order should reach the picture first.
-                _chips(context, provider, shown),
+                _chips(context, provider, shown, hiddenBatts),
               ],
             ),
           ),
@@ -283,7 +327,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   /// day at a time — so its neighbours render as a hint of themselves rather than
   /// pretending to numbers nobody has fetched.
   Widget _page(BuildContext context, DeviceProvider p, int offset,
-      EnergyPrices? prices, Set<_Series> shown) {
+      EnergyPrices? prices, Set<_Series> shown, Set<int> hiddenBatts) {
     final cs = Theme.of(context).colorScheme;
     if (offset != p.historyOffsetDays) {
       return Center(
@@ -324,7 +368,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
           ],
         ],
         const SizedBox(height: 12),
-        _plot(context, forDrawing, prices, shown),
+        Expanded(child: _plot(context, forDrawing, prices, shown, hiddenBatts)),
         if (measured && !forDrawing.timeSynced)
           _note(context, 'Times approximate — controller clock not yet synced'),
       ],
@@ -526,41 +570,45 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
   /// The chips ARE the legend: one row of words instead of two saying the same
   /// thing, and tapping the word that names a series is where anyone would look
   /// to turn it off.
-  Widget _chips(BuildContext context, DeviceProvider p, Set<_Series> shown) {
+  Widget _chips(BuildContext context, DeviceProvider p, Set<_Series> shown,
+      Set<int> hiddenBatts) {
     final cs = Theme.of(context).colorScheme;
 
     // The Battery chip becomes one chip per battery once a second pack reports,
     // each carrying the hue of its own band so the chart can be read without a
-    // separate key. They all toggle the SAME 'charge' series: the chips name the
-    // bands, they do not switch them independently — one battery hidden and the
-    // other shown would be a chart nobody asked for, and the stored key is a
-    // single series.
+    // separate key, and each switching only its own band.
     final socs = p.energyHistory?.batterySoc ?? const [];
-    final entries = <(_Series, Color, String)>[
+    final entries = <(_Series, int?, Color, String)>[
       for (final s in _Series.values)
         if (s == _Series.charge && socs.length > 1)
           for (var b = 0; b < socs.length; b++)
-            (s, _socColor(b), socs[b].name)
+            (s, socs[b].nodeId, _socColor(b), socs[b].name)
         else
-          (s, s.color, s.label),
+          (s, null, s.color, s.label),
     ];
 
     return Wrap(
       spacing: 6, runSpacing: 6,
       children: [
-        for (final (s, colour, label) in entries)
-          GestureDetector(
-            onTap: () => _toggle(p, s),
+        for (final (s, battId, colour, label) in entries)
+          // Lit when the series is on AND, for a pack's own chip, when that
+          // pack is not individually hidden.
+          Builder(builder: (_) {
+            final on = shown.contains(s) &&
+                (battId == null || !hiddenBatts.contains(battId));
+            return GestureDetector(
+            onTap: () =>
+                battId == null ? _toggle(p, s) : _toggleBatt(p, battId),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
-                    color: shown.contains(s)
+                    color: on
                         ? colour
                         : cs.outlineVariant,
                     width: 1.2),
-                color: shown.contains(s)
+                color: on
                     ? colour.withValues(alpha: 0.12)
                     : Colors.transparent,
               ),
@@ -571,12 +619,12 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                     width: 7, height: 7,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: shown.contains(s)
+                      color: on
                           ? colour
                           : cs.onSurfaceVariant.withValues(alpha: 0.35),
                       // The grid chip carries both of its colours: bought above
                       // the line, sold below it, one toggle for the one meter.
-                      gradient: s == _Series.grid && shown.contains(s)
+                      gradient: s == _Series.grid && on
                           ? const LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
@@ -590,19 +638,20 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
                   Text(label, style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: shown.contains(s)
+                      color: on
                           ? cs.onSurface
                           : cs.onSurfaceVariant)),
                 ],
               ),
             ),
-          ),
+          );
+          }),
       ],
     );
   }
 
   Widget _plot(BuildContext context, EnergyHistoryData data,
-      EnergyPrices? prices, Set<_Series> shown) {
+      EnergyPrices? prices, Set<_Series> shown, Set<int> hiddenBatts) {
     final cs = Theme.of(context).colorScheme;
     // Resolved once, and handed to both the gesture and the painter, so the two
     // read the same axis.
@@ -642,7 +691,11 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
         onTapUp:   (_) => setState(() => _selectedTime = null),
         onTapCancel: ()  => setState(() => _selectedTime = null),
         child: SizedBox(
-          height: 168,
+          // Fills the page rather than fixing a height: the column above it
+          // grows when there is a sun line or a clock-not-synced note, and a
+          // chart that insisted on 168 px overflowed the page by exactly the
+          // height of whichever line appeared.
+          height: double.infinity,
           child: CustomPaint(
             size: Size.infinite,
             painter: _TimelinePainter(
@@ -657,6 +710,7 @@ class _EnergyTimelineCardState extends State<EnergyTimelineCard> {
               archivedForecast: shown.contains(_Series.sun),
               batteryKwh: provider.batteryCapacityKwh,
               shown: shown,
+              hiddenBatteries: hiddenBatts,
               selectedTime: _selectedTime,
               axisColor: cs.onSurfaceVariant.withValues(alpha: 0.30),
               labelColor: cs.onSurfaceVariant,
@@ -692,6 +746,7 @@ class _TimelinePainter extends CustomPainter {
     required this.domain,
     required this.batteryKwh,
     required this.shown,
+    required this.hiddenBatteries,
     required this.selectedTime,
     required this.axisColor,
     required this.labelColor,
@@ -712,10 +767,19 @@ class _TimelinePainter extends CustomPainter {
   /// else on the chart.
   final double? batteryKwh;
   final Set<_Series> shown;
+  /// Node ids of packs switched off individually.
+  final Set<int> hiddenBatteries;
   final DateTime? selectedTime;
   final Color axisColor;
   final Color labelColor;
   final Color nowColor;
+
+  /// Whether the pack at band index [b] was switched off on its own. The index
+  /// matches `data.batterySoc`, which is also where its colour comes from, so
+  /// hiding one band leaves the others on the hues they already had.
+  bool _battHidden(int b) =>
+      b < data.batterySoc.length &&
+      hiddenBatteries.contains(data.batterySoc[b].nodeId);
 
   // Not private: the gesture handler measures the plot with the same numbers,
   // and a second copy of them would drift.
@@ -867,6 +931,7 @@ class _TimelinePainter extends CustomPainter {
     if (shown.contains(_Series.charge) && data.hasSoc) {
       double socY(double pct) => zeroY - (pct / 100) * (zeroY - top);
       for (var b = 0; b < _hourSocPer.length; b++) {
+        if (_battHidden(b)) continue;
         final soc = _hourSocPer[b];
         final colour = _socColor(b);
         var i = 0;
@@ -1110,6 +1175,7 @@ class _TimelinePainter extends CustomPainter {
       // for it to describe. Two batteries fall back to the honest percentage.
       final named = data.hasMultipleBatteries;
       for (var b = 0; b < _hourSocPer.length; b++) {
+        if (_battHidden(b)) continue;
         final col = _hourSocPer[b];
         for (var i = 0; i < pts.length && i < col.length; i++) {
           if (pts[i].time != hour) continue;

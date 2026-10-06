@@ -62,6 +62,11 @@ class EnergyHistoryPoint {
 /// A level, not a flow: it is carried forward across gaps rather than summed, and
 /// a bucket with no sample is null rather than zero. Zero would draw an empty
 /// battery where the truth is "we did not hear from it".
+/// What the controller sends for a bucket whose price was never known. Matches
+/// ENERGY_PRICE_NODATA in flux_coap_energy.c; a real price can be zero or
+/// negative, so absence needs its own value.
+const int _priceNoData = -2147483648;
+
 @immutable
 class BatterySocSeries {
   const BatterySocSeries({
@@ -424,7 +429,20 @@ class EnergyHistoryData {
 
     final points = <EnergyHistoryPoint>[];
     var pvWh = 0, impWh = 0, expWh = 0, loadWh = 0, batChgWh = 0, batDisWh = 0;
+    // What the forecast said for each bucket while it was live. The controller
+    // archives it per bucket, and without reading it here a past day showed no
+    // forecast at all unless this phone happened to be running and caching on
+    // the day itself.
+    final archivedForecast = <int?>[];
+    // And what it cost. The controller archives the spot price per bucket with
+    // INT32_MIN meaning "no price was known", which is distinct from a price of
+    // zero — day-ahead spot goes negative often enough that the difference
+    // matters.
+    final archivedPrice = <int?>[];
     for (final b in buckets) {
+      archivedForecast.add(b.pvForecastWh == 0 ? null : b.pvForecastWh);
+      archivedPrice.add(
+          b.priceUeurPerKwh == _priceNoData ? null : b.priceUeurPerKwh);
       pvWh += b.pvWh;
       impWh += b.gridImportWh;
       expWh += b.gridExportWh;
@@ -493,6 +511,11 @@ class EnergyHistoryData {
       batteryChargeKwh: batChgWh / 1000.0,
       batteryDischargeKwh: batDisWh / 1000.0,
       pvSeries: pvSeries,
+      forecastWh: archivedForecast.any((v) => v != null)
+          ? archivedForecast
+          : const [],
+      spotUeur:
+          archivedPrice.any((v) => v != null) ? archivedPrice : const [],
       batterySoc: socSeries,
     );
   }

@@ -136,7 +136,15 @@ class EnergyCache {
   /// classification, which read a sub-meter as the grid connection. Those rows
   /// are wrong, not merely old, and the controller now re-resolves the class on
   /// every query, so dropping them is how the correction reaches the phone.
-  static const _key = 'energy_buckets_v2';
+  /// Bumped to v3 to discard rows written before unsynced log entries were
+  /// excluded from the counter diff. Those rows recorded impossible values —
+  /// an 18.8 kWh quarter-hour of export, 75 kW — and the cache is preferred
+  /// over re-fetching, so a corrupt bucket would have been kept for ever.
+  ///
+  /// Nothing is lost by dropping them: the controller archives the spot price
+  /// and the forecast per bucket, and the app now reads both off the wire, so
+  /// a cleared cache refills from the device with better data than it held.
+  static const _key = 'energy_buckets_v3';
 
   /// The pre-2026-09-16 key. Its rows are not migrated — they carry the device
   /// classification the controller has since corrected — but they are ~45 KB of
