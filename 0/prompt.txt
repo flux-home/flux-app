@@ -1,0 +1,1 @@
+unlimited should be "not capped", i'd like to rename grid connection settings menu into Energy Management and rename "set by your grid operator" to EEG 9 limit, left to the Button should just be Feed in limit
