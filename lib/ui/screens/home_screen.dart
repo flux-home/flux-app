@@ -4,16 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/room.dart';
-import 'package:matter_home/models/home_category.dart';
 import 'package:matter_home/providers/device_provider.dart';
 import 'package:matter_home/services/add_controller_flow.dart';
 import 'package:matter_home/services/hub_connection.dart';
 import 'package:matter_home/ui/screens/qr_scanner_screen.dart';
+import 'package:matter_home/ui/screens/home/today_plan_card.dart';
 import 'package:matter_home/ui/widgets/category_bar.dart';
 import 'package:matter_home/ui/widgets/controller_status_chip.dart';
-import 'package:matter_home/ui/widgets/device_card.dart';
 import 'package:matter_home/ui/widgets/dot_matrix_empty_hint.dart';
-import 'package:matter_home/ui/widgets/section_label.dart';
 import 'package:provider/provider.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -59,26 +57,11 @@ class HomeScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Devices a category already covers are left to that category. The
-          // home screen is what is NOT covered — a plug that only switches, a
-          // lock, a sensor with no home elsewhere — so a device is never listed
-          // in two places at once.
-          final all = provider.deviceViewsByRoom;
-          final groups = [
-            for (final (room, views) in all)
-              (room, [
-                for (final v in views)
-                  if (!HomeCategory.values.any((c) => c.matches(v))) v,
-              ]),
-          ];
-
-          // If every room is empty the device list is empty overall.
-          final totalDevices = groups.fold<int>(0, (sum, g) => sum + g.$2.length);
-          // Told apart deliberately: "nothing paired yet" and "everything is in
-          // a category" look identical from here and mean opposite things. The
-          // second is a finished setup, and inviting the user to add a device
-          // would be advice about a problem they do not have.
-          final anyDevices = all.fold<int>(0, (sum, g) => sum + g.$2.length) > 0;
+          // Every device now lives in a category — Other takes whatever the
+          // first three do not claim. The home screen is no longer a list of
+          // leftovers: this app is about energy, so the first thing it shows is
+          // what the house is doing with it.
+          final anyDevices = provider.deviceViews.isNotEmpty;
 
           return RefreshIndicator(
             // Pull down to re-fetch the controller's device list. When a hub is
@@ -90,7 +73,7 @@ class HomeScreen extends StatelessWidget {
               }
               await provider.syncWithController();
             },
-            child: totalDevices == 0
+            child: !anyDevices
                 ? CustomScrollView(
                     // AlwaysScrollable so the pull gesture works even when the
                     // (otherwise non-scrolling) empty hint is shown.
@@ -101,19 +84,15 @@ class HomeScreen extends StatelessWidget {
                         child: DotMatrixEmptyHint(
                           headline: !online
                               ? (noHub ? 'NO CONTROLLER' : 'CONTROLLER OFFLINE')
-                              : anyDevices
-                                  ? 'ALL SORTED'
-                                  : 'NO DEVICES',
+                              : 'NO DEVICES',
                           subline: !online
                               ? (noHub ? 'TAP + TO PAIR' : 'PULL TO RECONNECT')
-                              : anyDevices
-                                  ? 'EVERY DEVICE IS IN A CATEGORY'
-                                  : 'TAP + TO ADD',
+                              : 'TAP + TO ADD',
                         ),
                       ),
                     ],
                   )
-                : _buildDeviceList(context, groups),
+                : _buildHome(context),
           );
         },
       ),
@@ -132,53 +111,17 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _addHub(BuildContext context) => runAddControllerFlow(context);
 
-  Widget _buildDeviceList(
-    BuildContext context,
-    List<(Room, List<DeviceView>)> groups,
-  ) {
-    return CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              // ── Category buttons (Energy / Lighting / Climate) ───────────
-              const SliverToBoxAdapter(child: CategoryBar()),
-              // A room with nothing to show is not shown. It used to be skipped
-              // only for "No Room", which was fine while every device appeared
-              // here — but now that the categories claim most of them, keeping
-              // the headers would leave a screen of room names above nothing.
-              // An empty room still exists; it is managed in Settings > Rooms.
-              for (final (room, views) in groups)
-                if (views.isEmpty) ...[] else ...[
-                // ── Room header ─────────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                    child: SectionLabel(room.name),
-                  ),
-                ),
-
-                // ── Device grid for this room ────────────────────────────────
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  // No empty-room placeholder: an empty room never gets here.
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 180,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (ctx, i) => DeviceCard(
-                        deviceId: views[i].id,
-                        onTap: () => context.push('/device/${views[i].id}'),
-                      ),
-                      childCount: views.length,
-                    ),
-                  ),
-                ),
-              ],
-              const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
-            ],
-          );
-  }
+  /// Categories, then what the house is doing with its energy.
+  ///
+  /// The device grid that used to be here has moved into Other. A home screen
+  /// that opens with "here are the things I could not classify" says nothing
+  /// about the house; the energy card says what is happening in it.
+  Widget _buildHome(BuildContext context) => const CustomScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(child: CategoryBar()),
+          SliverToBoxAdapter(child: TodayPlanCard()),
+          SliverToBoxAdapter(child: SizedBox(height: 90)),
+        ],
+      );
 }
