@@ -1,0 +1,35 @@
+i found the controller was not limiting the PV correctly ~1h ago, it was feeding 12kw into the grid, then i adjusted the pv limit manuall, can you check what happened
+
+---
+
+<task-notification>
+<task-id>blgq5zrek</task-id>
+<tool-use-id>toolu_01TL9it88RvozjCRAhXK9KV8</tool-use-id>
+<output-file>/tmp/claude-1001/-home-tado-workspace-flux-flux-app/fc4a3fe0-d403-4729-a57d-979a592922c8/tasks/blgq5zrek.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for several loop samples" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+i'd like to move event logging to the SD card
+
+---
+
+inverter production seems not correct in the graph, grid export seems correct
+
+---
+
+i think the controller is loosing connection to the kaco sometimes
+
+---
+
+the solar inverter is off now as it's dark, but it had connectivity issues since somewhen in the afternoon
+
+---
+
+is the lmiting and status get using the same connection?
+
+---
+
+the readings of the solar inverter are stuck, the app is not showing disconnected but constantly reading 6.5kw
