@@ -1,0 +1,13 @@
+i can connect to the inverter with the kaco app at .138
+
+---
+
+i restarted the dongle of the kaco
+
+---
+
+the disconnected radar animation is not understood by useres, can you make a few suggestions how tio improve that
+
+---
+
+I'd go for D without any icon, glyph font and three dots to show that we're actively trying to reconnect
