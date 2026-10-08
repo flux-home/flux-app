@@ -306,7 +306,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            _ConnectingBanner(isStale: !accessible || view.isStale),
+            _ConnectingBanner(
+              isStale: !accessible || view.isStale,
+              lastSeen: view.live?.updatedAt,
+            ),
             if (view.deviceType.isSwitch && accessible) ...[
               _SwitchCard(view: view, readings: _clusterReadings ?? const []),
               const SizedBox(height: 12),

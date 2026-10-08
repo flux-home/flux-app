@@ -1,20 +1,34 @@
 part of '../device_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Connecting banner — sonar-pulse animation with smooth exit
+// Reconnecting banner
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Renders a 7-row × N-column dot grid with a sonar-pulse brightness ring
-// expanding from the centre while the device is unreachable.
+// A status line, not a picture. What stood here was a sonar pulse expanding
+// through a dot grid with no text at all: users could see that something was
+// happening but not what, to which device, or whether to do anything. It also
+// said nothing to a screen reader, and it implied a continuous sweep when the
+// controller actually retries on a backoff.
 //
-// When isStale flips false the banner fades out and collapses its height so
-// the cards below smoothly slide up to fill the gap.
+// So it says the words instead, in the same 5×7 dot-matrix face the readings
+// use, with three cycling dots for the one thing an animation genuinely
+// conveys better than text: that this is still in progress rather than a
+// verdict. The dots cycle in place — brightness, never width — because a
+// string that grows re-centres and re-scales the whole line on every tick.
+//
+// The pitch is driven by the height, so only about a dozen characters fit
+// before the dots stop being legible. That is why the headline is one word and
+// the fact that matters — when this device was last heard from — sits beneath
+// it in ordinary small text rather than being squeezed into the matrix.
 
 enum _BannerPhase { hidden, visible, leaving }
 
 class _ConnectingBanner extends StatefulWidget {
-  const _ConnectingBanner({required this.isStale});
+  const _ConnectingBanner({required this.isStale, this.lastSeen});
   final bool isStale;
+
+  /// When the controller last had a reading from this device, if known.
+  final DateTime? lastSeen;
 
   @override
   State<_ConnectingBanner> createState() => _ConnectingBannerState();
@@ -22,7 +36,7 @@ class _ConnectingBanner extends StatefulWidget {
 
 class _ConnectingBannerState extends State<_ConnectingBanner>
     with TickerProviderStateMixin {
-  late final AnimationController _pulseCtrl;
+  late final AnimationController _dotsCtrl;
   late final AnimationController _exitCtrl;
   late _BannerPhase _phase;
 
@@ -31,18 +45,18 @@ class _ConnectingBannerState extends State<_ConnectingBanner>
     super.initState();
     _phase = widget.isStale ? _BannerPhase.visible : _BannerPhase.hidden;
 
-    _pulseCtrl = AnimationController(
+    _dotsCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 1400),
     );
-    if (_phase == _BannerPhase.visible) _pulseCtrl.repeat();
+    if (_phase == _BannerPhase.visible) _dotsCtrl.repeat();
 
     _exitCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 520),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
-          _pulseCtrl.stop();
+          _dotsCtrl.stop();
           setState(() => _phase = _BannerPhase.hidden);
         }
       });
@@ -52,50 +66,99 @@ class _ConnectingBannerState extends State<_ConnectingBanner>
   void didUpdateWidget(_ConnectingBanner old) {
     super.didUpdateWidget(old);
 
-    // Device found → start exit.
     if (old.isStale && !widget.isStale && _phase == _BannerPhase.visible) {
       _exitCtrl.forward();
       setState(() => _phase = _BannerPhase.leaving);
     }
 
-    // Device lost again after connect (edge case) → reset and show.
     if (!old.isStale && widget.isStale && _phase == _BannerPhase.hidden) {
       _exitCtrl.reset();
-      _pulseCtrl.repeat();
+      _dotsCtrl.repeat();
       setState(() => _phase = _BannerPhase.visible);
     }
   }
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
+    _dotsCtrl.dispose();
     _exitCtrl.dispose();
     super.dispose();
+  }
+
+  /// "last reading 14:52", or "14:52 yesterday" once it is not today.
+  ///
+  /// A clock time rather than "47 minutes ago": the elapsed form has to be
+  /// recomputed to stay true, and a stale "2 minutes ago" is a worse lie than
+  /// no number at all. A wall-clock time is still correct an hour later.
+  String? get _lastSeenLabel {
+    final t = widget.lastSeen;
+    if (t == null) return null;
+    final now = DateTime.now();
+    final hhmm = '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}';
+    final sameDay =
+        t.year == now.year && t.month == now.month && t.day == now.day;
+    return sameDay ? 'last reading $hhmm' : 'last reading $hhmm, ${_dayOf(t)}';
+  }
+
+  static String _dayOf(DateTime t) {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    final days = midnight.difference(DateTime(t.year, t.month, t.day)).inDays;
+    if (days == 1) return 'yesterday';
+    return '${t.day}/${t.month}';
   }
 
   @override
   Widget build(BuildContext context) {
     if (_phase == _BannerPhase.hidden) return const SizedBox.shrink();
 
-    // The spacing gap is included so it collapses with the banner.
+    final cs = Theme.of(context).colorScheme;
+    final label = _lastSeenLabel;
+
+    // One semantics node for the pair: a screen reader should hear the state
+    // and the fact together, which the old animation gave it no way to do.
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Card(
-          color: const Color(0xFF1A1A1A),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            child: SizedBox(
-              height: 44,
-              width: double.infinity,
-              child: AnimatedBuilder(
-                animation: _pulseCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _SonarPulsePainter(t: _pulseCtrl.value),
-                ),
+        Semantics(
+          liveRegion: true,
+          label: label == null
+              ? 'Reconnecting to this device'
+              : 'Reconnecting to this device. $label',
+          excludeSemantics: true,
+          child: Card(
+            color: const Color(0xFF1A1A1A),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, label == null ? 16 : 10),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 22,
+                    width: double.infinity,
+                    child: AnimatedBuilder(
+                      animation: _dotsCtrl,
+                      builder: (_, __) => CustomPaint(
+                        painter: _ReconnectingPainter(
+                          text: 'RECONNECTING',
+                          t: _dotsCtrl.value,
+                          litColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (label != null) ...[
+                    const SizedBox(height: 9),
+                    Text(
+                      label,
+                      style: TextStyle(
+                          fontSize: 12, color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -106,11 +169,6 @@ class _ConnectingBannerState extends State<_ConnectingBanner>
 
     if (_phase == _BannerPhase.visible) return content;
 
-    // ── Leaving: fade out then collapse height ────────────────────────────────
-    // Fade completes over the first 65 % of the exit duration.
-    // Height collapse starts at 10 % so cards below begin moving while the
-    // banner is still (briefly) visible — this looks more intentional than
-    // collapsing an invisible card.
     return SizeTransition(
       sizeFactor: Tween<double>(begin: 1, end: 0).animate(
         CurvedAnimation(
@@ -136,81 +194,100 @@ class _ConnectingBannerState extends State<_ConnectingBanner>
 // Painter
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SonarPulsePainter extends CustomPainter {
-  const _SonarPulsePainter({required this.t});
+/// [text] in the shared 5×7 face, followed by three dots that light in turn.
+///
+/// Reuses [dotMatrixGlyphs] rather than carrying its own table, so the face
+/// cannot drift from the readings it sits above. The three dots are laid out on
+/// the same pitch and sit on the baseline row, which is where the font's own
+/// full stop sits.
+class _ReconnectingPainter extends CustomPainter {
+  const _ReconnectingPainter({
+    required this.text,
+    required this.t,
+    required this.litColor,
+  });
+
+  final String text;
 
   /// Normalised animation position [0.0, 1.0).
   final double t;
+  final Color litColor;
 
   static const _rows     = 7;
   static const _gap      = 2.0;
-  // Ring brightness falls off linearly over this many dot-widths on each side.
-  static const _ringHalf = 1.8;
+  static const _dots     = 3;
+  /// Columns each trailing dot occupies, matching the font's 3-col full stop.
+  static const _dotCols  = 3;
+  /// Baseline row — the row the font's own '.' is drawn on.
+  static const _dotRow   = 5;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    // Square cells: step is driven by the available height, exactly matching
-    // the pitch of the 5×7 glyph painter used elsewhere in the app.
-    final step = (size.height + _gap) / _rows;
-    final cols = math.max(1, ((size.width + _gap) / step).floor());
-    final r    = (step - _gap) / 2.0;
+    final chars = text.characters.toList();
+    if (chars.isEmpty) return;
 
-    // Centre the grid in case the width doesn't divide evenly.
-    final ox = (size.width  - (step * cols - _gap)) / 2.0;
-    final oy = (size.height - (step * _rows - _gap)) / 2.0;
+    // Text columns + one blank column between glyphs, then a word space and
+    // the three dots, each with its own inter-glyph column.
+    final textCols =
+        chars.fold(0, (s, c) => s + dotMatrixCharCols(c)) + (chars.length - 1);
+    const trailing = _dotCols * _dots + _dots;   // dots + separating columns
+    final totalCols = textCols + 1 + trailing;
 
-    // Grid centre in dot-space.
-    final cx = (cols - 1) / 2.0;
-    const cy = (_rows - 1) / 2; // = 3.0
+    final stepW = (size.width  + _gap) / totalCols;
+    final stepH = (size.height + _gap) / _rows;
+    final step  = math.min(stepW, stepH);
+    final r     = (step - _gap) / 2;
+    if (r <= 0) return;
 
-    // Ring travels from centre to just past the farthest corner, giving a
-    // clean dark gap before the next pulse begins.
-    final maxDist = math.sqrt(cx * cx + cy * cy);
-    final radius  = t * (maxDist + 3.0);
-
-    // Short centre-flash at the origin of each pulse.
-    final centerFlash = math.max(0.0, 1.0 - t * 9.0);
-
-    // Ring fades as it expands — distant wavefronts are slightly dimmer.
-    final ringFade = 1.0 - t * 0.45;
+    final matW = step * totalCols - _gap;
+    final matH = step * _rows     - _gap;
+    final ox   = (size.width  - matW) / 2;
+    final oy   = (size.height - matH) / 2;
 
     final paint = Paint()..style = PaintingStyle.fill;
 
-    for (var row = 0; row < _rows; row++) {
-      for (var col = 0; col < cols; col++) {
-        final dx   = col - cx;
-        final dy   = row - cy;
-        final dist = math.sqrt(dx * dx + dy * dy);
-
-        // Distance from this dot to the current wavefront.
-        final diff = (dist - radius).abs();
-
-        // Smooth peaked brightness at the wavefront, zero beyond _ringHalf.
-        final wave = diff < _ringHalf
-            ? math.pow(1.0 - diff / _ringHalf, 1.5).toDouble()
-            : 0.0;
-
-        // Combine ring with the origin flash (only near-centre dots).
-        final brightness =
-            (wave * ringFade + (dist < 1.0 ? centerFlash * 0.9 : 0.0))
-                .clamp(0.0, 1.0);
-
-        // All dots stay faintly visible; lit dots draw at full radius.
-        final alpha = math.max(0.05, brightness);
-        final dotR  = brightness > 0.08 ? r : r * 0.55;
-
-        paint.color = Colors.white.withAlpha((alpha * 255).round());
-        canvas.drawCircle(
-          Offset(ox + col * step + step / 2, oy + row * step + step / 2),
-          dotR,
-          paint,
-        );
+    var cx = ox;
+    for (final ch in chars) {
+      final glyph = dotMatrixGlyphs[ch] ?? dotMatrixGlyphs['-']!;
+      final cols  = dotMatrixCharCols(ch);
+      paint.color = litColor;
+      for (var row = 0; row < _rows; row++) {
+        final bits = glyph[row];
+        for (var col = 0; col < cols; col++) {
+          if (((bits >> ((cols - 1) - col)) & 1) == 1) {
+            canvas.drawCircle(
+              Offset(cx + col * step + step / 2, oy + row * step + step / 2),
+              r, paint,
+            );
+          }
+        }
       }
+      cx += cols * step + step;
+    }
+
+    // ── the three dots ──────────────────────────────────────────────────────
+    //
+    // One bright at a time, travelling left to right, with the others held at a
+    // low floor so the group keeps its shape and the line does not appear to
+    // change length. A quarter of the cycle is left empty, which gives the
+    // sequence a beginning and stops it reading as a spinner.
+    cx += step;   // word space
+    for (var i = 0; i < _dots; i++) {
+      final slot  = t * (_dots + 1);           // +1 → the empty beat
+      final near  = (slot - i).abs();
+      final level = near < 1.0 ? 1.0 - near : 0.0;
+      paint.color = litColor.withValues(alpha: 0.16 + 0.84 * level);
+      canvas.drawCircle(
+        Offset(cx + step / 2 + step, oy + _dotRow * step + step / 2),
+        r, paint,
+      );
+      cx += _dotCols * step + step;
     }
   }
 
   @override
-  bool shouldRepaint(_SonarPulsePainter old) => old.t != t;
+  bool shouldRepaint(_ReconnectingPainter old) =>
+      old.t != t || old.text != text || old.litColor != litColor;
 }
