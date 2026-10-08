@@ -143,9 +143,15 @@ class EnergySummary {
     var carSocSum = 0, carSocCount = 0;
 
     for (final d in devices) {
-      // Skip unreachable devices — their last-known reading isn't current, so
-      // it must not be presented as a live value in the overview.
-      if (!d.isOnline) continue;
+      // Skip devices whose reading isn't current — it must not be presented as
+      // a live value in the overview.
+      //
+      // Reachability alone is not enough. A Modbus inverter whose server has
+      // stopped answering still counts as reachable: the controller polls it
+      // rather than subscribing, so nothing fails in a way `isOnline` sees. Its
+      // last reading then sat in the overview as live solar — a steady 6.5 kW
+      // the roof was not making.
+      if (!d.isOnline || d.isStale) continue;
       final w = (d.activePowerMw ?? 0) / 1000.0;
       switch (d.energyRole) {
         // A plain consumer with no more specific role. It contributes no

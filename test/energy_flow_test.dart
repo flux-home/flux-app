@@ -1,10 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter_home/models/device_live_data.dart';
+import 'package:matter_home/models/device_type.dart';
+import 'package:matter_home/models/device_view.dart';
 import 'package:matter_home/models/energy_flow.dart';
+import 'package:matter_home/models/energy_role.dart';
+import 'package:matter_home/models/matter_device.dart';
 import 'package:matter_home/models/energy_summary.dart';
 
 /// The attribution is the story the Energy screen tells, so it is pinned here
 /// rather than left to whatever the widget happens to render.
 void main() {
+  _staleIsNotLive();
   _netFlowTests();
   group('attributeEnergy', () {
     test('solar covers the house first, then appliances, then the battery', () {
@@ -82,6 +88,44 @@ void _netFlowTests() {
     test('the band applies to the NET, not to either side alone', () {
       // Importing and exporting at once is measurement skew, not two flows.
       expect(netFlow(consuming: 1010, supplying: 1000), 0);
+    });
+  });
+}
+
+/// A device the controller can no longer read must not appear as live power.
+void _staleIsNotLive() {
+  group('a device that stopped answering', () {
+    DeviceView inverter({required DeviceConnectivity conn}) => DeviceView(
+          MatterDevice(
+            id: 'kaco',
+            name: 'Solar Inverter',
+            deviceType: DeviceType.unknown,
+            nodeId: 0x18,
+            kind: DeviceKind.modbus,
+            commissionedAt: DateTime(2026),
+            lastModified: DateTime(2026),
+            energyRole: EnergyRole.pv,
+            connectivity: conn,
+          ),
+          DeviceLiveData(
+            updatedAt: DateTime(2026),
+            isStale: false,
+            attrs: const {'activePower': 6500000},
+          ),
+        );
+
+    test('counts while the controller is reading it', () {
+      final s = EnergySummary.fromDevices(
+          [inverter(conn: DeviceConnectivity.subscribed)]);
+      expect(s.pvProduction, 6500);
+    });
+
+    test('drops out once the controller is retrying', () {
+      // The reading is unchanged and the device is still "reachable" — it
+      // answers ping. Only the controller knows it has stopped serving.
+      final s = EnergySummary.fromDevices(
+          [inverter(conn: DeviceConnectivity.retrying)]);
+      expect(s.pvProduction, 0);
     });
   });
 }

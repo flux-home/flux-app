@@ -1092,6 +1092,7 @@ class DeviceProvider extends ChangeNotifier {
           networkType:    networkType,
           managedBy:      ManagedBy.controller,
           isOnline:       cd.reachable,
+          connectivity:   DeviceConnectivity.fromWire(cd.connectivity.value),
           // The controller owns these, so adopt them rather than defaulting —
           // otherwise a re-added device comes back roomless and unassigned,
           // which is the bug this whole move fixes.
@@ -1134,6 +1135,14 @@ class DeviceProvider extends ChangeNotifier {
         }
         if (_devices[idx].isOnline != cd.reachable) {
           _devices[idx] = _devices[idx].copyWith(isOnline: cd.reachable);
+          changed = true;
+        }
+        // The controller knows a Modbus device has stopped answering long
+        // before anything else does: there is no Matter subscription to fail,
+        // so the only signal is this one.
+        final conn = DeviceConnectivity.fromWire(cd.connectivity.value);
+        if (_devices[idx].connectivity != conn) {
+          _devices[idx] = _devices[idx].copyWith(connectivity: conn);
           changed = true;
         }
         // Repair the network type for records persisted by older builds, which

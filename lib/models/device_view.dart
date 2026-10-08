@@ -44,9 +44,21 @@ class DeviceView {
   /// Use this to gate whether to show device-specific UI.
   bool get isOnline => _device.isOnline;
 
-  /// True when the live subscription data exists but is stale
-  /// (connection lost / resubscribing).  Use this to disable controls.
-  bool get isStale => _live?.isStale ?? false;
+  /// True when the values on screen are not current.
+  ///
+  /// Two independent sources, because they cover different devices. A Matter
+  /// device goes stale when its subscription drops, which the app sees as an
+  /// event. A Modbus device has no subscription to drop: the controller polls
+  /// it, and when it stops answering the only signal is the connectivity it
+  /// reports. Without the second, an inverter whose Modbus server had died went
+  /// on showing its last reading — a steady 6.5 kW, hours after dark.
+  bool get isStale =>
+      (_live?.isStale ?? false) ||
+      (_device.kind == DeviceKind.modbus && !_device.connectivity.isLive);
+
+  /// Whether the controller is retrying the connection to this device.
+  bool get isRetrying =>
+      _device.connectivity == DeviceConnectivity.retrying;
 
   // ── Live state (live cache wins; snapshot seed is the cold-start value) ────
 

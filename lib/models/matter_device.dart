@@ -6,6 +6,30 @@ import 'package:matter_home/models/device_view.dart' show DeviceView;
 import 'package:matter_home/models/energy_role.dart';
 import 'package:matter_home/models/room.dart';
 
+/// The controller's view of its link to a device, mirroring flux.proto's
+/// ConnectivityState. Only [subscribed] means the readings are current.
+enum DeviceConnectivity {
+  unknown(0),
+  discovering(1),
+  subscribed(2),
+  retrying(3);
+
+  const DeviceConnectivity(this.wire);
+  final int wire;
+
+  static DeviceConnectivity fromWire(int v) => switch (v) {
+        1 => DeviceConnectivity.discovering,
+        2 => DeviceConnectivity.subscribed,
+        3 => DeviceConnectivity.retrying,
+        _ => DeviceConnectivity.unknown,
+      };
+
+  /// Whether the controller is currently failing to reach the device. Unknown
+  /// is NOT live: a device the controller has not connected to yet has no
+  /// reading worth trusting either.
+  bool get isLive => this == DeviceConnectivity.subscribed;
+}
+
 // ── Network transport type ────────────────────────────────────────────────────
 
 enum NetworkType {
@@ -108,6 +132,7 @@ class MatterDevice {
     required this.lastModified,
     this.kind = DeviceKind.matter,
     this.isOnline = true,
+    this.connectivity = DeviceConnectivity.unknown,
     this.sharedWithGoogleHome = false,
     this.networkType = NetworkType.unknown,
     this.managedBy = ManagedBy.phone,
@@ -132,6 +157,8 @@ class MatterDevice {
               ? DeviceKind.modbus
               : DeviceKind.matter),
       isOnline: json['isOnline'] as bool? ?? true,
+      connectivity:
+          DeviceConnectivity.fromWire(json['connectivity'] as int? ?? 0),
       sharedWithGoogleHome: json['sharedWithGoogleHome'] as bool? ?? false,
       commissionedAt: commissionedAt,
       // Fall back to commissionedAt for records persisted before lastModified existed.
@@ -183,6 +210,15 @@ class MatterDevice {
   /// True when this record is a device bridged behind another node.
   bool get isBridged => endpoint != 0;
   final bool isOnline;
+
+  /// What the controller says about its own connection to this device.
+  ///
+  /// Distinct from [isOnline], which is a coarser "we have seen it". A Modbus
+  /// inverter whose TCP server stops answering stays reachable by every other
+  /// measure — it still pings — while the controller is in retry; this is the
+  /// field that knows the difference, and without it the app went on showing
+  /// the last reading as though it were current.
+  final DeviceConnectivity connectivity;
   final bool sharedWithGoogleHome;
   final DateTime commissionedAt;
   /// Updated on every user edit (rename etc.). Used for last-write-wins sync.
@@ -203,6 +239,7 @@ class MatterDevice {
     int? nodeId,
     DeviceKind? kind,
     bool? isOnline,
+    DeviceConnectivity? connectivity,
     bool? sharedWithGoogleHome,
     DateTime? commissionedAt,
     DateTime? lastModified,
@@ -218,6 +255,7 @@ class MatterDevice {
     nodeId: nodeId ?? this.nodeId,
     kind: kind ?? this.kind,
     isOnline: isOnline ?? this.isOnline,
+    connectivity: connectivity ?? this.connectivity,
     sharedWithGoogleHome: sharedWithGoogleHome ?? this.sharedWithGoogleHome,
     commissionedAt: commissionedAt ?? this.commissionedAt,
     lastModified: lastModified ?? this.lastModified,
@@ -235,6 +273,7 @@ class MatterDevice {
     'nodeId': nodeId,
     'kind': kind.name,
     'isOnline': isOnline,
+    'connectivity': connectivity.wire,
     'sharedWithGoogleHome': sharedWithGoogleHome,
     'commissionedAt': commissionedAt.toIso8601String(),
     'lastModified': lastModified.toIso8601String(),
